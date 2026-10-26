@@ -1,0 +1,66 @@
+# Python environment and caches
+.venv/
+.venv-dev/
+.playwright-browsers/
+*.egg-info/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.pytest_tmp/
+.pytest_*/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Frontend / Android build outputs
+node_modules/
+frontend/dist/
+frontend/release/
+*.tsbuildinfo
+android/**/.gradle/
+android/**/.kotlin/
+android/**/build/
+android/local.properties
+android/**/local.properties
+
+# Local settings, databases and run artifacts
+.env
+.env.*
+!.env.example
+*.sqlite3
+*.sqlite
+*.db
+*.log
+*.apk
+*.aab
+*.gguf
+*.safetensors
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.key
+*.pem
+data/
+artifacts/
+reports/
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Public repository scope: keep internal documentation and automated tests local.
+/docs/
+*.md
+!/README.md
+!/backend/README.md
+/backend/tests/
+/frontend/tests/
+/android/**/src/test/
+/android/**/src/androidTest/
+/scripts/*smoke*.py
+/scripts/model-agent-regression.py
+/scripts/fixtures/

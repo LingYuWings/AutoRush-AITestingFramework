@@ -1,0 +1,12 @@
+{
+  "title": "自然语言网页提交",
+  "execution_mode": "agent",
+  "platform": "web",
+  "steps": [
+    {"order": 1, "driver": "web", "intent": "打开 /fixture.html。", "expected_result": "AutoRush Web Fixture"},
+    {"order": 2, "driver": "web", "intent": "在 Search 输入 Blue-742，Choice 选择 Automatic，点击 Submit。", "expected_result": "Submitted: Blue-742 / auto"}
+  ],
+  "postconditions": [
+    {"order": 1, "driver": "web", "intent": "点击 Reset。", "expected_result": "Waiting", "always_run": true}
+  ]
+}

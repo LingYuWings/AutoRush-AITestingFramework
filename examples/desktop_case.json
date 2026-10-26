@@ -1,0 +1,147 @@
+{
+  "title": "Desktop UI evidence",
+  "steps": [
+    {
+      "order": 1,
+      "intent": "click",
+      "driver": "desktop",
+      "operation": "desktop.click",
+      "parameters": {
+        "x": 100,
+        "y": 85
+      },
+      "assertions": []
+    },
+    {
+      "order": 2,
+      "intent": "write",
+      "driver": "desktop",
+      "operation": "desktop.write",
+      "parameters": {
+        "text": "AutoRush-Desktop"
+      },
+      "assertions": []
+    },
+    {
+      "order": 3,
+      "intent": "hotkey",
+      "driver": "desktop",
+      "operation": "desktop.hotkey",
+      "parameters": {
+        "keys": [
+          "ctrl",
+          "a"
+        ]
+      },
+      "assertions": []
+    },
+    {
+      "order": 4,
+      "intent": "write",
+      "driver": "desktop",
+      "operation": "desktop.write",
+      "parameters": {
+        "text": "Desktop-Smoke"
+      },
+      "assertions": []
+    },
+    {
+      "order": 5,
+      "intent": "click",
+      "driver": "desktop",
+      "operation": "desktop.click",
+      "parameters": {
+        "x": 80,
+        "y": 140
+      },
+      "assertions": []
+    },
+    {
+      "order": 6,
+      "intent": "inspect_pixel",
+      "driver": "desktop",
+      "operation": "desktop.inspect_pixel",
+      "parameters": {
+        "x": 470,
+        "y": 85
+      },
+      "assertions": [
+        {
+          "kind": "pixel_rgb_equals",
+          "expected": [
+            48,
+            96,
+            192
+          ]
+        }
+      ]
+    },
+    {
+      "order": 7,
+      "intent": "scroll",
+      "driver": "desktop",
+      "operation": "desktop.scroll",
+      "parameters": {
+        "x": 300,
+        "y": 400,
+        "clicks": -3
+      },
+      "assertions": []
+    },
+    {
+      "order": 8,
+      "intent": "inspect_pixel",
+      "driver": "desktop",
+      "operation": "desktop.inspect_pixel",
+      "parameters": {
+        "x": 560,
+        "y": 85
+      },
+      "assertions": [
+        {
+          "kind": "pixel_rgb_equals",
+          "expected": [
+            224,
+            96,
+            32
+          ]
+        }
+      ]
+    }
+  ],
+  "postconditions": [
+    {
+      "order": 1,
+      "intent": "click",
+      "driver": "desktop",
+      "operation": "desktop.click",
+      "parameters": {
+        "x": 185,
+        "y": 140
+      },
+      "assertions": [],
+      "always_run": true
+    },
+    {
+      "order": 2,
+      "intent": "inspect_pixel",
+      "driver": "desktop",
+      "operation": "desktop.inspect_pixel",
+      "parameters": {
+        "x": 470,
+        "y": 85
+      },
+      "assertions": [
+        {
+          "kind": "pixel_rgb_equals",
+          "expected": [
+            32,
+            160,
+            96
+          ]
+        }
+      ],
+      "always_run": true
+    }
+  ]
+}

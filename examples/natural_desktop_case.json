@@ -1,0 +1,11 @@
+{
+  "title": "自然语言桌面提交",
+  "execution_mode": "agent",
+  "platform": "desktop",
+  "steps": [
+    {"order": 1, "driver": "desktop", "intent": "Click the Search input, type Desk-742, and click Submit.", "expected_result": "Submitted: Desk-742"}
+  ],
+  "postconditions": [
+    {"order": 1, "driver": "desktop", "intent": "Click Reset.", "expected_result": "The window shows Waiting and the search input is empty.", "always_run": true}
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "title": "健康检查",
+  "description": "对授权测试环境执行只读 API 检查",
+  "steps": [
+    {
+      "order": 1,
+      "intent": "请求健康检查接口",
+      "driver": "api",
+      "operation": "api.request",
+      "parameters": {"method": "GET", "path": "/health"},
+      "assertions": [{"kind": "status_code", "expected": 200}]
+    }
+  ],
+  "postconditions": []
+}

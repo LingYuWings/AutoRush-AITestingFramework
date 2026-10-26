@@ -1,0 +1,150 @@
+{
+  "title": "Web UI evidence",
+  "steps": [
+    {
+      "order": 1,
+      "intent": "open",
+      "driver": "web",
+      "operation": "web.open",
+      "parameters": {
+        "path": "/fixture.html"
+      },
+      "assertions": [
+        {
+          "kind": "url_contains",
+          "expected": "/fixture.html"
+        }
+      ]
+    },
+    {
+      "order": 2,
+      "intent": "fill",
+      "driver": "web",
+      "operation": "web.fill",
+      "parameters": {
+        "target": {
+          "label": "Search"
+        },
+        "value": "Web-Smoke"
+      },
+      "assertions": []
+    },
+    {
+      "order": 3,
+      "intent": "fill",
+      "driver": "web",
+      "operation": "web.fill",
+      "parameters": {
+        "target": {
+          "label": "Password"
+        },
+        "value": "Test-Only-123"
+      },
+      "assertions": []
+    },
+    {
+      "order": 4,
+      "intent": "select",
+      "driver": "web",
+      "operation": "web.select",
+      "parameters": {
+        "target": {
+          "label": "Choice"
+        },
+        "value": "auto"
+      },
+      "assertions": []
+    },
+    {
+      "order": 5,
+      "intent": "press",
+      "driver": "web",
+      "operation": "web.press",
+      "parameters": {
+        "target": {
+          "label": "Search"
+        },
+        "key": "Control+A"
+      },
+      "assertions": []
+    },
+    {
+      "order": 6,
+      "intent": "click",
+      "driver": "web",
+      "operation": "web.click",
+      "parameters": {
+        "target": {
+          "role": "button",
+          "name": "Submit"
+        }
+      },
+      "assertions": []
+    },
+    {
+      "order": 7,
+      "intent": "wait",
+      "driver": "web",
+      "operation": "web.wait",
+      "parameters": {
+        "target": {
+          "test_id": "status"
+        },
+        "state": "visible",
+        "timeout_ms": 2000
+      },
+      "assertions": []
+    },
+    {
+      "order": 8,
+      "intent": "inspect",
+      "driver": "web",
+      "operation": "web.inspect",
+      "parameters": {
+        "target": {
+          "test_id": "status"
+        }
+      },
+      "assertions": [
+        {
+          "kind": "text_contains",
+          "expected": "Submitted: Web-Smoke / auto"
+        }
+      ]
+    }
+  ],
+  "postconditions": [
+    {
+      "order": 1,
+      "intent": "click",
+      "driver": "web",
+      "operation": "web.click",
+      "parameters": {
+        "target": {
+          "role": "button",
+          "name": "Reset"
+        }
+      },
+      "assertions": [],
+      "always_run": true
+    },
+    {
+      "order": 2,
+      "intent": "inspect",
+      "driver": "web",
+      "operation": "web.inspect",
+      "parameters": {
+        "target": {
+          "test_id": "status"
+        }
+      },
+      "assertions": [
+        {
+          "kind": "text_contains",
+          "expected": "Waiting"
+        }
+      ],
+      "always_run": true
+    }
+  ]
+}

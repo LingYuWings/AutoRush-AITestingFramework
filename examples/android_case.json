@@ -1,0 +1,9 @@
+{
+  "title": "Android App 页面检查（请替换定位值）",
+  "description": "测试计划需填写在线设备 UUID 和允许列表中的 App 包名。",
+  "steps": [
+    {"order": 1, "intent": "启动测试 App", "driver": "android", "operation": "android.launch", "parameters": {}, "assertions": []},
+    {"order": 2, "intent": "检查页面按钮", "driver": "android", "operation": "android.inspect", "parameters": {"target": {"resource_id": "com.example.testapp:id/submit"}, "timeout_ms": 5000}, "assertions": [{"kind": "element_visible", "expected": true}, {"kind": "package_equals", "expected": "com.example.testapp"}]}
+  ],
+  "postconditions": []
+}

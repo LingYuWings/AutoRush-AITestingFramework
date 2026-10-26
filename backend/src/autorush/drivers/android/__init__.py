@@ -1,0 +1,1 @@
+"""Android Portal execution adapter."""

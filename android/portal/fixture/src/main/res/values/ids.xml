@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item type="id" name="name" />
+    <item type="id" name="secret" />
+    <item type="id" name="submit" />
+    <item type="id" name="status" />
+    <item type="id" name="details" />
+    <item type="id" name="reset" />
+    <item type="id" name="scroll_area" />
+    <item type="id" name="bottom" />
+    <item type="id" name="details_title" />
+</resources>

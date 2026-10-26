@@ -1,0 +1,38 @@
+{
+  "title": "Web 搜索冒烟",
+  "steps": [
+    {
+      "order": 1,
+      "intent": "打开首页",
+      "driver": "web",
+      "operation": "web.open",
+      "parameters": {"path": "/"},
+      "assertions": [{"kind": "url_contains", "expected": "/"}]
+    },
+    {
+      "order": 2,
+      "intent": "在搜索框输入关键词",
+      "driver": "web",
+      "operation": "web.fill",
+      "parameters": {"target": {"role": "textbox", "name": "Search"}, "value": "AutoRush"}
+    },
+    {
+      "order": 3,
+      "intent": "点击提交按钮",
+      "driver": "web",
+      "operation": "web.click",
+      "parameters": {"target": {"role": "button", "name": "Submit"}}
+    },
+    {
+      "order": 4,
+      "intent": "检查结果可见且包含关键词",
+      "driver": "web",
+      "operation": "web.inspect",
+      "parameters": {"target": {"role": "status"}},
+      "assertions": [
+        {"kind": "element_visible", "expected": true},
+        {"kind": "text_contains", "expected": "AutoRush"}
+      ]
+    }
+  ]
+}

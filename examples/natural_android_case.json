@@ -1,0 +1,14 @@
+{
+  "title": "Android 自然语言表单与导航",
+  "execution_mode": "agent",
+  "platform": "android",
+  "steps": [
+    {"order": 1, "driver": "android", "intent": "点击 Reset，恢复演示表单。", "expected_result": "Waiting"},
+    {"order": 2, "driver": "android", "intent": "在 Test name 输入 Phone-742，然后点击 Submit。", "expected_result": "Submitted: Phone-742"},
+    {"order": 3, "driver": "android", "intent": "点击 Open details，进入详情。", "expected_result": "Details"},
+    {"order": 4, "driver": "android", "intent": "返回上一个演示页面。", "expected_result": "Submitted: Phone-742"}
+  ],
+  "postconditions": [
+    {"order": 1, "driver": "android", "intent": "点击 Reset 清空表单。", "expected_result": "Waiting", "always_run": true}
+  ]
+}
