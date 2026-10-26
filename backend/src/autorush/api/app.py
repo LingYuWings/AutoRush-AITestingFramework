@@ -746,6 +746,8 @@ def create_app(
         suffixes = {"json": "json", "html": "html", "junit": "xml"}
         return FileResponse(path, media_type=media_types[report_format], filename=f"{run_id}.{suffixes[report_format]}")
 
+    from autorush.api.api_testing import create_api_testing_router
+    app.include_router(create_api_testing_router(settings,require_operator,trusted_local_request))
     app.include_router(create_automation_router(settings,require_operator,trusted_local_request))
     app.include_router(create_model_catalog_router(settings,store,require_operator,trusted_local_request))
     app.include_router(create_agent_run_router(agent_manager,settings,store,device_hub,require_operator,trusted_local_request))
