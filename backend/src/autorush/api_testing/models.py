@@ -96,6 +96,7 @@ class ApiRequest(ApiModel):
     timeout_ms: int = Field(default=10000, strict=True, ge=100, le=120000)
     follow_redirects: bool = False
     proxy: Literal['direct', 'system'] = 'direct'
+    compatibility_warnings: list[str] = Field(default_factory=list, max_length=30)
 
 
 class Collection(ApiModel):
