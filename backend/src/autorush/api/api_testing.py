@@ -50,7 +50,7 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
         values, secrets = variable_values(items)
         return {**values, **overrides}, secrets
 
-    def save_result(value, request_id=None):
+    def save_result(value, request_id=None, replay=None):
         value = {**value, 'request_id': request_id}
         stored = deepcopy(value)
         response = stored.get('response')
@@ -60,7 +60,7 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
                 response['body'] = body_text.encode()[:65536].decode(errors='ignore')
                 response['history_truncated'] = True
             response['text'] = response['text'].encode()[:65536].decode(errors='ignore')
-        record = store.save_history(stored)
+        record = store.save_history(stored, replay)
         return {**value, 'id': record['id'], 'created_at': record['created_at']}
 
     async def until_disconnect(request, operation):
@@ -100,14 +100,16 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
         authorize(request, x_autorush_operator_token)
         command = parse_model(ExecuteRequest, payload)
         async def perform():
+            replay = {'request': command.request.model_dump(), 'variables': {}, 'secret_values': []}
             try:
                 values, secrets = runtime_variables(command.request, command.environment_id, command.variables)
                 engine = ApiEngine(settings.allowed_api_hosts, variables=values, secret_values=secrets)
+                replay.update(variables=values, secret_values=list(secrets))
                 result = (await engine.execute(command.request)).public
             except ApiBlocked as exc:
                 result = {'name': command.request.name, 'method': command.request.method, 'url': command.request.url,
                     'status': 'blocked', 'detail': str(exc), 'response': None, 'assertions': [], 'extracted': {}, 'elapsed_ms': 0}
-            return save_result(result, command.request_id)
+            return save_result(result, command.request_id, replay)
         return await until_disconnect(request, perform())
 
     @router.post('/collections/{collection_id}/run')
@@ -131,8 +133,10 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
                     if stopped:
                         results.append({'request_id': item['id'], 'name': item['name'], 'status': 'skipped'})
                         continue
-                    result = await engine.execute(ApiRequest.model_validate(configuration(item)))
-                    results.append(save_result(result.public, item['id']))
+                    spec = ApiRequest.model_validate(configuration(item))
+                    replay = {'request': spec.model_dump(), 'variables': deepcopy(engine.variables), 'secret_values': list(engine.secrets)}
+                    result = await engine.execute(spec)
+                    results.append(save_result(result.public, item['id'], replay))
                     stopped = command.stop_on_failure and result.public['status'] != 'passed'
             status = next((status for status in ['error', 'failed', 'blocked'] if any(item['status'] == status for item in results)), 'passed')
             return {'status': status, 'results': results}
@@ -170,6 +174,7 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
     def export_data(request: Request, payload: dict = Body(...), x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
         from autorush.api_testing.interchange import export_curl, export_postman
+        from autorush.api_testing.variables import SENSITIVE
         from autorush.api_testing.models import configuration
         kind = payload.get('format')
         try:
@@ -188,8 +193,8 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
                 environment = store.get('environments', payload.get('environment_id'))
                 if environment is None: raise HTTPException(404, 'environment not found')
                 content = {'name': environment['name'], '_postman_variable_scope': 'environment', 'values': [
-                    {'key': item['key'], 'value': '' if item['secret'] else item['value'],
-                     'type': 'secret' if item['secret'] else 'default', 'enabled': item['enabled']} for item in environment['variables']]}
+                    {'key': item['key'], 'value': '' if item['secret'] or SENSITIVE.search(item['key']) else item['value'],
+                     'type': 'secret' if item['secret'] or SENSITIVE.search(item['key']) else 'default', 'enabled': item['enabled']} for item in environment['variables']]}
             else: raise HTTPException(422, 'unsupported export format')
             return {'format': kind, 'filename': kind + '.json', 'content': json.dumps(content, ensure_ascii=False, indent=2)}
         except (ValueError, TypeError, KeyError):
@@ -215,6 +220,19 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
         if value is None:
             raise HTTPException(404, 'history not found')
         return value
+
+    @router.get('/history/{history_id}/request')
+    def history_request(history_id: str, request: Request, x_autorush_operator_token: str | None = Header(default=None)):
+        authorize(request, x_autorush_operator_token)
+        from autorush.api_testing.variables import SENSITIVE
+        replay = store.history_replay(history_id)
+        if replay is None: raise HTTPException(404, 'replay configuration is not available for this history')
+        value = replay['request']
+        value['collection_id'] = None
+        value['variables'] = [{'key': key, 'value': val, 'enabled': True,
+            'secret': bool(SENSITIVE.search(key)) or str(val) in replay.get('secret_values', [])}
+            for key, val in replay.get('variables', {}).items()] + value.get('variables', [])
+        return {'request': value}
 
     @router.get('/{kind}')
     def list_records(kind: str, request: Request, x_autorush_operator_token: str | None = Header(default=None)):

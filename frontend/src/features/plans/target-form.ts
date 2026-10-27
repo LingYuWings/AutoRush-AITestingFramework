@@ -1,6 +1,6 @@
 import type { AgentOptions,CaseRecord, DesktopTarget, PlanPayload } from '../../shared/api'
 export type PlanForm={name:string;environment:string;selected:string[];apiBase:string;webBase:string;deviceId:string;androidPackage:string;
-  captureScreenshots:boolean;webHeadless:boolean;viewportWidth:string;viewportHeight:string;desktopTarget:DesktopTarget|null;desktopDelay:string;agentOptions?:AgentOptions}
+  captureScreenshots:boolean;webHeadless:boolean;viewportWidth:string;viewportHeight:string;desktopTarget:DesktopTarget|null;desktopDelay:string;agentOptions?:AgentOptions;apiEnvironmentId?:string}
 export function buildPlanPayload(form:PlanForm,cases:Pick<CaseRecord,'steps'|'postconditions'|'execution_mode'>[]):PlanPayload {
   const agent=cases.some(c=>c.execution_mode==='agent')
   if(agent&&!form.agentOptions?.provider_config_id)throw new Error('请选择已验证的执行模型')
@@ -11,6 +11,7 @@ export function buildPlanPayload(form:PlanForm,cases:Pick<CaseRecord,'steps'|'po
   if(drivers.has('desktop')&&(!Number.isInteger(delay)||delay<0||delay>10)) throw new Error('准备时间需为 0..10 秒')
   return {name:form.name.trim(),environment:form.environment.trim(),case_ids:form.selected,
     ...(agent?{agent_options:form.agentOptions}:{}),
+    ...(drivers.has('api')&&form.apiEnvironmentId?{api_environment_id:form.apiEnvironmentId}:{}),
     api_base_url:drivers.has('api')?form.apiBase.trim()||null:null,web_base_url:drivers.has('web')?form.webBase.trim()||null:null,
     android_device_id:drivers.has('android')?form.deviceId.trim()||null:null,android_package:drivers.has('android')?form.androidPackage.trim()||null:null,
     web_headless:drivers.has('web')?form.webHeadless:true,web_viewport:drivers.has('web')?{width,height}:{width:1280,height:800},

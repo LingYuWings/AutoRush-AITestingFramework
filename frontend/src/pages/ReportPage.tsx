@@ -5,6 +5,7 @@ import {EmptyState,ResultBar,StatusBadge} from '../components/ui'
 import {countStatuses,date,resultOrder,shortId,statusLabel} from '../shared/format'
 import StepScreenshot from '../components/StepScreenshot'
 import AgentTrace from '../features/runs/AgentTrace'
+import {ApiEvidence} from '../features/api-testing/ResponsePanel'
 
 type CaseResult=RunRecord['cases'][number]
 
@@ -25,6 +26,7 @@ function CaseSection({item,index,title,authEpoch,onlyIssues}:{item:CaseResult;in
         {step.assertions.length>0&&<ul className="timeline-assertions">{step.assertions.map((assertion,k)=><li key={k}>{assertion}</li>)}</ul>}
         {step.evidence&&<StepScreenshot key={authEpoch} evidence={step.evidence}/>}
         {step.evidence&&<AgentTrace evidence={step.evidence} authEpoch={authEpoch}/>}
+        {Boolean(step.evidence?.api)&&<ApiEvidence value={step.evidence.api}/>}
         {step.evidence&&Object.keys(step.evidence).length>0&&<details className="raw-evidence"><summary>原始证据 JSON</summary><pre className="evidence-preview">{JSON.stringify(step.evidence,null,2)}</pre></details>}
       </div>
     </li>)}</ol>:<p className="quiet-note report-case-empty">所有步骤均已通过。</p>}

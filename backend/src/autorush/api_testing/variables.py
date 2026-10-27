@@ -4,6 +4,7 @@ import json
 import os
 import re
 from copy import deepcopy
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 PLACEHOLDER = re.compile(r'\{\{\s*([A-Za-z_][A-Za-z0-9_.-]*)\s*\}\}')
 SENSITIVE = re.compile(r'authorization|cookie|password|passwd|secret|token|api[-_]?key|credential', re.I)
@@ -83,6 +84,16 @@ def redact(value, secrets=()):
             try:
                 return json.dumps(redact(json.loads(value), secrets), ensure_ascii=False)
             except (ValueError, RecursionError):
+                pass
+        if value.startswith(('http://', 'https://', '{{')):
+            try:
+                parts = urlsplit(value)
+                host = parts.netloc
+                if '@' in host: host = '[redacted]@' + host.rsplit('@', 1)[1]
+                query = [(key, '[redacted]' if SENSITIVE.search(key) and not PLACEHOLDER.fullmatch(item) else item)
+                    for key, item in parse_qsl(parts.query, keep_blank_values=True)]
+                value = urlunsplit((parts.scheme, host, parts.path, urlencode(query, safe='{}'), parts.fragment))
+            except ValueError:
                 pass
         for secret in sorted((str(item) for item in secrets if item), key=len, reverse=True):
             value = value.replace(secret, '[redacted]')

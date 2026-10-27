@@ -131,6 +131,7 @@ def import_curl(command):
 
 def export_safe(spec):
     value = deepcopy(spec)
+    value['url'] = redact(value.get('url', ''))
     auth = value.get('auth', {})
     for key in ['password', 'token', 'value']:
         actual = str(auth.get(key, ''))
@@ -170,7 +171,7 @@ def export_postman(collection, requests):
             request['body'] = {'mode': 'file', 'file': {'src': body['filename']}}
         items.append({'name': spec['name'], 'request': request})
     return {'info': {'name': collection['name'], 'schema': SCHEMA}, 'item': items,
-        'variable': [{'key': item['key'], 'value': '' if item.get('secret') else item['value'], 'disabled': not item.get('enabled', True)}
+        'variable': [{'key': item['key'], 'value': '' if item.get('secret') or SENSITIVE.search(item['key']) else item['value'], 'disabled': not item.get('enabled', True)}
             for item in collection.get('variables', [])]}
 
 

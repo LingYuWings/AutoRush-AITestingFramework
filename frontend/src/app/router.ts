@@ -4,7 +4,7 @@ import type { View } from './types'
 /** `#/reports/<id>`, `#/cases/<id>/edit`, `#/cases/new` … */
 export type Route = { view: View; id?: string; edit?: boolean }
 
-const views: View[] = ['overview', 'cases', 'plans', 'reports', 'devices', 'settings']
+const views: View[] = ['overview', 'cases', 'plans', 'reports', 'devices', 'settings', 'api-testing']
 const depth = (route: Route) => (route.id ? 1 : 0) + (route.edit ? 1 : 0)
 
 export function parseRoute(hash: string): Route {

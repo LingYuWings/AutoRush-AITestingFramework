@@ -9,6 +9,7 @@ import Cases from '../pages/Cases'
 import Plans from '../pages/Plans'
 import Reports from '../pages/Reports'
 import ReportPage from '../pages/ReportPage'
+import ApiWorkbench from '../features/api-testing/ApiWorkbench'
 import { BrandMark } from '../components/ui'
 import { scroller } from '../shared/scroll'
 import { shortId, statusLabel } from '../shared/format'
@@ -27,6 +28,7 @@ const Settings = lazy(loadSettings)
 const navItems: { key: View; label: string; icon: typeof LayoutDashboard }[] = [
   { key: 'overview', label: '工作台', icon: LayoutDashboard },
   { key: 'cases', label: '用例管理', icon: ClipboardList },
+  { key: 'api-testing', label: 'API 测试', icon: Workflow },
   { key: 'plans', label: '测试计划', icon: Workflow },
   { key: 'reports', label: '运行报告', icon: FileText },
   { key: 'devices', label: 'Android 设备', icon: Smartphone },
@@ -222,7 +224,7 @@ export default function App() {
             onArchive={async id=>{await action(async()=>{await authorizeLocal();return api.archiveCase(id)},'用例已删除，可在已删除列表恢复')}}
             onRestore={async id=>{await action(async()=>{await authorizeLocal();return api.restoreCase(id)},'用例已恢复')}}
             onApprove={async id => { await action(() => api.approveCase(id), '用例已批准') }} />}
-          {view === 'plans' && <Plans plans={plans} cases={cases} runs={runs} onCreate={payload => action(() => api.createPlan(payload), '计划已创建')} onReady={async id => { await action(() => api.readyPlan(id), '计划已就绪') }} onRun={async id => { await action(() => api.runPlan(id), '运行完成，报告已保存') }} />}
+          {view === 'plans' && <Plans plans={plans} cases={cases} runs={runs} onCreate={payload => action(() => api.createPlan(payload), '计划已创建')} onReady={async id => { await action(async()=>{await authorizeLocal();return api.readyPlan(id)}, '计划已就绪') }} onRun={async id => { await action(async()=>{await authorizeLocal();return api.runPlan(id)}, '运行完成，报告已保存') }} />}
           {view === 'reports' && (route.id
             ? <ReportPage key={route.id} id={route.id} runs={runs} plans={plans} cases={cases} loaded={loaded}
                 onBack={() => go({ view: 'reports' })}
@@ -230,6 +232,7 @@ export default function App() {
                 onDownload={async (id, format) => { try { await api.downloadReport(id, format) } catch (error) { notify(error instanceof Error ? error.message : '下载失败', true) } }} />
             : <Reports runs={runs} plans={plans} onOpen={id => go({ view: 'reports', id })} onDownload={async (id, format) => { try { await api.downloadReport(id, format) } catch (error) { notify(error instanceof Error ? error.message : '下载失败', true) } }} />)}
           {view === 'devices' && <Devices />}
+          {view === 'api-testing' && <ApiWorkbench onCaseCreated={async id=>{await refresh();go({view:'cases',id})}}/>}
           {view === 'settings' && <Settings presets={providerPresets} configs={providerConfigs} onCreate={payload => action(() => api.createProviderConfig(payload), '模型配置已保存')} onPreflight={async id => { try { const result = await api.preflightProvider(id); notify(result.secret_available ? '本地预检查通过，尚未联网' : result.messages.join(' '), !result.secret_available); return result } catch (error) { notify(error instanceof Error ? error.message : '预检查失败', true); return null } }} />}
         </Suspense>
       </main>

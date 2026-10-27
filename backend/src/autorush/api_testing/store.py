@@ -83,8 +83,9 @@ class ApiStore:
             cursor = connection.execute('DELETE FROM api_testing_records WHERE kind=? AND id=?', (kind, str(record_id)))
         return cursor.rowcount > 0
 
-    def save_history(self, value):
+    def save_history(self, value, replay=None):
         record = {**value, 'id': str(uuid4()), 'created_at': datetime.now(timezone.utc).isoformat()}
+        if replay is not None: record['_replay'] = replay
         with self.connect() as connection:
             connection.execute('INSERT INTO api_testing_history(id,created_at,payload) VALUES(?,?,?)',
                 (record['id'], record['created_at'], self.encode(record)))
@@ -96,7 +97,14 @@ class ApiStore:
         with self.connect() as connection:
             if record_id:
                 row = connection.execute('SELECT payload FROM api_testing_history WHERE id=?', (str(record_id),)).fetchone()
-                return self.decode(row[0]) if row else None
+                if not row: return None
+                record = self.decode(row[0]); record.pop('_replay', None)
+                return record
             rows = connection.execute('SELECT payload FROM api_testing_history ORDER BY rowid DESC LIMIT 200').fetchall()
         records = [self.decode(row[0]) for row in rows]
-        return [{key: value for key, value in record.items() if key not in {'response', 'request', 'extracted'}} for record in records]
+        return [{key: value for key, value in record.items() if key not in {'response', 'request', 'extracted', '_replay'}} for record in records]
+
+    def history_replay(self, record_id):
+        with self.connect() as connection:
+            row = connection.execute('SELECT payload FROM api_testing_history WHERE id=?', (str(record_id),)).fetchone()
+        return self.decode(row[0]).get('_replay') if row else None

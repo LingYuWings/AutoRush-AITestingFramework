@@ -51,6 +51,8 @@ export interface PlanRecord {
   environment: string
   case_ids: string[]
   api_base_url: string | null
+  api_environment_id?: string | null
+  api_environment_snapshot_id?: string | null
   web_base_url: string | null
   web_headless: boolean
   web_viewport: {width:number;height:number}
@@ -63,7 +65,7 @@ export interface PlanRecord {
 }
 
 export type PlanPayload = Pick<PlanRecord, 'name' | 'environment' | 'case_ids'> & Partial<Pick<PlanRecord,
-  'api_base_url' | 'web_base_url' | 'android_device_id' | 'android_package' | 'capture_screenshots' | 'web_headless' | 'web_viewport' | 'desktop_target' | 'desktop_start_delay_seconds' | 'agent_options'>>
+  'api_base_url' | 'api_environment_id' | 'web_base_url' | 'android_device_id' | 'android_package' | 'capture_screenshots' | 'web_headless' | 'web_viewport' | 'desktop_target' | 'desktop_start_delay_seconds' | 'agent_options'>>
 
 export interface AgentOptions {provider_config_id:string;max_rounds_per_step:number;max_rounds_per_case:number;model_timeout_seconds:number;case_timeout_seconds:number}
 export interface AgentTraceRecord {round?:number;operation?:string|null;brief_reason?:string;error?:string;verification_kind?:string;model?:{latency_ms:number;attempts:number};result?:{status:ResultStatus;detail?:string;assertions?:string[];evidence?:Record<string,unknown>};observation?:{screenshot?:ScreenshotEvidence}}

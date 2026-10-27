@@ -1,4 +1,4 @@
-export type View = 'overview' | 'cases' | 'plans' | 'reports' | 'devices' | 'settings'
+export type View = 'overview' | 'cases' | 'plans' | 'reports' | 'devices' | 'settings' | 'api-testing'
 
 export type LiveEvent = { id: string; at: string; text: string; tone: 'info' | 'passed' | 'failed' }
 

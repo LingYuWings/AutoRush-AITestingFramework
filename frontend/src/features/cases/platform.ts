@@ -1,6 +1,6 @@
 import type {CaseRecord,DriverKind} from '../../shared/api'
 export type CasePlatform=DriverKind|'mixed'
-export const platformLabels:Record<CasePlatform,string>={web:'Web',android:'Android',desktop:'Desktop',api:'API 辅助',mixed:'历史混合'}
+export const platformLabels:Record<CasePlatform,string>={web:'Web',android:'Android',desktop:'Desktop',api:'API',mixed:'历史混合'}
 export function platformOf(item:Pick<CaseRecord,'platform'|'steps'|'postconditions'>):CasePlatform {
   if(item.platform)return item.platform
   const drivers=new Set([...item.steps,...item.postconditions].map(s=>s.driver))
