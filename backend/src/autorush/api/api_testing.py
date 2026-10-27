@@ -75,6 +75,26 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
 
+    @router.post('/snapshots', status_code=201)
+    def create_request_snapshot(request: Request, payload: dict = Body(...), x_autorush_operator_token: str | None = Header(default=None)):
+        authorize(request, x_autorush_operator_token)
+        from autorush.api_testing.nodes import create_snapshot, snapshot_parameters
+        from autorush.api_testing.models import configuration
+        source = store.get('requests', payload['request_id']) if payload.get('request_id') else None
+        if payload.get('request_id') and source is None: raise HTTPException(404, 'request not found')
+        spec = payload.get('request') or (configuration(source) if source else None)
+        spec = parse_model(ApiRequest, spec)
+        try: record = create_snapshot(store, spec, source['id'] if source else None, source['version'] if source else None)
+        except ValueError: raise HTTPException(422, 'invalid API collection') from None
+        return snapshot_parameters(record)
+
+    @router.get('/snapshots/{snapshot_id}')
+    def get_request_snapshot(snapshot_id: str, request: Request, x_autorush_operator_token: str | None = Header(default=None)):
+        authorize(request, x_autorush_operator_token)
+        record = store.get('request_snapshots', snapshot_id)
+        if record is None: raise HTTPException(404, 'request snapshot not found')
+        return record
+
     @router.post('/execute')
     async def execute(request: Request, payload: dict = Body(...), x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)

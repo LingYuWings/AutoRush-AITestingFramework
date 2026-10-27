@@ -67,8 +67,10 @@ class CaseCreate(BaseModel):
 
     @model_validator(mode="after")
     def orders_must_be_unique(self) -> "CaseCreate":
-        if self.platform and any(step.driver!=self.platform for step in self.steps+self.postconditions):
+        if self.platform and any(step.driver not in {self.platform, 'api'} for step in self.steps+self.postconditions):
             raise ValueError('case steps must match the selected execution platform; mix platforms in a plan')
+        if self.platform and self.platform != 'api' and not any(step.driver == self.platform for step in self.steps + self.postconditions):
+            raise ValueError('selected UI platform requires at least one UI step; use API platform for API-only cases')
         for collection in (self.steps, self.postconditions):
             orders = [step.order for step in collection]
             if len(orders) != len(set(orders)):
@@ -76,6 +78,8 @@ class CaseCreate(BaseModel):
         if self.execution_mode=='agent':
             if len(self.steps)>50 or len(self.postconditions)>20: raise ValueError('natural case exceeds step limit')
             for step in self.steps+self.postconditions:
+                if step.driver == 'api' and step.operation == 'api.request':
+                    continue
                 if not step.expected_result or not step.expected_result.strip(): raise ValueError('natural steps require expected_result')
                 if step.operation or step.parameters or step.assertions: raise ValueError('natural steps cannot contain compiled actions or assertions')
         return self
@@ -118,6 +122,7 @@ class PlanCreate(BaseModel):
     case_ids: list[UUID] = Field(min_length=1)
     agent_options: AgentOptions | None = None
     api_base_url: str | None = None
+    api_environment_id: UUID | None = None
     web_base_url: str | None = None
     web_headless: bool = True
     web_viewport: WebViewport = Field(default_factory=WebViewport)
@@ -129,6 +134,7 @@ class PlanCreate(BaseModel):
 
 
 class PlanRecord(PlanCreate):
+    api_environment_snapshot_id: UUID | None = None
     id: UUID = Field(default_factory=uuid4)
     version: int = 1
     status: PlanStatus = PlanStatus.DRAFT

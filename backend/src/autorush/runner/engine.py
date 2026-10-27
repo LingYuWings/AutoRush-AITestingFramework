@@ -9,6 +9,7 @@ from uuid import UUID
 from autorush.assertions.evaluate import evaluate_assertion
 from autorush.domain.models import CaseRecord, CaseResult, ResultStatus, StepResult, StepSpec
 from autorush.drivers.base import Driver, DriverBlockedError
+from autorush.api_testing.variables import ApiBlocked
 
 
 class Runner:
@@ -16,6 +17,7 @@ class Runner:
         self._drivers = drivers
 
     async def run_case(self, case: CaseRecord, *, on_progress=None) -> CaseResult:
+        self.begin_case()
         results: list[StepResult] = []
         async def progress(current=None):
             if on_progress is not None:await on_progress(results,current)
@@ -53,11 +55,14 @@ class Runner:
         if not step.operation:
             return StepResult(order=step.order, intent=step.intent, status=ResultStatus.BLOCKED, detail="step has no compiled operation")
         try:
+            if step.driver != 'api':
+                from autorush.api_testing.nodes import resolve_ui_step
+                step = resolve_ui_step(step, self._drivers)
             action = await driver.execute(step)
-            checks = [evaluate_assertion(assertion, action.output) for assertion in step.assertions]
-            status = ResultStatus.PASSED if all(ok for ok, _ in checks) else ResultStatus.FAILED
+            checks = [*action.checks, *[evaluate_assertion(assertion, action.output) for assertion in step.assertions]]
+            status = action.status or (ResultStatus.PASSED if all(ok for ok, _ in checks) else ResultStatus.FAILED)
             result = StepResult(order=step.order, intent=step.intent, status=status, detail=action.summary, assertions=[text for _, text in checks], evidence=action.evidence)
-        except DriverBlockedError as exc:
+        except (DriverBlockedError, ApiBlocked) as exc:
             result = StepResult(order=step.order, intent=step.intent, status=ResultStatus.BLOCKED, detail=str(exc))
         except Exception as exc:
             result = StepResult(order=step.order, intent=step.intent, status=ResultStatus.ERROR, detail=f"{type(exc).__name__}: {exc}")
@@ -70,7 +75,13 @@ class Runner:
                 if result.status == ResultStatus.PASSED:
                     result.status = ResultStatus.ERROR
                     result.detail += "; screenshot evidence could not be captured"
-        return result
+        sanitizer = getattr(self._drivers.get('api'), 'sanitize_result', None)
+        return sanitizer(result) if sanitizer else result
+
+    def begin_case(self):
+        for driver in self._drivers.values():
+            reset = getattr(driver, 'begin_case', None)
+            if callable(reset): reset()
 
     async def execute_step(self,step:StepSpec,*,capture_evidence:bool=True) -> StepResult:
         return await self._run_step(step,capture_evidence=capture_evidence)

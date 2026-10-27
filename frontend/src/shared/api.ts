@@ -252,7 +252,7 @@ function socketBase() {
     : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`
 }
 
-async function request<T>(path: string, init?: RequestInit, authenticated = true): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit, authenticated = true): Promise<T> {
   let response: Response
   try {
     response = await fetch(`${API_BASE}${path}`, {
@@ -260,7 +260,8 @@ async function request<T>(path: string, init?: RequestInit, authenticated = true
       cache: 'no-store',
       headers: { 'Content-Type': 'application/json', ...(authenticated && operatorToken ? { 'X-Autorush-Operator-Token': operatorToken } : {}), ...init?.headers },
     })
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') throw error
     throw new Error('无法连接本地后端，请先启动 127.0.0.1:8000 上的服务。')
   }
   if (!response.ok) {

@@ -9,7 +9,7 @@ from urllib.parse import urljoin, urlsplit
 
 import httpx
 
-from autorush.api_testing.models import ApiRequest
+from autorush.api_testing.models import ApiRequest, ApiAssertion, Extraction
 from autorush.api_testing.variables import ApiBlocked, SENSITIVE, json_field, redact, substitute, variable_values
 
 MAX_RESPONSE = 1048576
@@ -25,6 +25,7 @@ class ApiExecution:
 
 
 def validate_url(url, allowed_hosts):
+    if not isinstance(url, str): raise ApiBlocked('HTTP URL must be text')
     try:
         parsed = urlsplit(url)
         _ = parsed.port
@@ -105,11 +106,13 @@ class ApiEngine:
                 source['body']['text'] = ''
             else: json_body = None
             resolved = substitute(source, variables)
+            resolved_checks = [ApiAssertion.model_validate(item) for item in resolved['assertions']]
+            resolved_extractions = [Extraction.model_validate(item) for item in resolved['extractions']]
             url = resolved['url']
             validate_url(url, self.allowed_hosts)
             auth = resolved['auth']
             self.secrets.update(str(auth[key]) for key in ['password', 'token', 'value'] if auth.get(key))
-            headers = [(item['key'], str(item['value'])) for item in resolved['headers'] if item['enabled'] and item['key']]
+            headers = [(str(item['key']), str(item['value'])) for item in resolved['headers'] if item['enabled'] and item['key']]
             if any(key.lower() in FORBIDDEN_HEADERS for key, _ in headers):
                 raise ApiBlocked('Host and transport headers cannot be overridden')
             if any('\r' in str(value) or '\n' in str(value) or '\x00' in str(value)
@@ -129,14 +132,14 @@ class ApiEngine:
                    or key.lower() in FORBIDDEN_HEADERS for key, value in headers): raise ApiBlocked('invalid authentication headers')
             body = resolved['body']; kwargs = {}
             if body['mode'] == 'json': kwargs['json'] = json_body
-            elif body['mode'] == 'raw': kwargs['content'] = body['text'].encode()
+            elif body['mode'] == 'raw': kwargs['content'] = str(body['text']).encode()
             elif body['mode'] == 'binary': kwargs['content'] = decode_file(body['data_base64'])
             elif body['mode'] == 'urlencoded':
                 from urllib.parse import urlencode
                 kwargs['content'] = urlencode([(field['key'], field['value']) for field in body['fields'] if field['enabled']]).encode()
             elif body['mode'] == 'formdata':
                 kwargs['files'] = [(field['key'], (field['filename'], decode_file(field['data_base64']), field['content_type'])
-                    if field['type'] == 'file' else (None, field['value'])) for field in body['fields'] if field['enabled']]
+                    if field['type'] == 'file' else (None, str(field['value']))) for field in body['fields'] if field['enabled']]
                 headers = [(key, value) for key, value in headers if key.lower() != 'content-type']
             if body['mode'] in {'raw', 'binary', 'urlencoded'} and not any(key.lower() == 'content-type' for key, _ in headers):
                 content_type = 'application/x-www-form-urlencoded' if body['mode'] == 'urlencoded' else body['content_type']
@@ -146,7 +149,7 @@ class ApiEngine:
             size += sum(len(item[1][1]) for item in kwargs.get('files', []))
             if size > MAX_REQUEST: raise ApiBlocked('request body exceeds 1 MiB')
             request_evidence.update(url=str(url), headers=dict(headers), body=json_body if body['mode'] == 'json' else
-                {'mode': body['mode'], 'text': body['text'][:4096] if body['mode'] == 'raw' else '', 'bytes': size})
+                {'mode': body['mode'], 'text': str(body['text'])[:4096] if body['mode'] == 'raw' else '', 'bytes': size})
             method = spec.method
             async with asyncio.timeout(spec.timeout_ms / 1000):
                 async with httpx.AsyncClient(follow_redirects=False, trust_env=spec.proxy == 'system',
@@ -187,10 +190,9 @@ class ApiEngine:
             elapsed = (time.perf_counter() - started) * 1000
             output = {'status_code': status_code, 'body': parsed_body, 'text': text,
                 'headers': response_headers, 'elapsed_ms': elapsed, 'bytes': len(content), 'url': str(url)}
-            resolved_spec = ApiRequest.model_validate(resolved)
-            checks = [evaluate_check(check, output) for check in resolved_spec.assertions]
+            checks = [evaluate_check(check, output) for check in resolved_checks]
             extracted = {}
-            for extraction in resolved_spec.extractions:
+            for extraction in resolved_extractions:
                 try:
                     value = json_field(parsed_body, extraction.path) if extraction.source == 'json' else (
                         response_headers[extraction.path.lower()] if extraction.source == 'header' else self.cookies[extraction.path])

@@ -21,7 +21,16 @@ class DriverSession:
                 drivers['android']=await AndroidPortalDriver.create(device_hub,plan.android_device_id,plan.android_package,
                     capture_screenshots=plan.capture_screenshots,evidence_directory=settings.report_dir,run_id=run_id)
             if 'api' in kinds:
-                drivers['api']=HttpApiDriver(plan.api_base_url,set(settings.allowed_api_hosts),transport=api_transport)
+                from autorush.api_testing.store import ApiStore
+                from autorush.api_testing.variables import variable_values
+                api_store = ApiStore(settings.database_path)
+                seed, secret_values = {}, set()
+                if plan.api_environment_snapshot_id:
+                    snapshot = api_store.get('environment_snapshots', plan.api_environment_snapshot_id)
+                    if snapshot is None: raise ValueError('API environment snapshot not found')
+                    seed, secret_values = variable_values(snapshot['variables'])
+                drivers['api']=HttpApiDriver(plan.api_base_url,set(settings.allowed_api_hosts),transport=api_transport,
+                    store=api_store,variables=seed,secret_values=secret_values)
             if 'web' in kinds:
                 drivers['web']=await web_factory(plan.web_base_url,set(settings.allowed_web_hosts),headless=plan.web_headless,
                     viewport=plan.web_viewport.model_dump(),capture_screenshots=plan.capture_screenshots,
