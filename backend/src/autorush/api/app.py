@@ -478,7 +478,14 @@ def create_app(
             raise HTTPException(422, str(exc)) from exc
 
     @app.post("/api/v1/cases", response_model=CaseRecord, status_code=201)
-    def create_case(payload: CaseCreate) -> CaseRecord:
+    def create_case(payload: CaseCreate, request: Request, x_autorush_operator_token: str | None = Header(default=None)) -> CaseRecord:
+        if any(step.driver == 'api' and ('request' in step.parameters or 'request_snapshot_id' in step.parameters)
+               for step in payload.steps + payload.postconditions):
+            authorize_case_change(request, x_autorush_operator_token)
+            from autorush.api_testing.nodes import freeze_case
+            from autorush.api_testing.store import ApiStore
+            try: payload = freeze_case(payload, ApiStore(settings.database_path))
+            except ValueError: raise HTTPException(422, 'invalid API request snapshot configuration') from None
         case = CaseRecord(**payload.model_dump())
         store.save_case(case)
         return case
@@ -494,6 +501,10 @@ def create_app(
     @app.put('/api/v1/cases/{case_id}',response_model=CaseRecord)
     def update_case(case_id:UUID,payload:CaseCreate,expected_version:int,request:Request,x_autorush_operator_token:str|None=Header(default=None)):
         authorize_case_change(request,x_autorush_operator_token)
+        from autorush.api_testing.nodes import freeze_case
+        from autorush.api_testing.store import ApiStore
+        try: payload = freeze_case(payload, ApiStore(settings.database_path))
+        except ValueError: raise HTTPException(422, 'invalid API request snapshot configuration') from None
         case=store.get_case(case_id)
         if case is None:raise HTTPException(404,'case not found')
         if case.archived_at:raise HTTPException(409,'restore archived case before editing')
@@ -532,11 +543,13 @@ def create_app(
         return case
 
     @app.post("/api/v1/cases/{case_id}/approve", response_model=CaseRecord)
-    def approve_case(case_id: UUID) -> CaseRecord:
+    def approve_case(case_id: UUID, request: Request, x_autorush_operator_token: str | None = Header(default=None)) -> CaseRecord:
         case = store.get_case(case_id)
         if case is None:
             raise HTTPException(404, "case not found")
         if case.archived_at:raise HTTPException(409,'restore archived case before approving')
+        if any(step.parameters.get('request_snapshot_id') for step in case.steps + case.postconditions):
+            authorize_case_change(request, x_autorush_operator_token)
         def approve_reviewed_snapshot():
             approved=case.model_copy(update={'status':CaseStatus.APPROVED})
             if not store.replace_case(case,approved):raise HTTPException(409,'case changed; reload before approving')
@@ -608,11 +621,25 @@ def create_app(
                 raise HTTPException(409, "Android cases require android_device_id and android_package")
             if str(plan.android_device_id) not in device_hub.list_devices():
                 raise HTTPException(409, "Android device is offline")
-        if any(step.driver == "api" for step in all_steps) and not plan.api_base_url:
-            raise HTTPException(409, "API cases require api_base_url")
+        from autorush.api_testing.nodes import needs_base_url
+        from autorush.api_testing.store import ApiStore
+        api_store = ApiStore(settings.database_path)
+        api_steps = [step for step in all_steps if step.driver == 'api']
+        if any(step.parameters.get('request_snapshot_id') for step in api_steps) or plan.api_environment_id:
+            authorize_case_change(request, x_autorush_operator_token)
+        try:
+            if any(needs_base_url(step, api_store) for step in api_steps) and not plan.api_base_url:
+                raise HTTPException(409, 'relative API nodes require api_base_url')
+        except ValueError: raise HTTPException(409, 'API request snapshot not found or invalid') from None
         if any(step.driver == "web" for step in all_steps) and not plan.web_base_url:
             raise HTTPException(409, "Web cases require web_base_url")
-        return store.set_plan_status(plan_id, PlanStatus.READY)  # type: ignore[return-value]
+        snapshot_id = plan.api_environment_snapshot_id
+        if plan.api_environment_id and snapshot_id is None:
+            environment = api_store.get('environments', plan.api_environment_id)
+            if environment is None: raise HTTPException(409, 'API environment not found')
+            snapshot_id = UUID(api_store.create('environment_snapshots', {'name': environment['name'],
+                'variables': environment['variables'], 'source_version': environment['version']})['id'])
+        return store.set_plan_status(plan_id, PlanStatus.READY, api_environment_snapshot_id=snapshot_id)  # type: ignore[return-value]
 
     @app.post("/api/v1/plans/{plan_id}/runs", response_model=RunRecord, status_code=201)
     async def run_plan(plan_id: UUID, request: Request, x_autorush_operator_token: str | None = Header(default=None)) -> RunRecord:
@@ -630,6 +657,8 @@ def create_app(
             raise HTTPException(409, "plan references an unapproved case")
         all_steps = [step for case in cases if case for step in case.steps + case.postconditions]
         needs_android = any(step.driver == "android" for step in all_steps)
+        if any(step.parameters.get('request_snapshot_id') for step in all_steps) or plan.api_environment_snapshot_id:
+            authorize_case_change(request, x_autorush_operator_token)
         needs_desktop = any(step.driver=='desktop' for step in all_steps)
         if needs_desktop:
             require_operator(x_autorush_operator_token)
@@ -746,6 +775,8 @@ def create_app(
         suffixes = {"json": "json", "html": "html", "junit": "xml"}
         return FileResponse(path, media_type=media_types[report_format], filename=f"{run_id}.{suffixes[report_format]}")
 
+    from autorush.api.api_testing import create_api_testing_router
+    app.include_router(create_api_testing_router(settings,require_operator,trusted_local_request))
     app.include_router(create_automation_router(settings,require_operator,trusted_local_request))
     app.include_router(create_model_catalog_router(settings,store,require_operator,trusted_local_request))
     app.include_router(create_agent_run_router(agent_manager,settings,store,device_hub,require_operator,trusted_local_request))

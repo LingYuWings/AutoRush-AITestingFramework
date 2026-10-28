@@ -51,6 +51,8 @@ export interface PlanRecord {
   environment: string
   case_ids: string[]
   api_base_url: string | null
+  api_environment_id?: string | null
+  api_environment_snapshot_id?: string | null
   web_base_url: string | null
   web_headless: boolean
   web_viewport: {width:number;height:number}
@@ -63,7 +65,7 @@ export interface PlanRecord {
 }
 
 export type PlanPayload = Pick<PlanRecord, 'name' | 'environment' | 'case_ids'> & Partial<Pick<PlanRecord,
-  'api_base_url' | 'web_base_url' | 'android_device_id' | 'android_package' | 'capture_screenshots' | 'web_headless' | 'web_viewport' | 'desktop_target' | 'desktop_start_delay_seconds' | 'agent_options'>>
+  'api_base_url' | 'api_environment_id' | 'web_base_url' | 'android_device_id' | 'android_package' | 'capture_screenshots' | 'web_headless' | 'web_viewport' | 'desktop_target' | 'desktop_start_delay_seconds' | 'agent_options'>>
 
 export interface AgentOptions {provider_config_id:string;max_rounds_per_step:number;max_rounds_per_case:number;model_timeout_seconds:number;case_timeout_seconds:number}
 export interface AgentTraceRecord {round?:number;operation?:string|null;brief_reason?:string;error?:string;verification_kind?:string;model?:{latency_ms:number;attempts:number};result?:{status:ResultStatus;detail?:string;assertions?:string[];evidence?:Record<string,unknown>};observation?:{screenshot?:ScreenshotEvidence}}
@@ -252,7 +254,7 @@ function socketBase() {
     : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`
 }
 
-async function request<T>(path: string, init?: RequestInit, authenticated = true): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit, authenticated = true): Promise<T> {
   let response: Response
   try {
     response = await fetch(`${API_BASE}${path}`, {
@@ -260,7 +262,8 @@ async function request<T>(path: string, init?: RequestInit, authenticated = true
       cache: 'no-store',
       headers: { 'Content-Type': 'application/json', ...(authenticated && operatorToken ? { 'X-Autorush-Operator-Token': operatorToken } : {}), ...init?.headers },
     })
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') throw error
     throw new Error('无法连接本地后端，请先启动 127.0.0.1:8000 上的服务。')
   }
   if (!response.ok) {

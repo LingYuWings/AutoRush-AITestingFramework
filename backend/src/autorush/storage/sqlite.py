@@ -100,11 +100,13 @@ class SqliteStore:
             rows = connection.execute("SELECT payload FROM plans ORDER BY rowid DESC").fetchall()
         return [PlanRecord.model_validate_json(row[0]) for row in rows]
 
-    def set_plan_status(self, plan_id: UUID, status: PlanStatus) -> PlanRecord | None:
+    def set_plan_status(self, plan_id: UUID, status: PlanStatus, *, api_environment_snapshot_id=None) -> PlanRecord | None:
         plan = self.get_plan(plan_id)
         if plan is None:
             return None
-        updated = plan.model_copy(update={"status": status})
+        updates = {"status": status}
+        if api_environment_snapshot_id is not None: updates['api_environment_snapshot_id'] = api_environment_snapshot_id
+        updated = plan.model_copy(update=updates)
         with self._connect() as connection:
             connection.execute(
                 "UPDATE plans SET status = ?, payload = ? WHERE id = ?",

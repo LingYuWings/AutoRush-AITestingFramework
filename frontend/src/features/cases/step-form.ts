@@ -6,6 +6,7 @@ export type EditableStep = {
   targetBy:'role'|'label'|'test_id'|'css'|'resource_id'|'text'|'description'; targetValue:string; targetName:string
   input:string; alwaysRun:boolean; assertions:EditableAssertion[]; x:string; y:string; button:string; clicks:string
   waitState:string; timeout:string
+  apiParameters?:Record<string,unknown>
 }
 export const newAssertion=():EditableAssertion=>({id:crypto.randomUUID(),kind:'status_code',expected:'200',path:''})
 export const newStep=():EditableStep=>({id:crypto.randomUUID(),intent:'',driver:'api',operation:'api.request',method:'GET',path:'/',
@@ -40,6 +41,8 @@ function expected(item:EditableAssertion):unknown {
   return item.expected
 }
 export function compileEditableStep(step:EditableStep,index:number):StepSpec {
+  if(step.apiParameters)return {order:index+1,intent:step.intent.trim(),driver:'api',operation:'api.request',parameters:step.apiParameters,always_run:step.alwaysRun,
+    assertions:step.assertions.map(a=>({kind:a.kind,expected:expected(a),...(a.kind==='json_field_equals'?{path:a.path}:{})}))}
   let parameters:Record<string,unknown>={}
   const op=step.operation
   if(step.driver==='api') parameters={method:step.method,path:step.path,
@@ -64,6 +67,7 @@ export function editCompiledStep(step:StepSpec):EditableStep {
   const p=step.parameters,t=(p.target??{}) as Record<string,unknown>
   const targetBy=(['role','label','test_id','css','resource_id','text','description'].find(k=>k in t)??'role') as EditableStep['targetBy']
   return {...newStep(),id:crypto.randomUUID(),intent:step.intent,driver:step.driver,operation:step.operation,
+    ...(step.driver==='api'&&(p.request_snapshot_id||p.request)?{apiParameters:p}:{}),
     method:String(p.method??'GET'),path:String(p.path??'/'),targetBy,targetValue:String(t[targetBy]??''),targetName:String(t.name??''),
     queryJson:p.query===undefined?'':JSON.stringify(p.query,null,2),bodyJson:step.operation==='android.swipe'?JSON.stringify(p):p.json===undefined?'':JSON.stringify(p.json,null,2),
     input:Array.isArray(p.keys)?p.keys.join(','):String(p.text??p.value??p.key??''),alwaysRun:step.always_run,

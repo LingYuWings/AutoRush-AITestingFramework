@@ -13,6 +13,8 @@ class ActionResult:
     output: Any
     summary: str
     evidence: dict[str, Any] = field(default_factory=dict)
+    checks: list[tuple[bool, str]] = field(default_factory=list)
+    status: str | None = None
 
 
 class DriverBlockedError(RuntimeError):

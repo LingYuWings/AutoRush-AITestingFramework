@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react'
 const backendPort = Number(process.env.AUTORUSH_BACKEND_PORT || 8000)
 
 export default defineConfig({
+  cacheDir: process.env.AUTORUSH_VITE_CACHE_DIR || undefined,
   base: './',
   plugins: [react()],
   server: {

@@ -46,6 +46,7 @@ class AgentRunner:
         await notify(self.checkpoint,json.loads(json.dumps(progress,ensure_ascii=False)))
 
     async def run_case(self,case):
+        self.executor.begin_case()
         self.results=[];self.active=None;self.case_used=[0]
         try:
             async with asyncio.timeout(self.options.case_timeout_seconds):
@@ -80,6 +81,17 @@ class AgentRunner:
         return CaseResult(case_id=case.id,title=case.title,status=status,steps=self.results)
 
     async def run_step(self,case,step):
+        from autorush.api_testing.nodes import resolve_ui_step
+        from autorush.api_testing.variables import ApiBlocked
+        if step.driver == 'api' and step.operation == 'api.request':
+            self.active = {'order': step.order, 'intent': step.intent, 'expected_result': step.expected_result,
+                'kind': 'api', 'traces': []}
+            await self.save(case)
+            return await self.executor.execute_step(step, capture_evidence=False)
+        try:
+            step = resolve_ui_step(step, self.drivers, model_context=True)
+        except ApiBlocked as exc:
+            return StepResult(order=step.order, intent=step.intent, status=ResultStatus.BLOCKED, detail=str(exc))
         traces=[];history=[];feedback='';repeats=0;last_signature=None;failed_verifications=0
         self.active={'order':step.order,'intent':step.intent,'expected_result':step.expected_result,'traces':traces}
         def finish(status,detail,*,evidence=None,assertions=None,verification_kind=None):

@@ -5,8 +5,14 @@ import {EmptyState,ResultBar,StatusBadge} from '../components/ui'
 import {countStatuses,date,resultOrder,shortId,statusLabel} from '../shared/format'
 import StepScreenshot from '../components/StepScreenshot'
 import AgentTrace from '../features/runs/AgentTrace'
+import {ApiEvidence} from '../features/api-testing/ResponsePanel'
 
 type CaseResult=RunRecord['cases'][number]
+
+function RawEvidence({value}:{value:unknown}) {
+  const [open,setOpen]=useState(false)
+  return <details className="raw-evidence" onToggle={event=>setOpen(event.currentTarget.open)}><summary>原始证据 JSON</summary>{open&&<pre className="evidence-preview">{JSON.stringify(value,null,2)}</pre>}</details>
+}
 
 function CaseSection({item,index,title,authEpoch,onlyIssues}:{item:CaseResult;index:number;title:string;authEpoch:number;onlyIssues:boolean}) {
   const steps=onlyIssues?item.steps.filter(step=>step.status!=='passed'):item.steps
@@ -25,7 +31,8 @@ function CaseSection({item,index,title,authEpoch,onlyIssues}:{item:CaseResult;in
         {step.assertions.length>0&&<ul className="timeline-assertions">{step.assertions.map((assertion,k)=><li key={k}>{assertion}</li>)}</ul>}
         {step.evidence&&<StepScreenshot key={authEpoch} evidence={step.evidence}/>}
         {step.evidence&&<AgentTrace evidence={step.evidence} authEpoch={authEpoch}/>}
-        {step.evidence&&Object.keys(step.evidence).length>0&&<details className="raw-evidence"><summary>原始证据 JSON</summary><pre className="evidence-preview">{JSON.stringify(step.evidence,null,2)}</pre></details>}
+        {Boolean(step.evidence?.api)&&<ApiEvidence value={step.evidence.api}/>}
+        {step.evidence&&Object.keys(step.evidence).length>0&&<RawEvidence value={step.evidence}/>}
       </div>
     </li>)}</ol>:<p className="quiet-note report-case-empty">所有步骤均已通过。</p>}
   </section>

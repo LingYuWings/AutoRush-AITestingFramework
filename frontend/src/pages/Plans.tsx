@@ -3,6 +3,8 @@ import { Globe, Monitor, Play, Plus, RotateCcw, Search, Server, ShieldCheck, Sma
 import { api, type AgentExecution,type ProviderConfig,type CaseRecord, type DesktopTarget, type PlanPayload, type PlanRecord, type RunRecord } from '../shared/api'
 import AgentProgress from '../features/runs/AgentProgress'
 import { buildPlanPayload } from '../features/plans/target-form'
+import {apiTesting} from '../features/api-testing/client'
+import type {CollectionRecord} from '../features/api-testing/types'
 import { DriverChip, EmptyState, PageHeader, Pagination, ResultBar, StatusBadge, usePaged } from '../components/ui'
 import { driversOf, relative, shortId } from '../shared/format'
 
@@ -18,6 +20,8 @@ export default function Plans({ plans, cases, runs, onCreate, onReady, onRun }: 
   const [name, setName] = useState('')
   const [environment, setEnvironment] = useState('测试环境')
   const [apiBase, setApiBase] = useState('')
+  const [apiEnvironmentId,setApiEnvironmentId]=useState('')
+  const [apiEnvironments,setApiEnvironments]=useState<CollectionRecord[]>([])
   const [webBase, setWebBase] = useState('')
   const [deviceId, setDeviceId] = useState('')
   const [androidPackage, setAndroidPackage] = useState('')
@@ -55,6 +59,7 @@ export default function Plans({ plans, cases, runs, onCreate, onReady, onRun }: 
     finally{setConnectingAgent(false)}
   }
   useEffect(()=>{void loadModels()},[editing])
+  useEffect(()=>{if(editing)void apiTesting.environments().then(setApiEnvironments).catch(cause=>setFormError(String(cause)))},[editing])
   useEffect(()=>{
     if(!monitoring||!executions.some(e=>['running','stopping'].includes(e.state)))return
     let disposed=false
@@ -98,7 +103,7 @@ export default function Plans({ plans, cases, runs, onCreate, onReady, onRun }: 
   }
   const submit = async (event: React.FormEvent) => {
     event.preventDefault(); setSaving(true)
-    try { if (await onCreate(buildPlanPayload({name,environment,selected,apiBase,webBase,deviceId,androidPackage,captureScreenshots:hasDesktop||captureScreenshots,
+    try { if (await onCreate(buildPlanPayload({name,environment,selected,apiBase,apiEnvironmentId,webBase,deviceId,androidPackage,captureScreenshots:hasDesktop||captureScreenshots,
       webHeadless,viewportWidth,viewportHeight,desktopTarget:windows.find(w=>String(w.hwnd)===windowId)||null,desktopDelay,
       agentOptions:{provider_config_id:providerId,max_rounds_per_step:rounds,max_rounds_per_case:caseRounds,model_timeout_seconds:modelTimeout,case_timeout_seconds:caseTimeout}},selectedCases))) { setEditing(false); setName(''); setSelected([]); setCaptureScreenshots(true);setFormError('') } }
     catch(cause){setFormError(cause instanceof Error?cause.message:'计划参数无效')}
@@ -142,6 +147,7 @@ export default function Plans({ plans, cases, runs, onCreate, onReady, onRun }: 
         <p className="form-section-label">目标环境</p>
         <div className="field-grid">
           <label className="field"><span>API 基础地址</span><input className="mono-input" value={apiBase} onChange={event => setApiBase(event.target.value)} placeholder="https://api.example.test" /></label>
+          <label className="field"><span>API 变量环境</span><select value={apiEnvironmentId} onChange={event=>setApiEnvironmentId(event.target.value)}><option value="">无环境</option>{apiEnvironments.map(item=><option key={item.id} value={item.id}>{item.name} · v{item.version}</option>)}</select><small>就绪时固定环境快照。完整 URL 的 API 节点可不填基础地址。</small></label>
           <label className="field"><span>Web 基础地址</span><input className="mono-input" value={webBase} onChange={event => setWebBase(event.target.value)} placeholder="https://app.example.test" /></label>
           <label className="field"><span>Android 设备 ID</span><input className="mono-input" value={deviceId} onChange={event => setDeviceId(event.target.value)} placeholder="从 Android 设备页复制 UUID" /></label>
           <label className="field"><span>Android App 包名</span><input className="mono-input" value={androidPackage} onChange={event => setAndroidPackage(event.target.value)} placeholder="com.example.app" /></label>
