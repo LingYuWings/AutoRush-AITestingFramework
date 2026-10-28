@@ -89,7 +89,7 @@ class AgentRunner:
             await self.save(case)
             return await self.executor.execute_step(step, capture_evidence=False)
         try:
-            step = resolve_ui_step(step, self.drivers)
+            step = resolve_ui_step(step, self.drivers, model_context=True)
         except ApiBlocked as exc:
             return StepResult(order=step.order, intent=step.intent, status=ResultStatus.BLOCKED, detail=str(exc))
         traces=[];history=[];feedback='';repeats=0;last_signature=None;failed_verifications=0

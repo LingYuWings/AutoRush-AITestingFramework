@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 import json
 import shlex
-from urllib.parse import parse_qsl
+from urllib.parse import parse_qsl, quote_plus, urlencode, urlsplit, urlunsplit
 
 from autorush.api_testing.models import ApiRequest
 from autorush.api_testing.variables import PLACEHOLDER, SENSITIVE, redact
@@ -91,6 +91,7 @@ def import_curl(command):
     tokens = shlex.split(command.replace('\\\r\n', '').replace('\\\n', '').replace('^\r\n', ''))
     if not tokens or tokens.pop(0).lower() not in {'curl', 'curl.exe'}: raise ValueError('expected a cURL command')
     spec, body, explicit_method = {'name': 'Imported cURL', 'headers': [], 'query': []}, None, False
+    get_data = False
     index = 0
     value_options = {'-X', '--request', '-H', '--header', '-d', '--data', '--data-raw', '--data-binary',
         '--data-urlencode', '-u', '--user', '--url', '--max-time'}
@@ -112,19 +113,26 @@ def import_curl(command):
             elif token == '--max-time': spec['timeout_ms'] = int(float(value) * 1000)
             elif token == '--data-urlencode':
                 if '@' in value.split('=', 1)[0]: raise ValueError('cURL local file references are not read')
-                key, _, val = value.partition('='); spec['query'].append({'key': key, 'value': val})
+                key, separator, val = value.partition('=')
+                encoded = key + '=' + quote_plus(val) if separator else quote_plus(key)
+                body = encoded if body is None else body + '&' + encoded
             else:
                 if value.startswith('@'): raise ValueError('cURL local file references are not read')
                 body = value if body is None else body + '&' + value
         elif token in {'-L', '--location'}: spec['follow_redirects'] = True
         elif token in {'-I', '--head'}: spec['method'] = 'HEAD'; explicit_method = True
+        elif token in {'-G', '--get'}: get_data = True
         elif token in {'--compressed', '-s', '--silent', '--show-error', '-S'}: pass
         elif token.startswith(('http://', 'https://', '{{')) and 'url' not in spec: spec['url'] = token
         else: raise ValueError('unsupported cURL option or shell syntax')
     if not spec.get('url'): raise ValueError('cURL URL is required')
+    if body is not None and get_data:
+        spec['query'].extend({'key': key, 'value': value} for key, value in parse_qsl(body, keep_blank_values=True))
+        body = None
     if body is not None:
         json_type = any(header['key'].lower() == 'content-type' and 'json' in header['value'] for header in spec['headers'])
-        spec['body'] = {'mode': 'json' if json_type else 'raw', 'text': body}
+        content_type = next((header['value'] for header in spec['headers'] if header['key'].lower() == 'content-type'), 'application/x-www-form-urlencoded')
+        spec['body'] = {'mode': 'json' if json_type else 'raw', 'text': body, 'content_type': content_type}
         if not explicit_method: spec['method'] = 'POST'
     return ApiRequest.model_validate(spec).model_dump()
 
@@ -177,20 +185,27 @@ def export_postman(collection, requests):
 
 def export_curl(request):
     spec = export_safe(request)
-    tokens = ['curl', '-X', spec['method'], spec['url']]
-    for item in spec['query']:
-        if item['enabled']: raise ValueError('cURL export requires query parameters in the URL; use Postman export for this request')
+    parts = urlsplit(spec['url'])
+    query = parse_qsl(parts.query, keep_blank_values=True) + [(item['key'], item['value']) for item in spec['query'] if item['enabled']]
+    auth = spec['auth']
+    if auth['type'] == 'api_key' and auth['location'] == 'query':
+        query = [(key, value) for key, value in query if key != auth['key']] + [(auth['key'], auth['value'])]
+    url = urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query, safe='{}'), parts.fragment))
+    tokens = ['curl', '-X', spec['method'], url]
     for item in spec['headers']:
         if item['enabled']: tokens.extend(['-H', item['key'] + ': ' + item['value']])
-    auth = spec['auth']
     if auth['type'] == 'basic': tokens.extend(['-u', auth['username'] + ':' + auth['password']])
     elif auth['type'] == 'bearer': tokens.extend(['-H', 'Authorization: Bearer ' + auth['token']])
     elif auth['type'] == 'api_key':
-        if auth['location'] == 'query': raise ValueError('use Postman export for API keys in query parameters')
-        tokens.extend(['-H', auth['key'] + ': ' + auth['value']])
+        if auth['location'] == 'header': tokens.extend(['-H', auth['key'] + ': ' + auth['value']])
     if spec['body']['mode'] in {'json', 'raw'}:
         if spec['body']['mode'] == 'json': tokens.extend(['-H', 'Content-Type: application/json'])
+        elif not any(item['enabled'] and item['key'].lower() == 'content-type' for item in spec['headers']):
+            tokens.extend(['-H', 'Content-Type: ' + spec['body']['content_type']])
         tokens.extend(['--data-raw', spec['body']['text']])
+    elif spec['body']['mode'] == 'urlencoded':
+        tokens.extend(['-H', 'Content-Type: application/x-www-form-urlencoded', '--data-raw',
+            urlencode([(field['key'], field['value']) for field in spec['body']['fields'] if field['enabled']])])
     elif spec['body']['mode'] != 'none': raise ValueError('use Postman export for uploads or form bodies')
     if spec['follow_redirects']: tokens.append('-L')
     return shlex.join(tokens)

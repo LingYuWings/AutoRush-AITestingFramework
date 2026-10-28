@@ -9,6 +9,11 @@ import {ApiEvidence} from '../features/api-testing/ResponsePanel'
 
 type CaseResult=RunRecord['cases'][number]
 
+function RawEvidence({value}:{value:unknown}) {
+  const [open,setOpen]=useState(false)
+  return <details className="raw-evidence" onToggle={event=>setOpen(event.currentTarget.open)}><summary>原始证据 JSON</summary>{open&&<pre className="evidence-preview">{JSON.stringify(value,null,2)}</pre>}</details>
+}
+
 function CaseSection({item,index,title,authEpoch,onlyIssues}:{item:CaseResult;index:number;title:string;authEpoch:number;onlyIssues:boolean}) {
   const steps=onlyIssues?item.steps.filter(step=>step.status!=='passed'):item.steps
   const issues=item.steps.filter(step=>step.status!=='passed').length
@@ -27,7 +32,7 @@ function CaseSection({item,index,title,authEpoch,onlyIssues}:{item:CaseResult;in
         {step.evidence&&<StepScreenshot key={authEpoch} evidence={step.evidence}/>}
         {step.evidence&&<AgentTrace evidence={step.evidence} authEpoch={authEpoch}/>}
         {Boolean(step.evidence?.api)&&<ApiEvidence value={step.evidence.api}/>}
-        {step.evidence&&Object.keys(step.evidence).length>0&&<details className="raw-evidence"><summary>原始证据 JSON</summary><pre className="evidence-preview">{JSON.stringify(step.evidence,null,2)}</pre></details>}
+        {step.evidence&&Object.keys(step.evidence).length>0&&<RawEvidence value={step.evidence}/>}
       </div>
     </li>)}</ol>:<p className="quiet-note report-case-empty">所有步骤均已通过。</p>}
   </section>

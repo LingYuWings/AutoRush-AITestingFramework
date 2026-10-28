@@ -3,18 +3,33 @@ from __future__ import annotations
 import asyncio
 import base64
 from dataclasses import dataclass
+from copy import deepcopy
 import json
 import time
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import parse_qsl, urljoin, urlsplit
 
 import httpx
 
 from autorush.api_testing.models import ApiRequest, ApiAssertion, Extraction
-from autorush.api_testing.variables import ApiBlocked, SENSITIVE, json_field, redact, substitute, variable_values
+from autorush.api_testing.variables import ApiBlocked, SENSITIVE, json_field, redact, secret_strings, substitute, variable_values
 
 MAX_RESPONSE = 1048576
 MAX_REQUEST = 1048576
 FORBIDDEN_HEADERS = {'host', 'content-length', 'transfer-encoding', 'connection', 'proxy-authorization', 'upgrade'}
+
+
+def bounded_evidence(value, limit=65536):
+    """Keep summaries bounded; checks and extraction still use the full response."""
+    stored = deepcopy(value)
+    response = stored.get('response')
+    if response:
+        body = response.get('body')
+        text = body if isinstance(body, str) else json.dumps(body, ensure_ascii=False)
+        if len(text.encode()) > limit:
+            response['body'] = text.encode()[:limit].decode(errors='ignore')
+            response['history_truncated'] = True
+        response['text'] = response.get('text', '').encode()[:limit].decode(errors='ignore')
+    return stored
 
 
 @dataclass
@@ -118,6 +133,13 @@ class ApiEngine:
             if any('\r' in str(value) or '\n' in str(value) or '\x00' in str(value)
                    for item in headers for value in item): raise ApiBlocked('invalid header characters')
             query = [(item['key'], str(item['value'])) for item in resolved['query'] if item['enabled'] and item['key']]
+            self.secrets.update(secret_strings(dict(headers)))
+            for key, value in [*parse_qsl(str(urlsplit(url).query), keep_blank_values=True), *query]:
+                if SENSITIVE.search(str(key)) and value: self.secrets.add(str(value))
+            self.secrets.update(secret_strings(json_body))
+            for field in resolved['body']['fields']:
+                if field['enabled'] and SENSITIVE.search(field['key']) and field['value']:
+                    self.secrets.add(str(field['value']))
             url = httpx.URL(url)
             for key, value in query: url = url.copy_add_param(key, value)
             if auth['type'] != 'none': headers = [(key, value) for key, value in headers if key.lower() != 'authorization']
@@ -187,6 +209,8 @@ class ApiEngine:
             text = content.decode(encoding, errors='replace')
             try: parsed_body = json.loads(text)
             except ValueError: parsed_body = text
+            self.secrets.update(secret_strings(parsed_body))
+            self.secrets.update(secret_strings(response_headers))
             elapsed = (time.perf_counter() - started) * 1000
             output = {'status_code': status_code, 'body': parsed_body, 'text': text,
                 'headers': response_headers, 'elapsed_ms': elapsed, 'bytes': len(content), 'url': str(url)}

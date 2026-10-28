@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from urllib.parse import urlsplit
 import httpx
-from autorush.api_testing.engine import ApiEngine, validate_url
+from autorush.api_testing.engine import ApiEngine, bounded_evidence, validate_url
 from autorush.api_testing.models import ApiRequest
 from autorush.api_testing.nodes import request_snapshot
 from autorush.api_testing.variables import redact, variable_values
@@ -28,11 +28,14 @@ class HttpApiDriver:
     @property
     def runtime_variables(self): return self._engine.variables
 
+    @property
+    def runtime_secrets(self): return frozenset(self._engine.secrets)
+
     def begin_case(self): self._engine.reset()
 
     def sanitize_result(self, result):
         data = result.model_dump()
-        for key in ['detail', 'assertions', 'evidence']: data[key] = redact(data[key], self._engine.secrets)
+        for key in ['intent', 'detail', 'assertions', 'evidence']: data[key] = redact(data[key], self._engine.secrets)
         return result.model_validate(data)
 
     async def execute(self, step: StepSpec) -> ActionResult:
@@ -62,7 +65,7 @@ class HttpApiDriver:
         public = execution.public
         output = ({key: execution.output[key] for key in ['status_code', 'body'] if key in execution.output}
                   if legacy else execution.output)
-        return ActionResult(output=output, summary=public['detail'], evidence={'api': public},
+        return ActionResult(output=output, summary=public['detail'], evidence={'api': bounded_evidence(public)},
             checks=execution.checks, status=public['status'] if public['status'] != 'passed' else None)
 
     async def observe(self):

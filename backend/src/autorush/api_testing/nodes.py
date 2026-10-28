@@ -48,12 +48,17 @@ def needs_base_url(step, store):
     return spec is None or spec.url.startswith('/')
 
 
-def resolve_ui_step(step, drivers):
+def resolve_ui_step(step, drivers, *, model_context=False):
     variables = getattr(drivers.get('api'), 'runtime_variables', {})
     if not variables and '{{' not in str(step.parameters) + step.intent + (step.expected_result or ''): return step
     value = step.model_dump()
     value['intent'] = str(substitute(value['intent'], variables))
     if value['expected_result']: value['expected_result'] = str(substitute(value['expected_result'], variables))
+    if model_context:
+        instructions = value['intent'] + (value['expected_result'] or '')
+        secrets = getattr(drivers.get('api'), 'runtime_secrets', ())
+        if any(secret and str(secret) in instructions for secret in secrets):
+            raise ApiBlocked('sensitive API values cannot be included in model instructions')
     value['parameters'] = substitute(value['parameters'], variables)
     value['assertions'] = substitute(value['assertions'], variables)
     for key in ['text', 'value']:

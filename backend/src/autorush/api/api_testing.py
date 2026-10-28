@@ -7,7 +7,7 @@ from pydantic import ValidationError
 
 from autorush.api_testing.models import ApiRequest, Collection, Environment, ExecuteRequest, CollectionRun
 from autorush.api_testing.store import ApiStore
-from autorush.api_testing.engine import ApiEngine
+from autorush.api_testing.engine import ApiEngine, bounded_evidence
 from autorush.api_testing.variables import ApiBlocked, variable_values
 
 
@@ -52,14 +52,7 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
 
     def save_result(value, request_id=None, replay=None):
         value = {**value, 'request_id': request_id}
-        stored = deepcopy(value)
-        response = stored.get('response')
-        if response:
-            body_text = json.dumps(response['body'], ensure_ascii=False) if not isinstance(response['body'], str) else response['body']
-            if len(body_text.encode()) > 65536:
-                response['body'] = body_text.encode()[:65536].decode(errors='ignore')
-                response['history_truncated'] = True
-            response['text'] = response['text'].encode()[:65536].decode(errors='ignore')
+        stored = bounded_evidence(value)
         record = store.save_history(stored, replay)
         return {**value, 'id': record['id'], 'created_at': record['created_at']}
 

@@ -72,6 +72,28 @@ def json_field(value, path):
     return value
 
 
+def secret_strings(value):
+    """Collect named credentials so echoes outside named fields stay redacted."""
+    found = set()
+    def leaves(item):
+        if isinstance(item, dict):
+            for child in item.values(): leaves(child)
+        elif isinstance(item, (list, tuple)):
+            for child in item: leaves(child)
+        elif item is not None and str(item): found.add(str(item))
+    def visit(item):
+        if isinstance(item, dict):
+            for key, child in item.items():
+                if SENSITIVE.search(str(key)): leaves(child)
+                else: visit(child)
+        elif isinstance(item, (list, tuple)):
+            for child in item: visit(child)
+    visit(value)
+    for item in tuple(found):
+        if item.lower().startswith(('bearer ', 'basic ')): found.add(item.split(' ', 1)[1])
+    return found
+
+
 def redact(value, secrets=()):
     if isinstance(value, dict):
         return {key: '[redacted]' if SENSITIVE.search(str(key)) else redact(item, secrets) for key, item in value.items()}

@@ -1,4 +1,4 @@
-import {useState} from 'react'
+import {useEffect,useRef,useState} from 'react'
 import type {ApiRequest,ApiAssertion,BodyField,CollectionRecord,Extraction} from './types'
 import {newBodyField} from './types'
 import {PairsEditor,VariablesEditor} from './Fields'
@@ -46,6 +46,8 @@ export default function RequestEditor({value,onChange,collections=[]}:{value:Api
 function AssertionRow({value,onChange,onRemove}:{value:ApiAssertion;onChange:(value:ApiAssertion)=>void;onRemove:()=>void}){
   const stringify=(input:unknown)=>typeof input==='string'?input:JSON.stringify(input)
   const [text,setText]=useState(stringify(value.expected))
-  function expected(text:string){setText(text);try{onChange({...value,expected:JSON.parse(text)})}catch{onChange({...value,expected:text})}}
+  const lastExpected=useRef(value.expected)
+  useEffect(()=>{if(!Object.is(lastExpected.current,value.expected)){lastExpected.current=value.expected;setText(stringify(value.expected))}},[value.expected])
+  function expected(text:string){setText(text);let result:unknown=text;try{result=JSON.parse(text)}catch{/* Keep partially typed values editable. */}lastExpected.current=result;onChange({...value,expected:result})}
   return <div className="api-assertion"><select aria-label="API 断言类型" value={value.kind} onChange={e=>{const kind=e.target.value as ApiAssertion['kind'];const initial=kind==='status_code'?200:kind==='response_time_less_than'?1000:kind==='json_field_exists'?true:'';setText(stringify(initial));onChange({...value,kind,expected:initial})}}>{Object.entries(assertionLabels).map(([id,label])=><option key={id} value={id}>{label}</option>)}</select>{['json_field_equals','json_field_exists','header_equals'].includes(value.kind)&&<input aria-label="API 断言路径" value={value.path??''} placeholder={value.kind==='header_equals'?'Content-Type':'$.data[0].id'} onChange={e=>onChange({...value,path:e.target.value})}/>}<input aria-label="API 断言预期值" value={text??''} onChange={e=>expected(e.target.value)} placeholder="预期值（JSON 或文本）"/><button type="button" className="icon-button" aria-label="删除 API 断言" onClick={onRemove}>×</button></div>
 }
