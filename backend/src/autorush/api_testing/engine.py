@@ -96,7 +96,7 @@ class ApiEngine:
         self.variables = dict(self.initial_variables)
         self.cookies = httpx.Cookies()
 
-    async def execute(self, spec: ApiRequest) -> ApiExecution:
+    async def execute(self, spec: ApiRequest, *, inherited_variables=None) -> ApiExecution:
         started = time.perf_counter()
         request_evidence = {'method': spec.method, 'url': spec.url}
         output, checks = {}, []
@@ -108,7 +108,7 @@ class ApiEngine:
                 raise ApiBlocked('review imported incompatibilities before executing: ' + '; '.join(spec.compatibility_warnings)[:700])
             local, secrets = variable_values([item.model_dump() for item in spec.variables])
             self.secrets.update(secrets)
-            variables = {**self.variables, **local}
+            variables = {**(inherited_variables or {}), **self.variables, **local}
             for key, value in variables.items():
                 if SENSITIVE.search(key) and value is not None: self.secrets.add(str(value))
             # Parse JSON before interpolation, preserving types in exact placeholders.
@@ -221,7 +221,7 @@ class ApiEngine:
                     value = json_field(parsed_body, extraction.path) if extraction.source == 'json' else (
                         response_headers[extraction.path.lower()] if extraction.source == 'header' else self.cookies[extraction.path])
                     extracted[extraction.key] = value
-                    if extraction.secret or SENSITIVE.search(extraction.key): self.secrets.add(str(value))
+                    if extraction.secret or SENSITIVE.search(extraction.key): self.secrets.update(secret_strings({'secret': value}))
                 except (KeyError, IndexError, TypeError):
                     if extraction.required: checks.append((False, 'extraction missing: ' + extraction.key))
             passed = all(ok for ok, _ in checks)

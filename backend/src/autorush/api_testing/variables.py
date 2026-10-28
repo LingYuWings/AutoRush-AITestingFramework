@@ -28,7 +28,7 @@ def variable_values(items):
             secrets.add(str(value))
         if item.get('secret') or SENSITIVE.search(item['key']):
             if value is not None:
-                secrets.add(str(value))
+                secrets.update(secret_strings({'secret': value}))
         values[item['key']] = value
     return values, secrets
 
@@ -119,4 +119,6 @@ def redact(value, secrets=()):
                 pass
         for secret in sorted((str(item) for item in secrets if item), key=len, reverse=True):
             value = value.replace(secret, '[redacted]')
+    if value is not None and not isinstance(value, (dict, list, tuple, str)) and str(value) in secrets:
+        return '[redacted]'
     return value

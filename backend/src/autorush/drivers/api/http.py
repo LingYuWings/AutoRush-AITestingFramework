@@ -58,9 +58,8 @@ class HttpApiDriver:
         elif spec.url.startswith('/') and self._base_url:
             spec = spec.model_copy(update={'url': self._base_url.rstrip('/') + '/' + spec.url.lstrip('/')})
         values, secrets = variable_values(inherited)
-        self._engine.variables = {**values, **self._engine.variables}
         self._engine.secrets.update(secrets)
-        execution = await self._engine.execute(spec)
+        execution = await self._engine.execute(spec, inherited_variables=values)
         self._last_output = execution.output
         public = execution.public
         output = ({key: execution.output[key] for key in ['status_code', 'body'] if key in execution.output}

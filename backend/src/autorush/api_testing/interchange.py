@@ -6,7 +6,7 @@ import shlex
 from urllib.parse import parse_qsl, quote_plus, urlencode, urlsplit, urlunsplit
 
 from autorush.api_testing.models import ApiRequest
-from autorush.api_testing.variables import PLACEHOLDER, SENSITIVE, redact
+from autorush.api_testing.variables import PLACEHOLDER, SENSITIVE, redact, secret_strings
 
 SCHEMA = 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json'
 
@@ -68,7 +68,11 @@ def import_postman(content):
             own = raw.get('x-autorush', {})
             if own.get('version') == 1:
                 own_spec = ApiRequest.model_validate(own['request'])
-                spec = own_spec.model_copy(update={'collection_id': None, 'name': prefix + str(item.get('name', own_spec.name))})
+                spec = ApiRequest.model_validate({**own_spec.model_dump(), 'collection_id': None,
+                    'name': prefix + str(item.get('name', own_spec.name)), 'method': raw.get('method', 'GET').upper(),
+                    'url': url_text, 'query': query, 'headers': pairs(raw.get('header', [])),
+                    'auth': from_auth(raw.get('auth', inherited_auth) or {}), 'body': converted,
+                    'compatibility_warnings': list(dict.fromkeys([*own_spec.compatibility_warnings, *compatibility]))})
             else:
                 try:
                     spec = ApiRequest.model_validate({'name': prefix + str(item.get('name', 'Imported request')),
@@ -139,6 +143,12 @@ def import_curl(command):
 
 def export_safe(spec):
     value = deepcopy(spec)
+    secrets = set()
+    for key in ['password', 'token', 'value']:
+        actual = spec.get('auth', {}).get(key)
+        if actual and not PLACEHOLDER.fullmatch(str(actual)): secrets.add(str(actual))
+    for item in spec.get('variables', []):
+        if item.get('secret') or SENSITIVE.search(item['key']): secrets.update(secret_strings({'secret': item['value']}))
     value['url'] = redact(value.get('url', ''))
     auth = value.get('auth', {})
     for key in ['password', 'token', 'value']:
@@ -150,8 +160,12 @@ def export_safe(spec):
     for item in value.get('variables', []):
         if item.get('secret') or SENSITIVE.search(item['key']): item['value'] = ''
     body = value.get('body', {})
+    for field in body.get('fields', []):
+        if SENSITIVE.search(field['key']) and not PLACEHOLDER.fullmatch(field['value']): field['value'] = '[redacted]'
+        else: field['value'] = redact(field['value'], secrets)
+    if body.get('mode') == 'raw': body['text'] = redact(body.get('text', ''), secrets)
     if body.get('mode') == 'json':
-        try: body['text'] = json.dumps(redact(json.loads(body['text'])), ensure_ascii=False)
+        try: body['text'] = json.dumps(redact(json.loads(body['text']), secrets), ensure_ascii=False)
         except ValueError: pass
     return value
 
