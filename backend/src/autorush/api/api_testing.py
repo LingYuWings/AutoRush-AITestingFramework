@@ -27,6 +27,11 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
         if not trusted_local_request(request):
             raise HTTPException(403, 'API testing requires a trusted local operator')
 
+    from autorush.api_testing.runner import ApiRunner
+    from autorush.api.api_runner import create_runner_router
+    router.api_runner = ApiRunner(store, tree, settings.allowed_api_hosts)
+    router.include_router(create_runner_router(router.api_runner, authorize))
+
     def parse_model(schema, payload):
         try:
             return schema.model_validate(payload)
@@ -73,6 +78,13 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
             if not task.done():
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
+
+    @router.post('/datasets/preview')
+    def preview_dataset(request: Request, payload: dict = Body(...), x_autorush_operator_token: str | None = Header(default=None)):
+        authorize(request, x_autorush_operator_token)
+        from autorush.api_testing.datasets import dataset_preview
+        try: return dataset_preview(payload.get('format'), payload.get('content'))
+        except (ValueError, UnicodeError) as exc: raise HTTPException(422, str(exc)) from None
 
     @router.post('/tree/reorder')
     def reorder_tree(request: Request, payload: dict = Body(...), x_autorush_operator_token: str | None = Header(default=None)):
@@ -131,18 +143,20 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
                 values, secrets = runtime_variables(ApiRequest(collection_id=collection_id), command.environment_id, command.variables)
             except ApiBlocked as exc:
                 return {'status': 'blocked', 'results': [], 'detail': str(exc)}
-            engine = ApiEngine(settings.allowed_api_hosts, variables=values, secret_values=secrets)
-            results, stopped = [], False
-            async with asyncio.timeout(180):
-                for item in requests:
-                    if stopped:
-                        results.append({'request_id': item['id'], 'name': item['name'], 'status': 'skipped'})
-                        continue
-                    spec = ApiRequest.model_validate(configuration(item))
-                    replay = {'request': spec.model_dump(), 'variables': deepcopy(engine.variables), 'secret_values': list(engine.secrets)}
-                    result = await engine.execute(spec)
-                    results.append(save_result(result.public, item['id'], replay))
-                    stopped = command.stop_on_failure and result.public['status'] != 'passed'
+            from autorush.api_testing.runner import execute_sequence
+            snapshot = {'requests': [{'id': item['id'], 'version': item['version'], 'configuration': configuration(item)} for item in requests],
+                'rows': [{}], 'seed': values, 'secret_values': list(secrets), 'variables': {}, 'delay_ms': 0,
+                'stop_on_failure': command.stop_on_failure}
+            results = []
+            async def completed(public, request_id, replay): results.append(save_result(public, request_id, replay))
+            try:
+                async with asyncio.timeout(180):
+                    async for _ in execute_sequence(snapshot, settings.allowed_api_hosts, on_result=completed): pass
+            except TimeoutError:
+                current = requests[len(results)]
+                results.append({'request_id': current['id'], 'name': current['name'], 'status': 'blocked', 'detail': 'collection deadline exceeded'})
+            for item in requests[len(results):]:
+                results.append({'request_id': item['id'], 'name': item['name'], 'status': 'skipped'})
             status = next((status for status in ['error', 'failed', 'blocked'] if any(item['status'] == status for item in results)), 'passed')
             return {'status': status, 'results': results}
         return await until_disconnect(request, perform())

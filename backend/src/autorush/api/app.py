@@ -105,9 +105,11 @@ def create_app(
     async def lifespan(_):
         try:
             await agent_manager.recover_interrupted()
+            await app.state.api_runner.recover_interrupted()
             yield
         finally:
             await agent_manager.close()
+            await app.state.api_runner.close()
             await adb_screen_hub.close()
             await local_server.stop()
     app.router.lifespan_context = lifespan
@@ -776,7 +778,9 @@ def create_app(
         return FileResponse(path, media_type=media_types[report_format], filename=f"{run_id}.{suffixes[report_format]}")
 
     from autorush.api.api_testing import create_api_testing_router
-    app.include_router(create_api_testing_router(settings,require_operator,trusted_local_request))
+    api_testing_router = create_api_testing_router(settings,require_operator,trusted_local_request)
+    app.state.api_runner = api_testing_router.api_runner
+    app.include_router(api_testing_router)
     app.include_router(create_automation_router(settings,require_operator,trusted_local_request))
     app.include_router(create_model_catalog_router(settings,store,require_operator,trusted_local_request))
     app.include_router(create_agent_run_router(agent_manager,settings,store,device_hub,require_operator,trusted_local_request))
