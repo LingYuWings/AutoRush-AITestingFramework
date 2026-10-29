@@ -63,11 +63,14 @@ class ApiRunStore:
             and search.lower() in (' '.join([value['id'], value['name'], value['detail']])).lower()]
         return {'items': values[offset:offset+limit], 'total': len(values), 'offset': offset, 'limit': limit}
 
-    def append(self, run_id, seq, result):
+    def append(self, run_id, seq, result, *, progress=None):
         summary = {key: value for key, value in result.items() if key not in {'request', 'response', 'extracted'}}
         with self.vault.connect() as connection:
             connection.execute('INSERT INTO api_runner_steps VALUES(?,?,?,?)',
                 (run_id, seq, self.vault.encode(summary), self.vault.encode(result)))
+            if progress is not None:
+                connection.execute('UPDATE api_runner_runs SET state=?,payload=? WHERE id=?',
+                    (progress['state'], self.vault.encode(progress), run_id))
 
     def steps(self, run_id, offset=0, limit=50):
         with self.vault.connect() as connection:

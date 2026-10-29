@@ -2,6 +2,7 @@
 import csv
 import io
 import json
+import math
 import re
 
 from autorush.api_testing.variables import redact
@@ -15,7 +16,8 @@ def parse_dataset(format, content):
     content = content.removeprefix('\ufeff')
     if '\x00' in content or '\ufffd' in content: raise ValueError('dataset encoding is not supported; use UTF-8')
     if format == 'json':
-        try: rows = json.loads(content)
+        def invalid_constant(_): raise ValueError('nonfinite JSON number')
+        try: rows = json.loads(content, parse_constant=invalid_constant)
         except (ValueError, RecursionError): raise ValueError('dataset must be a valid JSON array of objects') from None
         if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
             raise ValueError('JSON dataset requires an array of objects')
@@ -37,6 +39,16 @@ def parse_dataset(format, content):
         except csv.Error as exc: raise ValueError(f'invalid CSV near line {reader.line_num}') from exc
     else: raise ValueError('dataset format must be csv or json')
     if not rows or len(rows) > 1000: raise ValueError('dataset requires 1..1000 rows')
+    stack = [(rows, 0)]
+    while stack:
+        value, depth = stack.pop()
+        if depth > 32: raise ValueError('dataset value nesting cannot exceed 32 levels')
+        if isinstance(value, dict): stack.extend((child, depth+1) for child in value.values())
+        elif isinstance(value, list): stack.extend((child, depth+1) for child in value)
+        elif isinstance(value, float) and not math.isfinite(value): raise ValueError('dataset numbers must be finite')
+        elif isinstance(value, str):
+            try: value.encode('utf-8')
+            except UnicodeError: raise ValueError('dataset contains invalid Unicode scalar values') from None
     columns = list(dict.fromkeys(key for row in rows for key in row))
     if not columns or len(columns) > 100 or any(not KEY.fullmatch(key) for key in columns):
         raise ValueError('dataset requires 1..100 columns with valid variable names')

@@ -9,7 +9,7 @@ import Cases from '../pages/Cases'
 import Plans from '../pages/Plans'
 import Reports from '../pages/Reports'
 import ReportPage from '../pages/ReportPage'
-import ApiWorkbench from '../features/api-testing/ApiWorkbench'
+import ApiWorkspace,{type ApiNavigationGuard} from '../features/api-testing/ApiWorkspace'
 import { BrandMark } from '../components/ui'
 import { scroller } from '../shared/scroll'
 import { shortId, statusLabel } from '../shared/format'
@@ -45,6 +45,10 @@ const initialTheme = (): Theme => {
 export default function App() {
   const [route, setRoute] = useState<Route>(() => parseRoute(location.hash))
   const routeRef = useRef(route)
+  const apiGuard=useRef<ApiNavigationGuard>(null)
+  const navigationIndex=useRef<number>(typeof history.state?.autorushIndex==='number'?history.state.autorushIndex:0)
+  const restoringHistory=useRef(false),bypassPopGuard=useRef(false),afterHistoryRestore=useRef<(()=>void)|null>(null)
+  const registerApiGuard=useCallback((guard:ApiNavigationGuard)=>{apiGuard.current=guard},[])
   const [cases, setCases] = useState<CaseRecord[]>([])
   const [plans, setPlans] = useState<PlanRecord[]>([])
   const [runs, setRuns] = useState<RunRecord[]>([])
@@ -62,10 +66,12 @@ export default function App() {
   const notify = (text: string, error = false) => setNotice({ text, error })
   const pushEvent = (event: LiveEvent) => setEvents(current => [event, ...current].slice(0, 30))
 
-  const go = useCallback((next: Route, options: { replace?: boolean } = {}) => {
+  const go = useCallback((next: Route, options: { replace?: boolean;bypassApiGuard?:boolean } = {}) => {
     const from = routeRef.current
     if (sameRoute(from, next)) return
-    history[options.replace ? 'replaceState' : 'pushState'](null, '', routeHash(next))
+    if(from.view==='api-testing'&&next.view!=='api-testing'&&apiGuard.current&&!options.bypassApiGuard){apiGuard.current(()=>go(next,{...options,bypassApiGuard:true}));return}
+    if(!options.replace)navigationIndex.current+=1
+    history[options.replace ? 'replaceState' : 'pushState']({autorushIndex:navigationIndex.current}, '', routeHash(next))
     routeRef.current = next
     transition(from, next, () => {
       setRoute(next)
@@ -73,9 +79,19 @@ export default function App() {
     })
   }, [])
   useEffect(() => {
-    if (!location.hash) history.replaceState(null, '', routeHash(routeRef.current))
-    const onPop = () => {
+    if (!location.hash) history.replaceState({autorushIndex:navigationIndex.current}, '', routeHash(routeRef.current))
+    else if(typeof history.state?.autorushIndex!=='number')history.replaceState({autorushIndex:navigationIndex.current},'',location.href)
+    const onPop = (event:PopStateEvent) => {
+      const targetIndex=typeof event.state?.autorushIndex==='number'?event.state.autorushIndex:navigationIndex.current-1
+      if(restoringHistory.current){restoringHistory.current=false;navigationIndex.current=targetIndex;const action=afterHistoryRestore.current;afterHistoryRestore.current=null;action?.();return}
       const next = parseRoute(location.hash), from = routeRef.current
+      const delta=targetIndex-navigationIndex.current
+      if(from.view==='api-testing'&&next.view!=='api-testing'&&apiGuard.current&&!bypassPopGuard.current&&delta!==0){
+        restoringHistory.current=true;history.go(-delta)
+        apiGuard.current(()=>{const proceed=()=>{bypassPopGuard.current=true;history.go(delta)};if(restoringHistory.current)afterHistoryRestore.current=proceed;else proceed()})
+        return
+      }
+      bypassPopGuard.current=false;navigationIndex.current=targetIndex
       routeRef.current = next
       transition(from, next, () => setRoute(next))
     }
@@ -232,7 +248,7 @@ export default function App() {
                 onDownload={async (id, format) => { try { await api.downloadReport(id, format) } catch (error) { notify(error instanceof Error ? error.message : '下载失败', true) } }} />
             : <Reports runs={runs} plans={plans} onOpen={id => go({ view: 'reports', id })} onDownload={async (id, format) => { try { await api.downloadReport(id, format) } catch (error) { notify(error instanceof Error ? error.message : '下载失败', true) } }} />)}
           {view === 'devices' && <Devices />}
-          {view === 'api-testing' && <ApiWorkbench onCaseCreated={async id=>{await refresh();go({view:'cases',id})}}/>}
+          {view === 'api-testing' && <ApiWorkspace section={route.id} onNavigate={id=>go({view:'api-testing',id})} onGuardChange={registerApiGuard} onCaseCreated={async id=>{await refresh();go({view:'cases',id},{bypassApiGuard:true})}}/>}
           {view === 'settings' && <Settings presets={providerPresets} configs={providerConfigs} onCreate={payload => action(() => api.createProviderConfig(payload), '模型配置已保存')} onPreflight={async id => { try { const result = await api.preflightProvider(id); notify(result.secret_available ? '本地预检查通过，尚未联网' : result.messages.join(' '), !result.secret_available); return result } catch (error) { notify(error instanceof Error ? error.message : '预检查失败', true); return null } }} />}
         </Suspense>
       </main>

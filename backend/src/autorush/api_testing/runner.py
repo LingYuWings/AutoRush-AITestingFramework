@@ -115,12 +115,11 @@ class ApiRunner:
                         value['response'] = None
                         value['response_omitted'] = 'run response retention limit (10 MiB) reached'
                     else: record['retained_bytes'] += size
-                    self.store.append(record['id'], record['completed'], value)
                     record['completed'] += 1
                     record['counts'][value['status']] += 1
                     record.update(current_iteration=value['iteration'], current_request=value['name'],
                         elapsed_ms=round((time.perf_counter()-started)*1000, 2))
-                    self.store.save(record)
+                    self.store.append(record['id'], value['seq'], value, progress=record)
             record['state'] = 'completed'
             record['status'] = next((status for status in ['error', 'failed', 'blocked'] if record['counts'][status]), 'passed')
         except asyncio.CancelledError:

@@ -1,12 +1,13 @@
 import {useEffect,useRef,useState} from 'react'
-import type {ApiRequest,ApiAssertion,BodyField,CollectionRecord,Extraction} from './types'
+import type {ApiRequest,ApiAssertion,BodyField,CollectionRecord,Extraction,FolderRecord} from './types'
 import {newBodyField} from './types'
 import {PairsEditor,VariablesEditor} from './Fields'
 
 const assertionLabels:Record<ApiAssertion['kind'],string>={status_code:'状态码',body_contains:'正文包含',json_field_equals:'JSON 字段相等',json_field_exists:'JSON 字段存在',header_equals:'响应头相等',response_time_less_than:'响应耗时小于（ms）'}
-export default function RequestEditor({value,onChange,collections=[]}:{value:ApiRequest;onChange:(value:ApiRequest)=>void;collections?:CollectionRecord[]}){
+export default function RequestEditor({value,onChange,collections=[],folders}:{value:ApiRequest;onChange:(value:ApiRequest)=>void;collections?:CollectionRecord[];folders?:FolderRecord[]}){
   const [tab,setTab]=useState('params'),[error,setError]=useState('')
-  const update=(patch:Partial<ApiRequest>)=>onChange({...value,...patch})
+  const update=(patch:Partial<ApiRequest>)=>onChange({...value,...('collection_id' in patch&&patch.collection_id!==value.collection_id?{folder_id:null,position:0}:{}),...patch})
+  const folderPath=(folder:FolderRecord,seen=new Set<string>()):string=>{if(seen.has(folder.id))return folder.name;seen.add(folder.id);const parent=folders?.find(item=>item.id===folder.parent_id);return (parent?folderPath(parent,seen)+' / ':'')+folder.name}
   const body=(patch:Partial<ApiRequest['body']>)=>update({body:{...value.body,...patch}})
   const auth=(patch:Partial<ApiRequest['auth']>)=>update({auth:{...value.auth,...patch}})
   const field=(index:number,patch:Partial<BodyField>)=>body({fields:value.body.fields.map((item,i)=>i===index?{...item,...patch}:item)})
@@ -22,6 +23,7 @@ export default function RequestEditor({value,onChange,collections=[]}:{value:Api
     {!!value.compatibility_warnings.length&&<div className="api-warning"><strong>导入内容需要检查</strong>{value.compatibility_warnings.map((note,i)=><p key={i}>{note}</p>)}<button type="button" className="secondary-button" onClick={()=>update({compatibility_warnings:[]})}>已检查，仅执行当前 HTTP 配置</button></div>}
     <div className="field-grid"><label className="field"><span>请求名称</span><input value={value.name} maxLength={200} onChange={e=>update({name:e.target.value})}/></label><label className="field"><span>所属集合</span><select aria-label="所属集合" value={value.collection_id??''} onChange={e=>update({collection_id:e.target.value||null})}><option value="">未分组</option>{collections.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div>
     <div className="api-url-row"><label><span className="sr-only">HTTP 方法</span><select aria-label="HTTP 方法" value={value.method} onChange={e=>update({method:e.target.value})}>{['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS'].map(method=><option key={method}>{method}</option>)}</select></label><input aria-label="请求 URL" value={value.url} placeholder="https://api.example.com/resource 或 {{api_root}}/resource" onChange={e=>update({url:e.target.value})}/></div>
+    {folders&&<label className="field"><span>请求文件夹</span><select aria-label="请求文件夹" value={value.folder_id??''} onChange={e=>update({folder_id:e.target.value||null,position:0})}><option value="">集合根目录</option>{folders.filter(item=>item.collection_id===value.collection_id).map(item=><option key={item.id} value={item.id}>{folderPath(item)} · {item.id.slice(0,6)}</option>)}</select></label>}
     <div className="api-tabs" role="tablist" aria-label="请求配置">{[['params','Params'],['headers','Headers'],['auth','Authorization'],['body','Body'],['assertions','断言'],['extractions','提取'],['variables','变量'],['settings','设置']].map(([id,label])=><button key={id} type="button" role="tab" aria-selected={tab===id} onClick={()=>setTab(id)}>{label}{id==='assertions'&&value.assertions.length?` (${value.assertions.length})`:''}</button>)}</div>
     <div className="api-tab-content">
       {tab==='params'&&<PairsEditor value={value.query} onChange={query=>update({query})} label="参数"/>}
