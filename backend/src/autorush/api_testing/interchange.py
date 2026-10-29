@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 import json
 import shlex
+from uuid import uuid4
 from urllib.parse import parse_qsl, quote_plus, urlencode, urlsplit, urlunsplit
 
 from autorush.api_testing.models import ApiRequest
@@ -33,15 +34,22 @@ def from_auth(auth):
             'location': values.get('in', 'header')}
 
 
-def import_postman(content):
+def import_postman(content, *, preserve_tree=False):
     if not isinstance(content, dict) or not str(content.get('info', {}).get('schema', '')).endswith('/v2.1.0/collection.json'):
         raise ValueError('only Postman Collection v2.1 JSON is supported')
-    requests, warnings = [], []
-    def visit(items, inherited_auth, inherited_scripts=False, prefix=''):
-        for item in items:
+    requests, warnings, folders = [], [], []
+    def visit(items, inherited_auth, inherited_scripts=False, prefix='', parent_id=None, depth=0):
+        if depth > 8: raise ValueError('folder depth cannot exceed 8')
+        for position, item in enumerate(items):
             scripts = inherited_scripts or bool(item.get('event'))
             if 'item' in item:
-                visit(item['item'], item.get('auth', inherited_auth), scripts, prefix + str(item.get('name', '')) + ' / ')
+                folder_id = str(uuid4())
+                if preserve_tree:
+                    folders.append({'id': folder_id, 'collection_id': '', 'parent_id': parent_id,
+                        'name': str(item.get('name', 'Folder')), 'description': '', 'position': position})
+                    if len(folders) > 1000: raise ValueError('import supports at most 1000 folders')
+                visit(item['item'], item.get('auth', inherited_auth), scripts,
+                    '' if preserve_tree else prefix + str(item.get('name', '')) + ' / ', folder_id, depth + 1)
                 continue
             raw = item.get('request', {})
             if isinstance(raw, str): raw = {'url': raw}
@@ -82,13 +90,16 @@ def import_postman(content):
                 except (ValueError, TypeError) as exc:
                     warnings.append(prefix + str(item.get('name', 'request')) + ': unsupported request configuration')
                     continue
-            requests.append(spec.model_dump())
+            converted_spec = spec.model_dump()
+            if preserve_tree: converted_spec.update(folder_id=parent_id, position=position)
+            requests.append(converted_spec)
             warnings.extend(spec.name + ': ' + note for note in spec.compatibility_warnings)
             if len(requests) > 100: raise ValueError('import supports at most 100 requests')
     visit(content.get('item', []), content.get('auth'), bool(content.get('event')))
     if not requests: raise ValueError('collection has no supported HTTP requests')
-    return {'name': str(content['info'].get('name', 'Imported collection')),
-        'description': '', 'variables': variables(content.get('variable', []))}, requests, warnings
+    result = ({'name': str(content['info'].get('name', 'Imported collection')),
+        'description': '', 'variables': variables(content.get('variable', []))}, requests, warnings)
+    return (*result, folders) if preserve_tree else result
 
 
 def import_curl(command):
@@ -170,7 +181,7 @@ def export_safe(spec):
     return value
 
 
-def export_postman(collection, requests):
+def export_postman(collection, requests, folders=None):
     items = []
     for record in requests:
         spec = export_safe(record)
@@ -192,6 +203,15 @@ def export_postman(collection, requests):
         elif body['mode'] == 'binary':
             request['body'] = {'mode': 'file', 'file': {'src': body['filename']}}
         items.append({'name': spec['name'], 'request': request})
+    if folders is not None:
+        request_items = [(record, item) for record, item in zip(requests, items)]
+        def children(parent_id):
+            entries = [(record, item) for record, item in request_items if record.get('folder_id') == parent_id]
+            entries.extend((folder, {'name': folder['name'], 'item': children(folder['id'])})
+                for folder in folders if folder.get('parent_id') == parent_id)
+            entries.sort(key=lambda pair: (pair[0].get('position', 0), pair[0].get('created_at', '')))
+            return [item for _, item in entries]
+        items = children(None)
     return {'info': {'name': collection['name'], 'schema': SCHEMA}, 'item': items,
         'variable': [{'key': item['key'], 'value': '' if item.get('secret') or SENSITIVE.search(item['key']) else item['value'], 'disabled': not item.get('enabled', True)}
             for item in collection.get('variables', [])]}

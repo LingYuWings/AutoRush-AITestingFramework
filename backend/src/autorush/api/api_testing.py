@@ -5,7 +5,8 @@ import json
 from fastapi import APIRouter, Body, Header, HTTPException, Query, Request
 from pydantic import ValidationError
 
-from autorush.api_testing.models import ApiRequest, Collection, Environment, ExecuteRequest, CollectionRun
+from autorush.api_testing.models import ApiRequest, Collection, Environment, ExecuteRequest, CollectionRun, Folder, TreeReorder
+from autorush.api_testing.tree import TreeService, TreeError
 from autorush.api_testing.store import ApiStore
 from autorush.api_testing.engine import ApiEngine, bounded_evidence
 from autorush.api_testing.variables import ApiBlocked, variable_values
@@ -14,7 +15,12 @@ from autorush.api_testing.variables import ApiBlocked, variable_values
 def create_api_testing_router(settings, require_operator, trusted_local_request):
     router = APIRouter(prefix='/api/v1/api-testing', tags=['API testing'])
     store = ApiStore(settings.database_path)
-    schemas = {'collections': Collection, 'requests': ApiRequest, 'environments': Environment}
+    tree = TreeService(store)
+    schemas = {'collections': Collection, 'requests': ApiRequest, 'environments': Environment, 'folders': Folder}
+
+    def tree_action(callback):
+        try: return callback()
+        except TreeError as exc: raise HTTPException(exc.status, str(exc)) from None
 
     def authorize(request, token):
         require_operator(token)
@@ -68,6 +74,12 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
 
+    @router.post('/tree/reorder')
+    def reorder_tree(request: Request, payload: dict = Body(...), x_autorush_operator_token: str | None = Header(default=None)):
+        authorize(request, x_autorush_operator_token)
+        command = parse_model(TreeReorder, payload)
+        return tree_action(lambda: tree.reorder(command.collection_id, command.parent_id, [item.model_dump() for item in command.items]))
+
     @router.post('/snapshots', status_code=201)
     def create_request_snapshot(request: Request, payload: dict = Body(...), x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
@@ -111,7 +123,7 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
         authorize(request, x_autorush_operator_token)
         command = parse_model(CollectionRun, payload)
         if store.get('collections', collection_id) is None: raise HTTPException(404, 'collection not found')
-        requests = [item for item in store.list('requests') if item['collection_id'] == collection_id]
+        requests = tree_action(lambda: tree.ordered_requests(collection_id))
         if not requests or len(requests) > 100: raise HTTPException(422, 'collection requires 1..100 requests')
         async def perform():
             from autorush.api_testing.models import configuration
@@ -154,14 +166,16 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
                     saved = store.create('environments', environment.model_dump())
                     return {'collections': [], 'requests': [], 'environments': [saved], 'warnings': []}
                 if kind != 'postman_collection': raise ValueError('unsupported import format')
-                collection, specs, warnings = import_postman(content)
+                collection, specs, warnings, folders = import_postman(content, preserve_tree=True)
             validated_collection = Collection.model_validate(collection).model_dump()
             validated_specs = [ApiRequest.model_validate(spec).model_dump() for spec in specs]
+            if kind != 'curl':
+                folders = [{**Folder.model_validate({key: value for key, value in folder.items() if key != 'id'}).model_dump(),
+                    'id': folder['id']} for folder in folders]
         except (ValueError, TypeError, KeyError, AttributeError):
             raise HTTPException(422, 'invalid or unsupported import; only data-only cURL, Postman v2.1 and environment JSON are accepted') from None
-        saved_collection = store.create('collections', validated_collection)
-        saved_requests = [store.create('requests', {**spec, 'collection_id': saved_collection['id']}) for spec in validated_specs]
-        return {'collections': [saved_collection], 'requests': saved_requests, 'environments': [], 'warnings': warnings}
+        result = tree_action(lambda: tree.import_collection(validated_collection, validated_specs, folders if kind != 'curl' else []))
+        return {**result, 'warnings': warnings}
 
     @router.post('/export')
     def export_data(request: Request, payload: dict = Body(...), x_autorush_operator_token: str | None = Header(default=None)):
@@ -181,7 +195,8 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
             if kind == 'postman_collection':
                 collection = store.get('collections', payload.get('collection_id'))
                 if collection is None: raise HTTPException(404, 'collection not found')
-                content = export_postman(collection, [item for item in store.list('requests') if item['collection_id'] == collection['id']])
+                content = export_postman(collection, [item for item in store.list('requests') if item['collection_id'] == collection['id']],
+                    [item for item in store.list('folders') if item['collection_id'] == collection['id']])
             elif kind == 'postman_environment':
                 environment = store.get('environments', payload.get('environment_id'))
                 if environment is None: raise HTTPException(404, 'environment not found')
@@ -237,7 +252,9 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
     @router.post('/{kind}', status_code=201)
     def create_record(kind: str, request: Request, payload: dict = Body(...), x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
-        return store.create(kind, validate(kind, payload))
+        value = validate(kind, payload)
+        if kind in {'folders', 'requests'}: return tree_action(lambda: tree.write(kind, value))
+        return store.create(kind, value)
 
     @router.get('/{kind}/{record_id}')
     def get_record(kind: str, record_id: str, request: Request, x_autorush_operator_token: str | None = Header(default=None)):
@@ -252,6 +269,7 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
         expected_version: int = Query(ge=1), x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
         value = validate(kind, payload)
+        if kind in {'folders', 'requests'}: return tree_action(lambda: tree.write(kind, value, record_id, expected_version))
         try:
             return store.update(kind, record_id, value, expected_version)
         except KeyError:
@@ -262,6 +280,9 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
     @router.delete('/{kind}/{record_id}')
     def delete_record(kind: str, record_id: str, request: Request, x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
+        if kind in {'folders', 'requests', 'collections'}:
+            tree_action(lambda: tree.delete(kind, record_id))
+            return {'deleted': True}
         if kind == 'collections' and any(record['collection_id'] == record_id for record in store.list('requests')):
             raise HTTPException(409, 'move or delete requests before deleting this collection')
         if kind not in schemas or not store.delete(kind, record_id):
