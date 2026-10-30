@@ -10,6 +10,7 @@ export default function StepScreenshot({ evidence }: { evidence: Record<string, 
   const [error, setError] = useState('')
   const frame=useRef<HTMLDivElement>(null)
   const [visible,setVisible]=useState(false)
+  const [authEpoch,setAuthEpoch]=useState(0)
   useEffect(()=>{
     const node=frame.current;if(!node||!path)return
     if(typeof IntersectionObserver==='undefined')return
@@ -25,7 +26,7 @@ export default function StepScreenshot({ evidence }: { evidence: Record<string, 
       abort.abort()
       if (blobUrl) { URL.revokeObjectURL(blobUrl); blobUrl = '' }
     }
-    const off = api.onOperatorTokenChange(() => { release(); setUrl(''); setError('操作授权已改变，请重新打开报告以加载截图') })
+    const off = api.onOperatorTokenChange(() => { release(); setUrl(''); setError(''); setAuthEpoch(value=>value+1) })
     void api.screenshot(path, abort.signal).then(blob => {
       if (abort.signal.aborted) return
       blobUrl = URL.createObjectURL(blob)
@@ -34,7 +35,7 @@ export default function StepScreenshot({ evidence }: { evidence: Record<string, 
       if (!abort.signal.aborted) setError(cause instanceof Error ? cause.message : '截图加载失败')
     })
     return () => { off(); release() }
-  }, [path,visible])
+  }, [path,visible,authEpoch])
   if (!screenshot && !captureError) return null
   return <div className="step-screenshot">
     {captureError && <p role="alert" className="screenshot-error">截图失败：{captureError}</p>}
