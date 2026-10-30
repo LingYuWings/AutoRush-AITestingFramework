@@ -19,9 +19,12 @@ Read the goal and recent_actions. Perform the next unfinished action. Do not rep
 Respect the actions authorized by intent: an instruction to inspect without changing anything permits only inspection/verification. Never type expected text just to manufacture a passing state.
 Return an action while the goal is not yet reached; return verify when the current observation satisfies expected_result.
 Action: {"kind":"action","observation_id":"current id","driver":"current driver","operation":"allowed operation","parameters":{},"element_id":"observed id if needed","brief_reason":"short action purpose"}.
-Verify: {"kind":"verify","observation_id":"current id","expected_result":"copy the full user expected_result exactly","brief_reason":"visible evidence","check":{"kind":"deterministic","assertions":[{"kind":"text_contains","expected":"literal required UI text"}]}}}.
+Verify: {"kind":"verify","observation_id":"current id","expected_result":"copy the full user expected_result exactly","brief_reason":"visible evidence","check":{"kind":"deterministic","assertions":[{"kind":"text_contains","expected":"literal required UI text"}]}}.
 The assertion expected is the literal required value, without explanatory sentence wording. Example: expected_result "The status shows Saved." uses assertion expected "Saved".
-If verification fails, complete the missing actions or correct the assertion. Do not claim the goal is reached when it is absent.
+Evidence sources: browser URL/address/path/query -> observation.target.url with url_contains or url_equals; visible page words -> observation.text with text_contains. Never search page text for a browser address unless explicitly required as visible content.
+For compound expected_result, check EVERY condition separately. Example check: {"kind":"deterministic","assertions":[{"kind":"url_contains","expected":"/orders?id=7"},{"kind":"text_contains","expected":"Order details"}]}.
+For an Open path instruction, compare the requested path AND query with observation.target.url. A matching heading alone does not establish navigation completion. If already on the exact requested destination, verification is allowed; otherwise navigate before verifying.
+If verification fails, distinguish a wrong assertion type from a missing application action. Repair a wrong assertion instead of repeating successful navigation. Do not claim the goal is reached when it is absent.
 If unable: {"kind":"blocked","brief_reason":"short cause"}. Never mix fields from different kinds.
 Pure image verification: check {"kind":"visual","passed":true|false,"explanation":"visible evidence"}. Only use it when deterministic data is unavailable.'''
 

@@ -146,6 +146,7 @@ class AgentRunner:
                     if not verification.passed:
                         failed_verifications+=1
                         feedback='Expected result is NOT satisfied. '+str(verification.messages)[:1800]+'. Complete any missing action before verifying again.'
+                        if step.driver=='web': feedback+=' URL conditions require url_contains/url_equals on observation.target.url; visible text uses text_contains. If navigation succeeded, repair the check rather than navigate again.'
                         history.append({'operation':'verify','status':'failed','result':feedback})
                         if budget.remaining>0 and failed_verifications<3: continue
                     return finish(ResultStatus.PASSED if verification.passed else ResultStatus.FAILED,
