@@ -190,3 +190,7 @@ README.md         公开使用说明
 ## 参考
 
 Android 连接和投屏设计参考了 [Smart-AI-Bot](https://github.com/rejigtian/Smart-AI-Bot) 的工程思路。AutoRush 使用自身的用例、计划、设备协议与报告实现，并依赖 Playwright、PyAutoGUI、FastAPI 等开源组件。
+
+## 许可证
+
+本项目采用 [MIT License](LICENSE)。第三方组件遵循各自的许可证。
