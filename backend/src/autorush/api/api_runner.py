@@ -73,8 +73,9 @@ def create_runner_router(manager, authorize):
     @router.get('/runs/{run_id}/export')
     def export(run_id: str, request: Request, format: str = 'json', x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
-        run = require(run_id)
-        steps = manager.store.details(run_id)
+        snapshot = manager.store.export_snapshot(run_id)
+        if snapshot is None: raise HTTPException(404, 'run not found')
+        run, steps = snapshot
         if format == 'json':
             content, media, suffix = json.dumps({'run': run, 'steps': steps}, ensure_ascii=False, indent=2), 'application/json', 'json'
         elif format == 'html':

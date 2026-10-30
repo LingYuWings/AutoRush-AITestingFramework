@@ -251,6 +251,8 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
         if replay is None: raise HTTPException(404, 'replay configuration is not available for this history')
         value = replay['request']
         value['collection_id'] = None
+        value['folder_id'] = None
+        value['position'] = 0
         value['variables'] = [{'key': key, 'value': val, 'enabled': True,
             'secret': bool(SENSITIVE.search(key)) or str(val) in replay.get('secret_values', [])}
             for key, val in replay.get('variables', {}).items()] + value.get('variables', [])

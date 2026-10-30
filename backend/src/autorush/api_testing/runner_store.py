@@ -22,7 +22,7 @@ class ApiRunStore:
     def create(self, source, snapshot, idempotency_key):
         record = {'id': str(uuid4()), 'name': source['collection_name'], 'state': 'queued', 'status': None,
             'created_at': now(), 'started_at': None, 'finished_at': None, 'completed': 0,
-            'total': len(snapshot['requests']) * source['iterations'], 'current_iteration': None,
+            'total': len(snapshot['requests']) * len(snapshot['rows']), 'current_iteration': None,
             'current_request': None, 'detail': '', 'elapsed_ms': 0, 'source': source,
             'counts': {key: 0 for key in ['passed', 'failed', 'error', 'blocked', 'skipped']}, 'retained_bytes': 0}
         with self.vault.connect() as connection:
@@ -87,3 +87,12 @@ class ApiRunStore:
         with self.vault.connect() as connection:
             rows = connection.execute('SELECT payload FROM api_runner_steps WHERE run_id=? ORDER BY seq', (run_id,)).fetchall()
         return [self.vault.decode(row[0]) for row in rows]
+
+    def export_snapshot(self, run_id):
+        """Read progress and evidence from the same committed database snapshot."""
+        with self.vault.connect() as connection:
+            connection.execute('BEGIN')
+            run = connection.execute('SELECT payload FROM api_runner_runs WHERE id=?', (run_id,)).fetchone()
+            if run is None: return None
+            rows = connection.execute('SELECT payload FROM api_runner_steps WHERE run_id=? ORDER BY seq', (run_id,)).fetchall()
+        return self.vault.decode(run[0]), [self.vault.decode(row[0]) for row in rows]

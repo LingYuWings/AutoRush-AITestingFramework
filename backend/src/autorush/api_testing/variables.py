@@ -122,3 +122,18 @@ def redact(value, secrets=()):
     if value is not None and not isinstance(value, (dict, list, tuple, str)) and str(value) in secrets:
         return '[redacted]'
     return value
+
+
+def redact_execution(value, secrets=()):
+    """Mask payloads while retaining transport/control metadata and check booleans."""
+    result = redact(value, secrets)
+    for key in ['status', 'method', 'elapsed_ms', 'request_id', 'request_version', 'iteration', 'seq']:
+        if key in value: result[key] = value[key]
+    if isinstance(value.get('request'), dict) and 'method' in value['request']:
+        result['request']['method'] = value['request']['method']
+    if value.get('response'):
+        for key in ['status_code', 'elapsed_ms', 'bytes', 'history_truncated']:
+            if key in value['response']: result['response'][key] = value['response'][key]
+    for original, sanitized in zip(value.get('assertions', []), result.get('assertions', [])):
+        if isinstance(original, dict) and 'passed' in original: sanitized['passed'] = original['passed']
+    return result

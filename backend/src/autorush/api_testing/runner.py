@@ -66,7 +66,9 @@ class ApiRunner:
             'rows': rows[:iterations] if rows else [{} for _ in range(iterations)], 'seed': seed,
             'secret_values': list(secrets), 'variables': command.variables, 'delay_ms': command.delay_ms,
             'timeout_seconds': command.timeout_seconds, 'stop_on_failure': command.stop_on_failure}
-        return redact(source, secrets), snapshot
+        public_source = {**source, 'collection_name': redact(source['collection_name'], secrets),
+            'environment_name': redact(source['environment_name'], secrets)}
+        return public_source, snapshot
 
     async def start(self, command):
         signature = hashlib.sha256(json.dumps(command.model_dump(), sort_keys=True, ensure_ascii=False).encode()).hexdigest()

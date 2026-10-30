@@ -31,3 +31,5 @@ export const newRequest=():ApiRequest=>({name:'未命名请求',collection_id:nu
 export const newPair=():Pair=>({key:'',value:'',enabled:true})
 export const newBodyField=():BodyField=>({key:'',value:'',type:'text',filename:'upload.bin',content_type:'application/octet-stream',data_base64:'',enabled:true})
 export function configuration<T extends object>(record:T):T {const copy={...record} as T&Partial<{id:string;version:number;created_at:string;updated_at:string}>; delete copy.id;delete copy.version;delete copy.created_at;delete copy.updated_at;return copy}
+
+export function folderPath(folder:FolderRecord,folders:FolderRecord[],seen=new Set<string>()):string {if(seen.has(folder.id))return folder.name;seen.add(folder.id);const parent=folders.find(item=>item.id===folder.parent_id);return (parent?folderPath(parent,folders,seen)+' / ':'')+folder.name}
