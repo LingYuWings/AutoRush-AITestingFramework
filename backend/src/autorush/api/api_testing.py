@@ -92,6 +92,25 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
         command = parse_model(TreeReorder, payload)
         return tree_action(lambda: tree.reorder(command.collection_id, command.parent_id, [item.model_dump() for item in command.items]))
 
+    @router.post('/collections/{collection_id}/case-draft', status_code=201)
+    def collection_case_draft(collection_id: str, request: Request, x_autorush_operator_token: str | None = Header(default=None)):
+        authorize(request, x_autorush_operator_token)
+        from autorush.api_testing.models import configuration
+        from autorush.domain.models import CaseCreate
+        with store.connect() as connection: records = tree.records(connection)
+        collection = records.get(('collections', collection_id))
+        if collection is None: raise HTTPException(404, 'collection not found')
+        items = tree_action(lambda: tree.ordered_requests(collection_id, records=records))
+        if not items or len(items) > 100: raise HTTPException(422, 'collection case requires 1..100 requests')
+        steps = []
+        for index, item in enumerate(items, 1):
+            spec = {**configuration(item), 'collection_id': None, 'folder_id': None, 'position': 0}
+            steps.append({'order': index, 'intent': item['name'], 'driver': 'api', 'operation': 'api.request',
+                'parameters': {'request': spec, 'collection_variables': collection['variables'],
+                    'source_request_id': item['id'], 'source_version': item['version']}})
+        return CaseCreate(title=collection['name'], description='API collection snapshot; approve before adding to a test plan',
+            platform='api', execution_mode='structured', steps=steps).model_dump(mode='json')
+
     @router.post('/snapshots', status_code=201)
     def create_request_snapshot(request: Request, payload: dict = Body(...), x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)

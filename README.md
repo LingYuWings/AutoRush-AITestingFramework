@@ -73,6 +73,18 @@ API 测试分为“请求工作台、集合 Runner、环境管理、执行历史
 
 API 工作台限可信的本机操作员使用，目标受 `-ApiHosts` 限制。上传、响应及迭代数据文件上限为 1 MiB；单请求历史最多 200 条、集合运行最多 100 条。历史与报告正文按 64 KiB 截断，每次集合运行保留的响应总量上限 10 MiB，超额仍保留结果并注明正文省略。文件夹最多 8 层，工作台最多打开 20 个请求标签；Runner 一次最多选 100 个请求，迭代与数据行最多 1000，实际请求总数不得超过 1000，每个本地服务同时运行一个集合任务。请求配置使用本地密钥加密保存，备份时需同时保留数据库及同目录的 `api-testing-vault.key`。导出默认隐藏识别到的凭据。当前不包含 OAuth 自动授权、任意 Postman JavaScript、WebSocket 或 gRPC 调试；文件请求请优先使用集合格式交换，并重新选择导入文件。
 
+### 本地 API 服务与测试计划
+
+运行独立演示服务（仅监听本机，数据保存在内存中，退出即清空）：
+
+```powershell
+python examples/local_api_service.py --port 8765
+```
+
+目标地址为 `http://127.0.0.1:8765`。提供 `/health`、`/echo`、`/login`、`/protected`、`/products`、`/orders`、`/orders/{id}`、`/status/{code}`、`/delay`、`/redirect`、`/text`、`/large`；登录通过 POST JSON `{"username":"demo","password":"demo"}` 获取演示 Bearer token。商品 ID 为 1，单价 20；创建订单提交 `{"product_id":1,"quantity":2}`，订单接口需要 Bearer 鉴权。`/large` 特意超过响应上限，用于验证阻塞边界。这是测试靶服务，不用于生产或存放真实数据。
+
+后端启动需允许该主机：`./scripts/start.ps1 -ApiHosts '127.0.0.1,localhost'`。在请求工作台选择集合，点击“保存集合为 API 用例”，核对并批准草稿，再到“测试计划”选择该用例及 API 变量环境，执行预检查并就绪、运行、查看报告。一次转换支持 1–100 个请求，按文件夹树保存顺序生成步骤，保留断言、提取和集合默认变量；后续修改源集合不改变已保存用例。单请求仍可使用“保存为 API 用例”。计划可以同时选择 API 和其他执行端用例；Runner 的 CSV/JSON 迭代配置仍在集合 Runner 中单独运行。
+
 ## 快速开始
 
 以下命令以 **Windows PowerShell** 为例。桌面自动化需要 Windows 的交互式桌面会话。

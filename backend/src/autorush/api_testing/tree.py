@@ -109,8 +109,9 @@ class TreeService:
                 result.append({**record, 'kind': item['kind']})
         return {'items': result}
 
-    def ordered_requests(self, collection_id, folder_id=None):
-        with self.store.connect() as connection: records = self.records(connection)
+    def ordered_requests(self, collection_id, folder_id=None, *, records=None):
+        if records is None:
+            with self.store.connect() as connection: records = self.records(connection)
         if ('collections', collection_id) not in records: raise TreeError('collection not found', 404)
         if folder_id and records.get(('folders', folder_id), {}).get('collection_id') != collection_id:
             raise TreeError('folder not found in collection', 404)

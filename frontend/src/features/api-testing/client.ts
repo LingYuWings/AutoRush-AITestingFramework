@@ -26,6 +26,7 @@ export const apiTesting={
   remove:(kind:'requests'|'collections'|'environments'|'folders',id:string)=>call<{deleted:boolean}>(`/${kind}/${encodeURIComponent(id)}`,{method:'DELETE'}),
   execute:(spec:ApiRequest,environmentId:string|null,requestId:string|null,signal?:AbortSignal)=>post<ApiExecution>('/execute',{request:spec,environment_id:environmentId,request_id:requestId},signal),
   runCollection:(id:string,environmentId:string|null,signal?:AbortSignal)=>post<CollectionResult>(`/collections/${encodeURIComponent(id)}/run`,{environment_id:environmentId},signal),
+  collectionCase:(id:string)=>post<Parameters<typeof api.createCase>[0]>(`/collections/${encodeURIComponent(id)}/case-draft`,{}),
   import:(format:string,content:unknown)=>post<ImportResult>('/import',{format,content}),
   export:(payload:Record<string,unknown>)=>post<{filename:string;content:string}>('/export',payload),
   snapshot:(spec:ApiRequest,requestId?:string)=>post<Record<string,unknown>>('/snapshots',{request:spec,request_id:requestId}),
