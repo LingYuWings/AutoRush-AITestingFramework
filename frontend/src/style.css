@@ -132,7 +132,9 @@ h1, h2, h3 { font-weight: 600; letter-spacing: -.01em; }
 .brand-mark-hot { stroke: var(--on-accent); }
 .brand-mark-dot { fill: var(--on-accent); }
 
-.sidebar nav { display: flex; flex-direction: column; gap: 1px; }
+.sidebar nav { display: flex; flex-direction: column; gap: 14px; }
+.nav-group { display: flex; flex-direction: column; gap: 1px; }
+.nav-group-label { padding: 0 10px 4px; color: var(--ink-4); font-size: 11.5px; font-weight: 500; letter-spacing: .02em; }
 .nav-item {
   display: flex; align-items: center; gap: 10px;
   width: 100%; padding: 7px 10px;
@@ -180,7 +182,7 @@ h1, h2, h3 { font-weight: 600; letter-spacing: -.01em; }
 .connection.online svg { color: var(--pass); }
 .connection.offline svg { color: var(--fail); }
 
-.run-progress { display: flex; align-items: center; gap: 10px; margin-right: 12px; padding: 4px 10px; border-radius: var(--radius); background: var(--accent-soft); color: var(--accent); }
+.run-progress { display: flex; align-items: center; gap: 10px; margin-right: 12px; padding: 4px 10px; border-radius: var(--radius); background: var(--accent-soft); color: var(--accent); animation: rise var(--dur-2) var(--ease) both; }
 .run-progress-label { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-variant-numeric: tabular-nums; }
 .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); color: var(--accent); animation: pulse-ring 1.6s ease-out infinite; }
 @keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 45%, transparent); } 100% { box-shadow: 0 0 0 7px transparent; } }
@@ -202,7 +204,51 @@ h1, h2, h3 { font-weight: 600; letter-spacing: -.01em; }
 .main-content.fill { display: flex; flex-direction: column; height: 100%; padding-bottom: 24px; }
 @keyframes enter { from { opacity: 0; transform: translateY(6px); } }
 @keyframes rise { from { opacity: 0; transform: translateY(4px); } }
+@keyframes fade-in { from { opacity: 0; } }
 @keyframes grow-x { from { transform: scaleX(0); } }
+
+/* ------------------------------------------------------------------
+   View transitions
+   Navigation runs inside document.startViewTransition (app/router.ts), which sets
+   `data-nav` to the kind of move. Only the page area animates; the sidebar and top bar
+   stay still, and the active-page marker glides between nav items.
+   ------------------------------------------------------------------ */
+.main-scroll { view-transition-name: page; }
+.breadcrumbs { view-transition-name: crumbs; }
+.nav-indicator { view-transition-name: nav-indicator; }
+:root[data-nav="detail"] .case-pane { view-transition-name: case-pane; }
+
+::view-transition-group(*) { animation-duration: var(--dur-2); animation-timing-function: var(--ease); }
+::view-transition-group(nav-indicator) { animation-duration: var(--dur-3); }
+:root[data-nav]:not([data-nav="theme"])::view-transition-old(root),
+:root[data-nav]:not([data-nav="theme"])::view-transition-new(root) { animation: none; }
+::view-transition-old(crumbs) { animation: var(--dur-1) var(--ease) both vt-fade-out; }
+::view-transition-new(crumbs) { animation: var(--dur-2) var(--ease) both fade-in; }
+
+/* Another sidebar page: the old page fades away quickly, the new one settles up into place. */
+:root[data-nav="switch"]::view-transition-old(page) { animation: var(--dur-1) var(--ease) both vt-fade-out; }
+:root[data-nav="switch"]::view-transition-new(page) { animation: var(--dur-3) var(--ease) both vt-rise-in; }
+/* Into a record (list → report) and back out: horizontal, so the direction is legible. */
+:root[data-nav="forward"]::view-transition-old(page) { animation: var(--dur-2) var(--ease) both vt-out-left; }
+:root[data-nav="forward"]::view-transition-new(page) { animation: var(--dur-3) var(--ease) both vt-in-right; }
+:root[data-nav="back"]::view-transition-old(page) { animation: var(--dur-2) var(--ease) both vt-out-right; }
+:root[data-nav="back"]::view-transition-new(page) { animation: var(--dur-3) var(--ease) both vt-in-left; }
+/* Sibling record or in-page section tab: a short crossfade. */
+:root[data-nav="swap"]::view-transition-old(page), :root[data-nav="tab"]::view-transition-old(page) { animation: var(--dur-1) var(--ease) both vt-fade-out; }
+:root[data-nav="swap"]::view-transition-new(page) { animation: var(--dur-2) var(--ease) both fade-in; }
+:root[data-nav="tab"]::view-transition-new(page) { animation: var(--dur-2) var(--ease) both vt-rise-in; }
+/* Master–detail: the list holds still, only the detail pane changes. */
+:root[data-nav="detail"]::view-transition-old(page), :root[data-nav="detail"]::view-transition-new(page) { animation: none; }
+::view-transition-old(case-pane) { animation: var(--dur-1) var(--ease) both vt-fade-out; }
+::view-transition-new(case-pane) { animation: var(--dur-2) var(--ease) both vt-rise-in; }
+
+@keyframes vt-fade-out { to { opacity: 0; } }
+@keyframes vt-rise-in { from { opacity: 0; transform: translateY(8px); } }
+@keyframes vt-out-left { to { opacity: 0; transform: translateX(-24px); } }
+@keyframes vt-in-right { from { opacity: 0; transform: translateX(32px); } }
+@keyframes vt-out-right { to { opacity: 0; transform: translateX(24px); } }
+@keyframes vt-in-left { from { opacity: 0; transform: translateX(-32px); } }
+
 
 /* ------------------------------------------------------------------
    Page structure
@@ -523,7 +569,9 @@ tbody tr.selected { background: var(--accent-soft); }
 .toast.error > svg { color: var(--fail); }
 .toast button { display: inline-grid; place-items: center; width: 24px; height: 24px; margin-left: 4px; border: 0; border-radius: 4px; background: transparent; color: var(--ink-3); }
 .toast button:hover { background: var(--hover); color: var(--ink); }
+.toast.leaving { pointer-events: none; animation: toast-out var(--dur-1) var(--ease) both; }
 @keyframes toast-in { from { opacity: 0; transform: translateX(16px); } }
+@keyframes toast-out { to { opacity: 0; transform: translateX(16px); } }
 
 /* ------------------------------------------------------------------
    Responsive
@@ -539,6 +587,9 @@ tbody tr.selected { background: var(--accent-soft); }
   .sidebar { width: 56px; flex-basis: 56px; padding: 14px 8px; }
   .brand { padding: 4px 4px 18px; }
   .brand > div, .nav-text, .nav-count, .sidebar-bottom { display: none; }
+  .sidebar nav { gap: 8px; }
+  .nav-group-label { height: 1px; margin: 0 6px 7px; padding: 0; overflow: hidden; background: var(--line); font-size: 0; }
+  .nav-group:first-child .nav-group-label { display: none; }
   .nav-item { justify-content: center; padding: 9px; }
   .topbar { padding-left: 16px; }
   .main-content { padding: 20px 16px 64px; }

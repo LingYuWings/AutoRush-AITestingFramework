@@ -1,4 +1,5 @@
 import {useCallback,useEffect,useRef,useState} from 'react'
+import {X} from '../../components/icons'
 import ApiWorkbench from './ApiWorkbench'
 import type {TabStatus,WorkbenchController} from './ApiWorkbench'
 import type {ApiRequest,ApiRequestRecord} from './types'
@@ -8,12 +9,14 @@ import RunnerPage,{presetFromRun} from './RunnerPage'
 import type {RunnerPreset} from './RunnerPage'
 import type {ApiRun} from './runner-client'
 import {loadApiResources,type ApiResources} from './resources'
+import {PageHeader} from '../../components/ui'
 import './api-testing.css'
 
 export type ApiNavigationGuard=((proceed:()=>void)=>void)|null
 type Tab={key:string;request?:ApiRequestRecord;draft?:ApiRequest;initialDirty?:boolean;meta:TabStatus}
 const blank=():Tab=>({key:crypto.randomUUID(),meta:{name:'未命名请求',sourceId:null,dirty:false,busy:false}})
-const sections=[['workbench','请求工作台'],['runner','集合 Runner'],['environments','环境管理'],['history','执行历史']]
+export const apiSections=[['workbench','请求工作台'],['runner','集合 Runner'],['environments','环境管理'],['history','执行历史']] as const
+const sections=apiSections
 
 export default function ApiWorkspace({section,onNavigate,onCaseCreated,onGuardChange}:{section?:string;onNavigate:(section:string)=>void;onCaseCreated:(id:string)=>void|Promise<void>;onGuardChange:(guard:ApiNavigationGuard)=>void}){
   const [tabs,setTabs]=useState<Tab[]>(()=>[blank()]),[active,setActive]=useState(''),[epoch,setEpoch]=useState(0),[preset,setPreset]=useState<RunnerPreset|null>(null)
@@ -54,15 +57,15 @@ export default function ApiWorkspace({section,onNavigate,onCaseCreated,onGuardCh
     if(save)for(const key of pending.keys){const controller=controllers.current.get(key);if(!await (pending.saveAsCopy?controller?.saveCopy():controller?.save())){setError('保存未完成，请取消对话框并检查请求名称、URL 或版本提示。');return}}
     await pending.proceed();setPending(null)
   }catch(cause){setError(cause instanceof Error?cause.message:String(cause))}finally{setSaving(false)}}
-  return <div className="api-workspace"><header><h1>API 测试</h1><nav className="api-section-nav" aria-label="API 模块导航">{sections.map(([key,label])=><a key={key} href={`#/api-testing/${key}`} aria-current={page===key?'page':undefined} onClick={event=>{event.preventDefault();onNavigate(key)}}>{label}</a>)}</nav></header>
+  return <div className="api-workspace"><PageHeader title="API 测试" description="调试请求、组织集合与环境，批量运行并复用为自动化用例节点。"/><nav className="api-section-nav" aria-label="API 模块导航">{sections.map(([key,label])=><a key={key} href={`#/api-testing/${key}`} aria-current={page===key?'page':undefined} onClick={event=>{event.preventDefault();onNavigate(key)}}>{label}</a>)}</nav>
     {error&&!pending&&<p role="alert" className="api-error">{error}</p>}
-    <div hidden={page!=='workbench'}><div className="api-request-tabs" role="tablist" aria-label="请求标签">{tabs.map(tab=><div key={tab.key} className={tab.key===activeKey?'active':''}><button type="button" role="tab" aria-selected={tab.key===activeKey} onClick={()=>setActive(tab.key)}>{tab.meta.name}{tab.meta.dirty?' *':''}{tab.meta.busy?' · 处理中':''}</button><button type="button" className="api-tab-close" aria-label={`关闭请求 ${tab.meta.name}`} onClick={()=>close(tab)}>×</button></div>)}</div>
+    <div className="api-section" hidden={page!=='workbench'}><div className="api-request-tabs" role="tablist" aria-label="请求标签">{tabs.map(tab=><div key={tab.key} className={tab.key===activeKey?'active':''}><button type="button" role="tab" aria-selected={tab.key===activeKey} onClick={()=>setActive(tab.key)}>{tab.meta.name}{tab.meta.dirty&&<span className="api-tab-dirty" aria-label="未保存" title="未保存"/>}{tab.meta.busy&&<span className="api-tab-busy"> · 处理中</span>}</button><button type="button" className="api-tab-close" aria-label={`关闭请求 ${tab.meta.name}`} title="关闭标签" onClick={()=>close(tab)}><X size={13}/></button></div>)}</div>
       {tabs.map(tab=><div key={tab.key} className="api-tab-panel" hidden={tab.key!==activeKey}><ApiWorkbench workspace resources={resources} refreshResources={refreshResources} initialRequest={tab.request} initialDraft={tab.draft} initialDirty={tab.initialDirty} onStatus={bindings(tab.key).status} onController={bindings(tab.key).controller} epoch={epoch}
         onPrepareCase={create=>guard(()=>{void create().then(id=>{if(id)void onCaseCreated(id)})})} onDeleteRequest={remove=>setPending({keys:[tab.key],proceed:remove,saveAsCopy:true})} onOpenRequest={request=>open(request)} onNewDraft={draft=>open(null,draft)} onRun={scope=>{setPreset(scope);onNavigate('runner')}} onCaseCreated={id=>guard(()=>{void onCaseCreated(id)})}/></div>)}
     </div>
-    <div hidden={page!=='runner'}><RunnerPage refreshResources={refreshResources} active={page==='runner'} preset={preset} onLatest={latest}/></div>
-    <div hidden={page!=='environments'}><EnvironmentPage active={page==='environments'} onChange={()=>setEpoch(current=>current+1)}/></div>
-    <div hidden={page!=='history'}><HistoryPage active={page==='history'} onRestore={draft=>open(null,draft)} onLatest={latest}/></div>
-    {pending&&<div className="api-dialog-backdrop"><section className="api-draft-dialog" role="dialog" aria-modal="true" aria-label="未保存的请求"><h2>保留未保存的更改</h2><p>{pending.saveAsCopy?'删除原请求前，可将当前修改保留为新请求。放弃并删除会丢弃本次编辑。':`有 ${pending.keys.length} 个请求尚未保存。保存后继续，或放弃本次编辑。`}</p>{error&&<p role="alert" className="api-error">{error}</p>}<div className="api-toolbar"><button type="button" className="primary-button" disabled={saving} onClick={()=>void choose(true)}>{pending.saveAsCopy?'保留为新请求':'保存更改'}</button><button type="button" className="secondary-button" disabled={saving} onClick={()=>void choose(false)}>{pending.saveAsCopy?'放弃并删除':'放弃更改'}</button><button type="button" className="text-button" disabled={saving} onClick={()=>{setPending(null);setError('')}}>取消</button></div></section></div>}
+    <div className="api-section" hidden={page!=='runner'}><RunnerPage refreshResources={refreshResources} active={page==='runner'} preset={preset} onLatest={latest}/></div>
+    <div className="api-section" hidden={page!=='environments'}><EnvironmentPage active={page==='environments'} onChange={()=>setEpoch(current=>current+1)}/></div>
+    <div className="api-section" hidden={page!=='history'}><HistoryPage active={page==='history'} onRestore={draft=>open(null,draft)} onLatest={latest}/></div>
+    {pending&&<div className="api-dialog-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget&&!saving){setPending(null);setError('')}}}><section className="api-draft-dialog" role="dialog" aria-modal="true" aria-label="未保存的请求" onKeyDown={event=>{if(event.key==='Escape'&&!saving){event.preventDefault();setPending(null);setError('')}}}><h2>保留未保存的更改</h2><p>{pending.saveAsCopy?'删除原请求前，可将当前修改保留为新请求。放弃并删除会丢弃本次编辑。':`有 ${pending.keys.length} 个请求尚未保存。保存后继续，或放弃本次编辑。`}</p>{error&&<p role="alert" className="api-error">{error}</p>}<div className="api-toolbar api-dialog-actions"><button type="button" className="primary-button" autoFocus disabled={saving} onClick={()=>void choose(true)}>{pending.saveAsCopy?'保留为新请求':'保存更改'}</button><button type="button" className="secondary-button" disabled={saving} onClick={()=>void choose(false)}>{pending.saveAsCopy?'放弃并删除':'放弃更改'}</button><button type="button" className="text-button" disabled={saving} onClick={()=>{setPending(null);setError('')}}>取消</button></div></section></div>}
   </div>
 }

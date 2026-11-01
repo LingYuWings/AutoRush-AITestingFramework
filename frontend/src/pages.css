@@ -155,3 +155,12 @@
   .case-pane { padding: 16px; }
   .case-detail-header { flex-direction: column; }
 }
+
+/* Panels that open in place (plan form, agent progress) rise in instead of popping. */
+.plan-form, .agent-progress, .provider-form, .page-alert { animation: rise var(--dur-2) var(--ease) both; }
+
+/* With view transitions available, the per-element entrance animations would play on top of them.
+   Kept last so it wins over the entrance animations declared above. */
+@supports (view-transition-name: none) {
+  .main-content, .case-detail, .report-hero, .report-case, .nav-indicator { animation: none; }
+}

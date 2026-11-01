@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import {
-  CircleAlert, CircleCheck, ClipboardList, CloudOff, FileText, LayoutDashboard, Moon,
+  Braces, CircleAlert, CircleCheck, ClipboardList, CloudOff, FileText, LayoutDashboard, Moon,
   RefreshCw, Settings2, Smartphone, Sun, Workflow, X,
 } from '../components/icons'
 import CaseEditor from '../features/cases/CaseEditor'
@@ -9,7 +9,7 @@ import Cases from '../pages/Cases'
 import Plans from '../pages/Plans'
 import Reports from '../pages/Reports'
 import ReportPage from '../pages/ReportPage'
-import ApiWorkspace,{type ApiNavigationGuard} from '../features/api-testing/ApiWorkspace'
+import ApiWorkspace,{apiSections,type ApiNavigationGuard} from '../features/api-testing/ApiWorkspace'
 import { BrandMark } from '../components/ui'
 import { scroller } from '../shared/scroll'
 import { shortId, statusLabel } from '../shared/format'
@@ -25,15 +25,22 @@ const loadSettings = () => import('../pages/Settings')
 const Devices = lazy(loadDevices)
 const Settings = lazy(loadSettings)
 
-const navItems: { key: View; label: string; icon: typeof LayoutDashboard }[] = [
-  { key: 'overview', label: '工作台', icon: LayoutDashboard },
-  { key: 'cases', label: '用例管理', icon: ClipboardList },
-  { key: 'api-testing', label: 'API 测试', icon: Workflow },
-  { key: 'plans', label: '测试计划', icon: Workflow },
-  { key: 'reports', label: '运行报告', icon: FileText },
-  { key: 'devices', label: 'Android 设备', icon: Smartphone },
-  { key: 'settings', label: '系统设置', icon: Settings2 },
+type NavItem = { key: View; label: string; icon: typeof LayoutDashboard }
+// The main group follows the testing flow (write → plan → run → review); tools sit apart from it.
+const navGroups: { label: string; items: NavItem[] }[] = [
+  { label: '测试流程', items: [
+    { key: 'overview', label: '工作台', icon: LayoutDashboard },
+    { key: 'cases', label: '用例管理', icon: ClipboardList },
+    { key: 'plans', label: '测试计划', icon: Workflow },
+    { key: 'reports', label: '运行报告', icon: FileText },
+  ] },
+  { label: '工具', items: [
+    { key: 'api-testing', label: 'API 测试', icon: Braces },
+    { key: 'devices', label: 'Android 设备', icon: Smartphone },
+    { key: 'settings', label: '系统设置', icon: Settings2 },
+  ] },
 ]
+const navItems = navGroups.flatMap(group => group.items)
 
 type Theme = 'light' | 'dark'
 const initialTheme = (): Theme => {
@@ -62,8 +69,10 @@ export default function App() {
   const [events, setEvents] = useState<LiveEvent[]>([])
   const [progress, setProgress] = useState<RunProgress | null>(null)
   const [theme, setTheme] = useState<Theme>(initialTheme)
-  const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null)
+  const [notice, setNotice] = useState<{ text: string; error: boolean; leaving?: boolean } | null>(null)
   const notify = (text: string, error = false) => setNotice({ text, error })
+  // Plays the exit animation first; the toast unmounts on its `animationend`.
+  const dismissNotice = useCallback(() => setNotice(current => current && (window.matchMedia('(prefers-reduced-motion: reduce)').matches ? null : { ...current, leaving: true })), [])
   const pushEvent = (event: LiveEvent) => setEvents(current => [event, ...current].slice(0, 30))
 
   const go = useCallback((next: Route, options: { replace?: boolean;bypassApiGuard?:boolean } = {}) => {
@@ -160,7 +169,7 @@ export default function App() {
     connect()
     return () => { disposed = true; if (reconnect) window.clearTimeout(reconnect); closeSocket?.() }
   }, [refresh])
-  useEffect(() => { if (!notice) return; const timeout = window.setTimeout(() => setNotice(null), 5000); return () => window.clearTimeout(timeout) }, [notice])
+  useEffect(() => { if (!notice || notice.leaving) return; const timeout = window.setTimeout(dismissNotice, 5000); return () => window.clearTimeout(timeout) }, [notice, dismissNotice])
 
   const navigate = (next: View) => go({ view: next })
   const authorizeLocal=async()=>{api.setOperatorToken((await api.operatorSession()).operator_token)}
@@ -177,6 +186,7 @@ export default function App() {
   const editingCase = view === 'cases' && route.edit ? cases.find(item => item.id === route.id) : undefined
   const creatingCase = view === 'cases' && route.id === 'new'
   const crumb = view === 'reports' && route.id ? `#${shortId(route.id)}`
+    : view === 'api-testing' ? apiSections.find(([key]) => key === (route.id ?? 'workbench'))?.[1] ?? null
     : creatingCase ? '新建' : editingCase ? '编辑' : null
 
   const caseEditor = (creatingCase || editingCase) && <CaseEditor
@@ -195,14 +205,17 @@ export default function App() {
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand"><BrandMark /><div><strong>AutoRush</strong><span>AI Tester</span></div></div>
-      <nav>{navItems.map(item => <a key={item.key} href={routeHash({ view: item.key })} aria-label={item.label} aria-current={view === item.key ? 'page' : undefined}
-        className={view === item.key ? 'nav-item active' : 'nav-item'}
-        onClick={event => { if (event.metaKey || event.ctrlKey || event.shiftKey || event.button) return; event.preventDefault(); navigate(item.key) }}>
-        {view === item.key && <span className="nav-indicator" aria-hidden="true" />}
-        <item.icon size={17} />
-        <span className="nav-text">{item.label}</span>
-        {Boolean(counts[item.key]) && <span className="nav-count" aria-hidden="true">{counts[item.key]}</span>}
-      </a>)}</nav>
+      <nav>{navGroups.map(group => <div key={group.label} className="nav-group" role="group" aria-label={group.label}>
+        <span className="nav-group-label" aria-hidden="true">{group.label}</span>
+        {group.items.map(item => <a key={item.key} href={routeHash({ view: item.key })} aria-label={item.label} aria-current={view === item.key ? 'page' : undefined}
+          className={view === item.key ? 'nav-item active' : 'nav-item'} title={item.label}
+          onClick={event => { if (event.metaKey || event.ctrlKey || event.shiftKey || event.button) return; event.preventDefault(); navigate(item.key) }}>
+          {view === item.key && <span className="nav-indicator" aria-hidden="true" />}
+          <item.icon size={17} />
+          <span className="nav-text">{item.label}</span>
+          {Boolean(counts[item.key]) && <span className="nav-count" aria-hidden="true">{counts[item.key]}</span>}
+        </a>)}
+      </div>)}</nav>
       <div className="sidebar-bottom">
         <div className={`backend-card ${connected ? 'online' : 'offline'}`}>
           <span className="backend-pulse" />
@@ -254,10 +267,11 @@ export default function App() {
       </main>
       </div>
     </div>
-    {notice && <div role="status" className={`toast ${notice.error ? 'error' : ''}`}>
+    {notice && <div role="status" className={`toast${notice.error ? ' error' : ''}${notice.leaving ? ' leaving' : ''}`}
+      onAnimationEnd={event => { if (event.animationName === 'toast-out') setNotice(null) }}>
       {notice.error ? <CircleAlert size={17} /> : <CircleCheck size={17} />}
       <span>{notice.text}</span>
-      <button onClick={() => setNotice(null)} aria-label="关闭提示"><X size={14} /></button>
+      <button onClick={dismissNotice} aria-label="关闭提示"><X size={14} /></button>
     </div>}
   </div>
 }
