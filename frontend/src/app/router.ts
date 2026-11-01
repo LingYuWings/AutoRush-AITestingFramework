@@ -20,14 +20,29 @@ export function routeHash(route: Route) {
 export const sameRoute = (a: Route, b: Route) => routeHash(a) === routeHash(b)
 
 /**
- * Runs a navigation state update inside a View Transition when the browser supports it.
- * The direction (deeper / shallower / sideways) is exposed to CSS via `data-nav`.
+ * How a navigation should animate (styled in style.css under "View transitions"):
+ * - `switch`  another sidebar page: the page area fades up, chrome stays put
+ * - `forward` / `back`  drilling into / out of a record: the page slides horizontally
+ * - `swap`    sibling record at the same depth (report pager): quick crossfade
+ * - `detail`  master–detail pages (cases): only the detail pane changes, the list stays still
+ * - `tab`     in-page section tabs (API testing): quick crossfade
  */
+export function navKind(from: Route, to: Route) {
+  if (from.view !== to.view) return 'switch'
+  if (to.view === 'cases') return 'detail'
+  if (to.view === 'api-testing') return 'tab'
+  return depth(to) > depth(from) ? 'forward' : depth(to) < depth(from) ? 'back' : 'swap'
+}
+
+/** Runs a navigation state update inside a View Transition when the browser supports it. */
 export function transition(from: Route, to: Route, update: () => void) {
   const root = document.documentElement
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   if (!document.startViewTransition || reduced || document.visibilityState !== 'visible') { update(); return }
-  root.dataset.nav = from.view !== to.view ? 'switch' : depth(to) > depth(from) ? 'forward' : depth(to) < depth(from) ? 'back' : 'swap'
+  const token = ++transitionToken
+  root.dataset.nav = navKind(from, to)
   const vt = document.startViewTransition(() => flushSync(update))
-  void vt.finished.finally(() => { delete root.dataset.nav })
+  // A rapid second navigation skips this transition; don't clear the attribute the newer one relies on.
+  void vt.finished.finally(() => { if (token === transitionToken) delete root.dataset.nav })
 }
+let transitionToken = 0

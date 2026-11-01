@@ -84,6 +84,8 @@ class Extraction(ApiModel):
 class ApiRequest(ApiModel):
     name: str = Field(default='未命名请求', min_length=1, max_length=200)
     collection_id: str | None = None
+    folder_id: str | None = None
+    position: int = Field(default=0, ge=0, le=1000000)
     method: Literal['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'] = 'GET'
     url: str = Field(default='', max_length=8192)
     query: list[KeyValue] = Field(default_factory=list, max_length=100)
@@ -105,6 +107,14 @@ class Collection(ApiModel):
     variables: list[Variable] = Field(default_factory=list, max_length=100)
 
 
+class Folder(ApiModel):
+    name: str = Field(min_length=1, max_length=200)
+    collection_id: str
+    parent_id: str | None = None
+    description: str = Field(default='', max_length=4000)
+    position: int = Field(default=0, ge=0, le=1000000)
+
+
 class Environment(Collection):
     pass
 
@@ -120,6 +130,18 @@ class CollectionRun(ApiModel):
     environment_id: str | None = None
     variables: dict[str, Any] = Field(default_factory=dict)
     stop_on_failure: bool = True
+
+
+class TreeItem(ApiModel):
+    kind: Literal['requests', 'folders']
+    id: str
+    version: int = Field(ge=1)
+
+
+class TreeReorder(ApiModel):
+    collection_id: str
+    parent_id: str | None = None
+    items: list[TreeItem] = Field(max_length=1000)
 
 
 RECORD_FIELDS = {'id', 'version', 'created_at', 'updated_at'}

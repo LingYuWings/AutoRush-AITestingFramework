@@ -56,6 +56,7 @@ Thumbs.db
 /docs/
 *.md
 !/README.md
+!/README.zh-CN.md
 !/backend/README.md
 /backend/tests/
 /frontend/tests/
@@ -64,3 +65,7 @@ Thumbs.db
 /scripts/*smoke*.py
 /scripts/model-agent-regression.py
 /scripts/fixtures/
+
+# Local-only project documents
+/DOC.md
+/SPEC.md

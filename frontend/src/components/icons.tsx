@@ -56,6 +56,8 @@ export const ClipboardList = glyph('ClipboardList', <rect x="5" y="5" width="14"
   <><rect x="5" y="5" width="14" height="16" rx="2.5" /><rect x="9" y="3" width="6" height="4" rx="1.2" /><path d="M9 12h6M9 16h4" /></>)
 export const Workflow = glyph('Workflow', <rect x="4" y="4" width="6" height="6" rx="1.6" />,
   <><rect x="4" y="4" width="6" height="6" rx="1.6" /><rect x="14" y="14" width="6" height="6" rx="1.6" /><path d="M10 7h4a3 3 0 0 1 3 3v4" /></>)
+export const Braces = glyph('Braces', <rect x="8.5" y="8.5" width="7" height="7" rx="1.6" />,
+  <path d="M8.5 4.5H8A2.5 2.5 0 0 0 5.5 7v2.6c0 1.2-.8 2.1-2 2.4 1.2.3 2 1.2 2 2.4V17A2.5 2.5 0 0 0 8 19.5h.5M15.5 4.5h.5A2.5 2.5 0 0 1 18.5 7v2.6c0 1.2.8 2.1 2 2.4-1.2.3-2 1.2-2 2.4V17a2.5 2.5 0 0 1-2.5 2.5h-.5" />)
 export const FileText = glyph('FileText', <path d="M14 3.5H8A2.5 2.5 0 0 0 5.5 6v12A2.5 2.5 0 0 0 8 20.5h8a2.5 2.5 0 0 0 2.5-2.5V8z" />,
   <><path d="M14 3.5H8A2.5 2.5 0 0 0 5.5 6v12A2.5 2.5 0 0 0 8 20.5h8a2.5 2.5 0 0 0 2.5-2.5V8z" /><path d="M14 3.5V8h4.5M9 13h6M9 16.5h4" /></>)
 export const Settings2 = glyph('Settings2', <><circle cx="15" cy="8" r="2.2" /><circle cx="9" cy="16" r="2.2" /></>,

@@ -5,7 +5,8 @@ import json
 from fastapi import APIRouter, Body, Header, HTTPException, Query, Request
 from pydantic import ValidationError
 
-from autorush.api_testing.models import ApiRequest, Collection, Environment, ExecuteRequest, CollectionRun
+from autorush.api_testing.models import ApiRequest, Collection, Environment, ExecuteRequest, CollectionRun, Folder, TreeReorder
+from autorush.api_testing.tree import TreeService, TreeError
 from autorush.api_testing.store import ApiStore
 from autorush.api_testing.engine import ApiEngine, bounded_evidence
 from autorush.api_testing.variables import ApiBlocked, variable_values
@@ -14,12 +15,22 @@ from autorush.api_testing.variables import ApiBlocked, variable_values
 def create_api_testing_router(settings, require_operator, trusted_local_request):
     router = APIRouter(prefix='/api/v1/api-testing', tags=['API testing'])
     store = ApiStore(settings.database_path)
-    schemas = {'collections': Collection, 'requests': ApiRequest, 'environments': Environment}
+    tree = TreeService(store)
+    schemas = {'collections': Collection, 'requests': ApiRequest, 'environments': Environment, 'folders': Folder}
+
+    def tree_action(callback):
+        try: return callback()
+        except TreeError as exc: raise HTTPException(exc.status, str(exc)) from None
 
     def authorize(request, token):
         require_operator(token)
         if not trusted_local_request(request):
             raise HTTPException(403, 'API testing requires a trusted local operator')
+
+    from autorush.api_testing.runner import ApiRunner
+    from autorush.api.api_runner import create_runner_router
+    router.api_runner = ApiRunner(store, tree, settings.allowed_api_hosts)
+    router.include_router(create_runner_router(router.api_runner, authorize))
 
     def parse_model(schema, payload):
         try:
@@ -68,6 +79,38 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
 
+    @router.post('/datasets/preview')
+    def preview_dataset(request: Request, payload: dict = Body(...), x_autorush_operator_token: str | None = Header(default=None)):
+        authorize(request, x_autorush_operator_token)
+        from autorush.api_testing.datasets import dataset_preview
+        try: return dataset_preview(payload.get('format'), payload.get('content'))
+        except (ValueError, UnicodeError) as exc: raise HTTPException(422, str(exc)) from None
+
+    @router.post('/tree/reorder')
+    def reorder_tree(request: Request, payload: dict = Body(...), x_autorush_operator_token: str | None = Header(default=None)):
+        authorize(request, x_autorush_operator_token)
+        command = parse_model(TreeReorder, payload)
+        return tree_action(lambda: tree.reorder(command.collection_id, command.parent_id, [item.model_dump() for item in command.items]))
+
+    @router.post('/collections/{collection_id}/case-draft', status_code=201)
+    def collection_case_draft(collection_id: str, request: Request, x_autorush_operator_token: str | None = Header(default=None)):
+        authorize(request, x_autorush_operator_token)
+        from autorush.api_testing.models import configuration
+        from autorush.domain.models import CaseCreate
+        with store.connect() as connection: records = tree.records(connection)
+        collection = records.get(('collections', collection_id))
+        if collection is None: raise HTTPException(404, 'collection not found')
+        items = tree_action(lambda: tree.ordered_requests(collection_id, records=records))
+        if not items or len(items) > 100: raise HTTPException(422, 'collection case requires 1..100 requests')
+        steps = []
+        for index, item in enumerate(items, 1):
+            spec = {**configuration(item), 'collection_id': None, 'folder_id': None, 'position': 0}
+            steps.append({'order': index, 'intent': item['name'], 'driver': 'api', 'operation': 'api.request',
+                'parameters': {'request': spec, 'collection_variables': collection['variables'],
+                    'source_request_id': item['id'], 'source_version': item['version']}})
+        return CaseCreate(title=collection['name'], description='API collection snapshot; approve before adding to a test plan',
+            platform='api', execution_mode='structured', steps=steps).model_dump(mode='json')
+
     @router.post('/snapshots', status_code=201)
     def create_request_snapshot(request: Request, payload: dict = Body(...), x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
@@ -111,7 +154,7 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
         authorize(request, x_autorush_operator_token)
         command = parse_model(CollectionRun, payload)
         if store.get('collections', collection_id) is None: raise HTTPException(404, 'collection not found')
-        requests = [item for item in store.list('requests') if item['collection_id'] == collection_id]
+        requests = tree_action(lambda: tree.ordered_requests(collection_id))
         if not requests or len(requests) > 100: raise HTTPException(422, 'collection requires 1..100 requests')
         async def perform():
             from autorush.api_testing.models import configuration
@@ -119,18 +162,20 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
                 values, secrets = runtime_variables(ApiRequest(collection_id=collection_id), command.environment_id, command.variables)
             except ApiBlocked as exc:
                 return {'status': 'blocked', 'results': [], 'detail': str(exc)}
-            engine = ApiEngine(settings.allowed_api_hosts, variables=values, secret_values=secrets)
-            results, stopped = [], False
-            async with asyncio.timeout(180):
-                for item in requests:
-                    if stopped:
-                        results.append({'request_id': item['id'], 'name': item['name'], 'status': 'skipped'})
-                        continue
-                    spec = ApiRequest.model_validate(configuration(item))
-                    replay = {'request': spec.model_dump(), 'variables': deepcopy(engine.variables), 'secret_values': list(engine.secrets)}
-                    result = await engine.execute(spec)
-                    results.append(save_result(result.public, item['id'], replay))
-                    stopped = command.stop_on_failure and result.public['status'] != 'passed'
+            from autorush.api_testing.runner import execute_sequence
+            snapshot = {'requests': [{'id': item['id'], 'version': item['version'], 'configuration': configuration(item)} for item in requests],
+                'rows': [{}], 'seed': values, 'secret_values': list(secrets), 'variables': {}, 'delay_ms': 0,
+                'stop_on_failure': command.stop_on_failure}
+            results = []
+            async def completed(public, request_id, replay): results.append(save_result(public, request_id, replay))
+            try:
+                async with asyncio.timeout(180):
+                    async for _ in execute_sequence(snapshot, settings.allowed_api_hosts, on_result=completed): pass
+            except TimeoutError:
+                current = requests[len(results)]
+                results.append({'request_id': current['id'], 'name': current['name'], 'status': 'blocked', 'detail': 'collection deadline exceeded'})
+            for item in requests[len(results):]:
+                results.append({'request_id': item['id'], 'name': item['name'], 'status': 'skipped'})
             status = next((status for status in ['error', 'failed', 'blocked'] if any(item['status'] == status for item in results)), 'passed')
             return {'status': status, 'results': results}
         return await until_disconnect(request, perform())
@@ -154,14 +199,16 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
                     saved = store.create('environments', environment.model_dump())
                     return {'collections': [], 'requests': [], 'environments': [saved], 'warnings': []}
                 if kind != 'postman_collection': raise ValueError('unsupported import format')
-                collection, specs, warnings = import_postman(content)
+                collection, specs, warnings, folders = import_postman(content, preserve_tree=True)
             validated_collection = Collection.model_validate(collection).model_dump()
             validated_specs = [ApiRequest.model_validate(spec).model_dump() for spec in specs]
+            if kind != 'curl':
+                folders = [{**Folder.model_validate({key: value for key, value in folder.items() if key != 'id'}).model_dump(),
+                    'id': folder['id']} for folder in folders]
         except (ValueError, TypeError, KeyError, AttributeError):
             raise HTTPException(422, 'invalid or unsupported import; only data-only cURL, Postman v2.1 and environment JSON are accepted') from None
-        saved_collection = store.create('collections', validated_collection)
-        saved_requests = [store.create('requests', {**spec, 'collection_id': saved_collection['id']}) for spec in validated_specs]
-        return {'collections': [saved_collection], 'requests': saved_requests, 'environments': [], 'warnings': warnings}
+        result = tree_action(lambda: tree.import_collection(validated_collection, validated_specs, folders if kind != 'curl' else []))
+        return {**result, 'warnings': warnings}
 
     @router.post('/export')
     def export_data(request: Request, payload: dict = Body(...), x_autorush_operator_token: str | None = Header(default=None)):
@@ -181,7 +228,8 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
             if kind == 'postman_collection':
                 collection = store.get('collections', payload.get('collection_id'))
                 if collection is None: raise HTTPException(404, 'collection not found')
-                content = export_postman(collection, [item for item in store.list('requests') if item['collection_id'] == collection['id']])
+                content = export_postman(collection, [item for item in store.list('requests') if item['collection_id'] == collection['id']],
+                    [item for item in store.list('folders') if item['collection_id'] == collection['id']])
             elif kind == 'postman_environment':
                 environment = store.get('environments', payload.get('environment_id'))
                 if environment is None: raise HTTPException(404, 'environment not found')
@@ -222,6 +270,8 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
         if replay is None: raise HTTPException(404, 'replay configuration is not available for this history')
         value = replay['request']
         value['collection_id'] = None
+        value['folder_id'] = None
+        value['position'] = 0
         value['variables'] = [{'key': key, 'value': val, 'enabled': True,
             'secret': bool(SENSITIVE.search(key)) or str(val) in replay.get('secret_values', [])}
             for key, val in replay.get('variables', {}).items()] + value.get('variables', [])
@@ -237,7 +287,9 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
     @router.post('/{kind}', status_code=201)
     def create_record(kind: str, request: Request, payload: dict = Body(...), x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
-        return store.create(kind, validate(kind, payload))
+        value = validate(kind, payload)
+        if kind in {'folders', 'requests'}: return tree_action(lambda: tree.write(kind, value))
+        return store.create(kind, value)
 
     @router.get('/{kind}/{record_id}')
     def get_record(kind: str, record_id: str, request: Request, x_autorush_operator_token: str | None = Header(default=None)):
@@ -252,6 +304,7 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
         expected_version: int = Query(ge=1), x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
         value = validate(kind, payload)
+        if kind in {'folders', 'requests'}: return tree_action(lambda: tree.write(kind, value, record_id, expected_version))
         try:
             return store.update(kind, record_id, value, expected_version)
         except KeyError:
@@ -262,6 +315,9 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
     @router.delete('/{kind}/{record_id}')
     def delete_record(kind: str, record_id: str, request: Request, x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
+        if kind in {'folders', 'requests', 'collections'}:
+            tree_action(lambda: tree.delete(kind, record_id))
+            return {'deleted': True}
         if kind == 'collections' and any(record['collection_id'] == record_id for record in store.list('requests')):
             raise HTTPException(409, 'move or delete requests before deleting this collection')
         if kind not in schemas or not store.delete(kind, record_id):

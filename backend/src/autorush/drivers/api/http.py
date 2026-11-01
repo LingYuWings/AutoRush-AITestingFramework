@@ -6,7 +6,7 @@ import httpx
 from autorush.api_testing.engine import ApiEngine, bounded_evidence, validate_url
 from autorush.api_testing.models import ApiRequest
 from autorush.api_testing.nodes import request_snapshot
-from autorush.api_testing.variables import redact, variable_values
+from autorush.api_testing.variables import redact, redact_execution, variable_values
 from autorush.domain.models import StepSpec
 from autorush.drivers.base import ActionResult
 
@@ -36,6 +36,8 @@ class HttpApiDriver:
     def sanitize_result(self, result):
         data = result.model_dump()
         for key in ['intent', 'detail', 'assertions', 'evidence']: data[key] = redact(data[key], self._engine.secrets)
+        if isinstance(result.evidence.get('api'), dict):
+            data['evidence']['api'] = redact_execution(result.evidence['api'], self._engine.secrets)
         return result.model_validate(data)
 
     async def execute(self, step: StepSpec) -> ActionResult:

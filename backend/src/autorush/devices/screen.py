@@ -161,7 +161,9 @@ async def serve_viewer(websocket: WebSocket, device_id: UUID, hub, screens: Scre
             await websocket.close(code=1013)
         except (RuntimeError, WebSocketDisconnect):
             pass
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, asyncio.CancelledError):
+        # Cancellation also terminates this ASGI viewer. Consume it at the
+        # session boundary so the shielded phone cleanup can finish normally.
         pass
     finally:
         # ASGI cancels a disconnected request. Cleanup must still reach the

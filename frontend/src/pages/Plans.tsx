@@ -127,7 +127,7 @@ export default function Plans({ plans, cases, runs, onCreate, onReady, onRun }: 
       description="组合已批准用例，选择目标环境和自然语言执行模型，预检查通过后运行。"
       actions={<>
         <button className="secondary-button" disabled={connectingAgent} onClick={()=>void connectAgent()} title="连接本机执行器并恢复模型执行状态"><RotateCcw size={14} className={connectingAgent?'spinning':''} />{connectingAgent?'正在恢复…':'恢复执行状态'}</button>
-        <button className="primary-button" onClick={() => setEditing(!editing)}><Plus size={15} /> 新建计划</button>
+        <button className="primary-button" disabled={editing} onClick={() => setEditing(true)}><Plus size={15} /> 新建计划</button>
       </>}
     />
 
@@ -139,7 +139,7 @@ export default function Plans({ plans, cases, runs, onCreate, onReady, onRun }: 
       <div className="form-section">
         <p className="form-section-label">基本信息</p>
         <div className="field-grid">
-          <label className="field"><span>计划名称</span><input required value={name} onChange={event => setName(event.target.value)} placeholder="例如：发布前冒烟回归" /></label>
+          <label className="field"><span>计划名称</span><input required autoFocus value={name} onChange={event => setName(event.target.value)} placeholder="例如：发布前冒烟回归" /></label>
           <label className="field"><span>环境名称</span><input required value={environment} onChange={event => setEnvironment(event.target.value)} /></label>
         </div>
       </div>

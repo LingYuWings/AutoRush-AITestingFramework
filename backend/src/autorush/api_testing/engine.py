@@ -11,7 +11,7 @@ from urllib.parse import parse_qsl, urljoin, urlsplit
 import httpx
 
 from autorush.api_testing.models import ApiRequest, ApiAssertion, Extraction
-from autorush.api_testing.variables import ApiBlocked, SENSITIVE, json_field, redact, secret_strings, substitute, variable_values
+from autorush.api_testing.variables import ApiBlocked, SENSITIVE, json_field, redact, redact_execution, secret_strings, substitute, variable_values
 
 MAX_RESPONSE = 1048576
 MAX_REQUEST = 1048576
@@ -235,5 +235,5 @@ class ApiEngine:
         except (httpx.HTTPError, TimeoutError, OverflowError, LookupError) as exc:
             public.update(status='error', detail='HTTP request failed: ' + type(exc).__name__)
         public['elapsed_ms'] = round((time.perf_counter() - started) * 1000, 2)
-        public = redact(public, self.secrets)
+        public = redact_execution(public, self.secrets)
         return ApiExecution(public, output, [(ok, redact(message, self.secrets)) for ok, message in checks])

@@ -8,7 +8,7 @@ def create_snapshot(store, spec, source_id=None, source_version=None, inherited_
     spec = ApiRequest.model_validate(spec)
     collection = store.get('collections', spec.collection_id) if spec.collection_id else None
     if spec.collection_id and collection is None: raise ValueError('API collection not found')
-    return store.create('request_snapshots', {'request': spec.model_copy(update={'collection_id': None}).model_dump(),
+    return store.create('request_snapshots', {'request': spec.model_copy(update={'collection_id': None, 'folder_id': None, 'position': 0}).model_dump(),
         'collection_variables': deepcopy(collection['variables']) if collection else [Variable.model_validate(item).model_dump() for item in (inherited_variables or [])],
         'source_request_id': source_id, 'source_version': source_version})
 

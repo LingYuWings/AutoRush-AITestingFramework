@@ -247,6 +247,22 @@ export type PlatformEvent = EventEnvelope & (
 
 const API_BASE = window.location.protocol === 'app:' ? 'http://127.0.0.1:8000' : ''
 let operatorToken = ''
+let screenshotAuthorization: Promise<void> | null = null
+
+function checkScreenshotAbort(signal?: AbortSignal) {
+  if (signal?.aborted) throw new DOMException('Screenshot request cancelled', 'AbortError')
+}
+
+async function authorizeScreenshot(): Promise<void> {
+  if (!screenshotAuthorization) {
+    const previous = operatorToken
+    screenshotAuthorization = request<OperatorSession>('/api/v1/devices/operator-session', undefined, false).then(session => {
+      if (typeof session.operator_token !== 'string' || !session.operator_token) throw new Error('本地操作授权不可用')
+      if (operatorToken === previous) api.setOperatorToken(session.operator_token)
+    }).finally(() => { screenshotAuthorization = null })
+  }
+  await screenshotAuthorization
+}
 const operatorListeners = new Set<() => void>()
 
 function socketBase() {
@@ -311,7 +327,18 @@ export const api = {
   adbDevices: () => request<{ devices: AdbDevice[]; error?: string }>('/api/v1/devices/adb'),
   screenshot: async (path: string, signal?: AbortSignal): Promise<Blob> => {
     if (!/^\/api\/v1\/runs\/[A-Za-z0-9-]+\/(?:screenshots|evidence)\/[A-Za-z0-9_-]+\.jpg$/.test(path)) throw new Error('截图资源地址无效')
-    const response = await fetch(`${API_BASE}${path}`, { signal, cache: 'no-store', headers: operatorToken ? { 'X-Autorush-Operator-Token': operatorToken } : {} })
+    checkScreenshotAbort(signal)
+    if (!operatorToken) await authorizeScreenshot()
+    checkScreenshotAbort(signal)
+    const sentToken = operatorToken
+    const fetchImage = () => fetch(`${API_BASE}${path}`, { signal, cache: 'no-store', headers: operatorToken ? { 'X-Autorush-Operator-Token': operatorToken } : {} })
+    let response = await fetchImage()
+    if (response.status === 401 || response.status === 403) {
+      checkScreenshotAbort(signal)
+      if (operatorToken === sentToken) await authorizeScreenshot()
+      checkScreenshotAbort(signal)
+      response = await fetchImage()
+    }
     if (!response.ok) throw new Error(`截图加载失败：${response.status}`)
     if (response.headers.get('Content-Type')?.split(';')[0].trim() !== 'image/jpeg') throw new Error('截图格式无效')
     return response.blob()
