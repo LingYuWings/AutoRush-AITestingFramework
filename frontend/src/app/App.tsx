@@ -4,6 +4,8 @@ import {
   RefreshCw, Settings2, Smartphone, Sun, Workflow, X,
 } from '../components/icons'
 import CaseEditor from '../features/cases/CaseEditor'
+import CaseDebugPanel from '../features/case-debug/CaseDebugPanel'
+import type {DebugSelection} from '../features/case-debug/client'
 import Overview from '../pages/Overview'
 import Cases from '../pages/Cases'
 import Plans from '../pages/Plans'
@@ -50,6 +52,8 @@ const initialTheme = (): Theme => {
 }
 
 export default function App() {
+  const [debugSelection,setDebugSelection]=useState<DebugSelection|null>(null)
+  const [debugOpen,setDebugOpen]=useState(false)
   const [route, setRoute] = useState<Route>(() => parseRoute(location.hash))
   const routeRef = useRef(route)
   const apiGuard=useRef<ApiNavigationGuard>(null)
@@ -192,6 +196,7 @@ export default function App() {
   const caseEditor = (creatingCase || editingCase) && <CaseEditor
     key={editingCase ? `${editingCase.id}-${editingCase.version}` : `new-${newCasePlatform}`}
     initial={editingCase} initialPlatform={newCasePlatform} providers={providerConfigs}
+    onDebug={(read,sessionId)=>{setDebugSelection({read,sessionId,source:editingCase,saved:false});setDebugOpen(true)}}
     onCancel={() => go({ view: 'cases', id: editingCase?.id }, { replace: true })}
     onSave={async payload => {
       let saved: CaseRecord | undefined
@@ -247,6 +252,8 @@ export default function App() {
         <Suspense fallback={<div className="page-loading" aria-busy="true" />}>
           {view === 'overview' && <Overview cases={activeCases} plans={plans} runs={runs} events={events} onNavigate={navigate} onNewCase={() => { setNewCasePlatform('web'); go({ view: 'cases', id: 'new' }) }} onOpenRun={id => go({ view: 'reports', id })} />}
           {view === 'cases' && <Cases cases={cases} selectedId={creatingCase ? null : route.id ?? null} editor={caseEditor || null}
+            onDebug={item=>{setDebugSelection({read:()=>item,source:item,saved:true,sessionId:crypto.randomUUID()});setDebugOpen(true)}}
+            onDebugHistory={()=>{setDebugSelection(null);setDebugOpen(true)}}
             onSelect={id => go({ view: 'cases', id: id ?? undefined }, { replace: true })}
             onCreate={platform => { setNewCasePlatform(platform); go({ view: 'cases', id: 'new' }, { replace: true }) }}
             onEdit={item => go({ view: 'cases', id: item.id, edit: true }, { replace: true })}
@@ -267,6 +274,7 @@ export default function App() {
       </main>
       </div>
     </div>
+    <CaseDebugPanel open={debugOpen} selection={debugSelection} plans={plans} onClose={()=>setDebugOpen(false)}/>
     {notice && <div role="status" className={`toast${notice.error ? ' error' : ''}${notice.leaving ? ' leaving' : ''}`}
       onAnimationEnd={event => { if (event.animationName === 'toast-out') setNotice(null) }}>
       {notice.error ? <CircleAlert size={17} /> : <CircleCheck size={17} />}

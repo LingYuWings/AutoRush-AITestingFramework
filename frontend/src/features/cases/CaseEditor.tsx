@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { CircleAlert, Plus, X } from '../../components/icons'
 import { api, type CaseCompilePayload, type CaseCompileResult, type CaseRecord, type DriverKind, type ProviderConfig } from '../../shared/api'
 import { newStep, switchDriver, editCompiledStep, compileEditableStep as compileStep, type EditableStep } from './step-form'
@@ -9,14 +9,17 @@ import {newRequest} from '../api-testing/types'
 import {authorizeApi} from '../api-testing/client'
 import {buildNaturalCase,newNaturalStep,type NaturalStep} from './natural-form'
 import {platformOf} from './platform'
+import type {DebugCase} from '../case-debug/client'
+import {validateDebugCase} from '../case-debug/form'
 import './case-editor.css'
 const EMPTY_PROVIDERS: ProviderConfig[] = []
 
-export default function CaseEditor({ onCancel, onSave, providers = EMPTY_PROVIDERS, onCompile = api.compileCase, initial, initialPlatform='web' }: {
+export default function CaseEditor({ onCancel, onSave, onDebug, providers = EMPTY_PROVIDERS, onCompile = api.compileCase, initial, initialPlatform='web' }: {
   onCancel: () => void
   onSave: (payload: Pick<CaseRecord, 'title' | 'description' | 'execution_mode' | 'platform' | 'steps' | 'postconditions'>) => Promise<void>
   initial?:CaseRecord
   initialPlatform?:DriverKind
+  onDebug?:(read:()=>DebugCase,sessionId:string)=>void
   providers?: ProviderConfig[]
   onCompile?: (payload: CaseCompilePayload) => Promise<CaseCompileResult | null>
 }) {
@@ -43,12 +46,20 @@ export default function CaseEditor({ onCancel, onSave, providers = EMPTY_PROVIDE
   const [compiling, setCompiling] = useState(false)
   const [compileWarnings, setCompileWarnings] = useState<string[]>([])
   const [editorError, setEditorError] = useState<string | null>(null)
+  const debugSession=useRef(crypto.randomUUID())
+  const buildPayload=():DebugCase=>{
+    const payload=mode==='agent'?buildNaturalCase({title,description,steps:naturalSteps,postconditions:naturalCleanup}):{execution_mode:'structured' as const,title:title.trim(),description:description.trim(),steps:steps.map(compileStep),postconditions:cleanup.map(compileStep)}
+    return {...payload,platform:platform==='mixed'?null:platform}
+  }
+  const payloadReader=useRef(buildPayload);payloadReader.current=buildPayload
+  const debug=()=>{setEditorError(null);try{validateDebugCase(payloadReader.current());onDebug?.(()=>payloadReader.current(),debugSession.current)}catch(cause){setEditorError(cause instanceof Error?cause.message:String(cause))}}
+  const debugButton=onDebug&&<button type="button" className="secondary-button" disabled={saving} onClick={debug}>调试当前内容</button>
   const replace = (items: EditableStep[], setter: (items: EditableStep[]) => void, value: EditableStep) => setter(items.map(item => item.id === value.id ? value : item))
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     setSaving(true)
     setEditorError(null)
-    try { const payload=mode==='agent'?buildNaturalCase({title,description,steps:naturalSteps,postconditions:naturalCleanup}):{execution_mode:'structured' as const, title: title.trim(), description: description.trim(), steps: steps.map(compileStep), postconditions: cleanup.map(compileStep) }; if([...payload.steps,...payload.postconditions].some(step=>step.parameters.request||step.parameters.request_snapshot_id))await authorizeApi();await onSave({...payload,platform:platform==='mixed'?null:platform}) }
+    try { const payload=buildPayload(); if([...payload.steps,...payload.postconditions].some(step=>step.parameters.request||step.parameters.request_snapshot_id))await authorizeApi();await onSave(payload) }
     catch (error) { setEditorError(error instanceof Error ? error.message : '保存失败') }
     finally { setSaving(false) }
   }
@@ -82,7 +93,7 @@ export default function CaseEditor({ onCancel, onSave, providers = EMPTY_PROVIDE
     <label className="field"><span>执行端</span><select value={platform} onChange={e=>{const value=e.target.value as DriverKind|'mixed';setPlatform(value);if(value!=='mixed'){if(value==='api')setMode('structured');setNaturalSteps(old=>old.map(step=>step.apiParameters?step:{...step,driver:value}));setNaturalCleanup(old=>old.map(step=>step.apiParameters?step:{...step,driver:value}));const convert=(step:EditableStep)=>step.apiParameters?step:value==='api'?{...switchDriver(step,value),intent:step.intent||'API 请求',apiParameters:{request:newRequest()}}:switchDriver(step,value);setSteps(old=>old.map(convert));setCleanup(old=>old.map(convert))}}}><option value="web">Web · Playwright</option><option value="android">Android · Portal</option><option value="desktop">Desktop · PyAutoGUI</option><option value="api">API · HTTP</option>{initial&&platformOf(initial)==='mixed'&&<option value="mixed">历史混合（兼容原用例）</option>}</select></label>
     <label className="field"><span>执行方式</span><select value={mode} onChange={e=>{setMode(e.target.value as 'agent'|'structured');setSteps([freshStructured()]);setCleanup([]);setNaturalSteps([freshNatural()]);setNaturalCleanup([]);setCompileWarnings([]);setEditorError(null)}}><option value="agent">自然语言 · 模型观察并执行</option><option value="structured">高级 · 结构化动作</option></select></label>
     {mode==='agent'?<>
-      <p className="quiet-note">填写操作意图和明确的预期结果。模型会读取实时页面或截图，每次选择一个动作，并核验预期；执行模型在测试计划中选择。</p>
+      <p className="quiet-note">填写操作意图和明确的预期结果。模型会读取实时页面或截图，每次选择一个动作，并核验预期；执行模型在测试计划或调试面板中选择。</p>
       {editorError&&<p role="alert">{editorError}</p>}
       <div className="section-title"><h3>执行步骤</h3><button type="button" className="secondary-button" onClick={()=>setNaturalSteps([...naturalSteps,freshNatural()])}>添加步骤</button></div>
       <button type="button" className="text-button" onClick={()=>setNaturalSteps([...naturalSteps,apiNatural()])}>添加 API 节点</button>
@@ -90,7 +101,7 @@ export default function CaseEditor({ onCancel, onSave, providers = EMPTY_PROVIDE
       <div className="section-title"><h3>后处理</h3><button type="button" className="secondary-button" onClick={()=>setNaturalCleanup([...naturalCleanup,{...freshNatural(),always_run:true}])}>添加后处理</button></div>
       <button type="button" className="text-button" onClick={()=>setNaturalCleanup([...naturalCleanup,{...apiNatural(),always_run:true}])}>添加 API 后处理</button>
       {renderNatural(naturalCleanup,setNaturalCleanup,true)}
-      <div className="form-actions"><button type="button" className="secondary-button" onClick={onCancel}>取消</button><button className="primary-button" disabled={saving||!naturalSteps.length}>{saving?'保存中…':'保存草稿'}</button></div>
+      <div className="form-actions">{debugButton}<button type="button" className="secondary-button" onClick={onCancel}>取消</button><button className="primary-button" disabled={saving||!naturalSteps.length}>{saving?'保存中…':'保存草稿'}</button></div>
     </>:<>
     <div className="ai-compile-bar"><div><span><strong>模型辅助编译</strong><small>模型编译支持 API / Web。Android / Desktop 用例请手动填写结构化动作；所有结果需检查后保存。</small></span></div><label><span>模型配置</span><select value={selectedProviderId} onChange={event => setProviderId(event.target.value)} disabled={!eligibleProviders.length}>{eligibleProviders.length ? eligibleProviders.map(item => <option key={item.id} value={item.id}>{item.name} · {item.model_id}</option>) : <option value="">请先在系统设置中配置模型</option>}</select></label><button type="button" className="secondary-button" onClick={() => void compile()} disabled={steps.concat(cleanup).some(step => ['android','desktop'].includes(step.driver)) || compiling || !selectedProviderId || !title.trim() || steps.some(step => !step.intent.trim())}>{compiling ? '编译中…' : '补全结构化动作'}</button></div>
     {compileWarnings.length > 0 && <div className="compile-warnings"><CircleAlert size={16} /><div><strong>编译提示</strong>{compileWarnings.map((warning, index) => <p key={index}>{warning}</p>)}</div></div>}
@@ -101,7 +112,7 @@ export default function CaseEditor({ onCancel, onSave, providers = EMPTY_PROVIDE
     <div className="section-title"><div><h3>后处理</h3><span>用于清理测试状态</span></div><button type="button" className="secondary-button" onClick={() => setCleanup([...cleanup, { ...freshStructured(), alwaysRun: true, assertions: [] }])}><Plus size={16} /> 添加后处理</button></div>
     <button type="button" className="text-button" onClick={()=>setCleanup([...cleanup,{...apiStructured(),alwaysRun:true}])}>添加 API 后处理</button>
     <div className="steps-list">{renderStructured(cleanup,setCleanup,true)}</div>
-    <div className="form-actions sticky-actions"><span className="muted">{steps.length} 个步骤 · {cleanup.length} 个后处理 · {steps.concat(cleanup).reduce((sum, step) => sum + step.assertions.length, 0)} 个断言</span><button type="button" className="secondary-button" onClick={onCancel}>取消</button><button className="primary-button" type="submit" disabled={saving || steps.length === 0}>{saving ? '保存中…' : '保存草稿'}</button></div>
+    <div className="form-actions sticky-actions"><span className="muted">{steps.length} 个步骤 · {cleanup.length} 个后处理 · {steps.concat(cleanup).reduce((sum, step) => sum + step.assertions.length, 0)} 个断言</span>{debugButton}<button type="button" className="secondary-button" onClick={onCancel}>取消</button><button className="primary-button" type="submit" disabled={saving || steps.length === 0}>{saving ? '保存中…' : '保存草稿'}</button></div>
     </>}
   </form>
 }

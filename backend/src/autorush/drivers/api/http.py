@@ -3,12 +3,35 @@ from __future__ import annotations
 import json
 from urllib.parse import urlsplit
 import httpx
+from pydantic import ValidationError
 from autorush.api_testing.engine import ApiEngine, bounded_evidence, validate_url
 from autorush.api_testing.models import ApiRequest
 from autorush.api_testing.nodes import request_snapshot
 from autorush.api_testing.variables import redact, redact_execution, variable_values
+from autorush.api_testing.variables import ApiBlocked
 from autorush.domain.models import StepSpec
 from autorush.drivers.base import ActionResult
+from autorush.evidence.redaction import redact_execution_payload
+
+
+def legacy_request(step, base_url):
+    """Shared startup/runtime validation; never surface Pydantic input reprs."""
+    path = step.parameters.get('path')
+    if not isinstance(path, str) or not path.startswith('/') or path.startswith('//') or not base_url:
+        raise ApiBlocked('path must be an absolute path on the configured host')
+    if urlsplit(path).netloc or urlsplit(path).scheme or '#' in path or chr(92) in path or any(ord(char) < 32 for char in path):
+        raise ApiBlocked('path cannot change host or contain a fragment')
+    headers = step.parameters.get('headers') or {}
+    query = step.parameters.get('query') or {}
+    try:
+        if not isinstance(headers, dict) or not isinstance(query, dict): raise ValueError('invalid pairs')
+        return ApiRequest.model_validate({'name': step.intent, 'method': str(step.parameters.get('method', 'GET')).upper(),
+            'url': base_url.rstrip('/') + '/' + path.lstrip('/'),
+            'headers': [{'key': key, 'value': str(value)} for key, value in headers.items()],
+            'query': [{'key': key, 'value': str(value)} for key, value in query.items()],
+            'body': {'mode': 'json', 'text': json.dumps(step.parameters['json'])} if 'json' in step.parameters else {'mode': 'none'}})
+    except (ValidationError, TypeError, ValueError):
+        raise ApiBlocked('invalid API request configuration') from None
 
 
 class HttpApiDriver:
@@ -34,10 +57,7 @@ class HttpApiDriver:
     def begin_case(self): self._engine.reset()
 
     def sanitize_result(self, result):
-        data = result.model_dump()
-        for key in ['intent', 'detail', 'assertions', 'evidence']: data[key] = redact(data[key], self._engine.secrets)
-        if isinstance(result.evidence.get('api'), dict):
-            data['evidence']['api'] = redact_execution(result.evidence['api'], self._engine.secrets)
+        data = redact_execution_payload(result.model_dump(), self._engine.secrets)
         return result.model_validate(data)
 
     async def execute(self, step: StepSpec) -> ActionResult:
@@ -45,18 +65,7 @@ class HttpApiDriver:
         spec, inherited = request_snapshot(step, self._store)
         legacy = spec is None
         if legacy:
-            path = step.parameters.get('path')
-            if not isinstance(path, str) or not path.startswith('/') or path.startswith('//') or not self._base_url:
-                raise ValueError('path must be an absolute path on the configured host')
-            if urlsplit(path).netloc or urlsplit(path).scheme or '#' in path or chr(92) in path or any(ord(char) < 32 for char in path):
-                raise ValueError('path cannot change host or contain a fragment')
-            headers = step.parameters.get('headers') or {}
-            query = step.parameters.get('query') or {}
-            spec = ApiRequest.model_validate({'name': step.intent, 'method': str(step.parameters.get('method', 'GET')).upper(),
-                'url': self._base_url.rstrip('/') + '/' + path.lstrip('/'),
-                'headers': [{'key': key, 'value': str(value)} for key, value in headers.items()],
-                'query': [{'key': key, 'value': str(value)} for key, value in query.items()],
-                'body': {'mode': 'json', 'text': json.dumps(step.parameters['json'])} if 'json' in step.parameters else {'mode': 'none'}})
+            spec = legacy_request(step, self._base_url)
         elif spec.url.startswith('/') and self._base_url:
             spec = spec.model_copy(update={'url': self._base_url.rstrip('/') + '/' + spec.url.lstrip('/')})
         values, secrets = variable_values(inherited)
