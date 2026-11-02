@@ -270,6 +270,11 @@ function socketBase() {
     : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`
 }
 
+export class ApiRequestError extends Error {
+  readonly status:number
+  constructor(message:string,status:number){super(message);this.status=status}
+}
+
 export async function request<T>(path: string, init?: RequestInit, authenticated = true): Promise<T> {
   let response: Response
   try {
@@ -294,7 +299,7 @@ export async function request<T>(path: string, init?: RequestInit, authenticated
       }
     } catch { /* use HTTP status */ }
     if (operatorToken) detail = detail.replaceAll(operatorToken, '[已隐藏]')
-    throw new Error(detail)
+    throw new ApiRequestError(detail,response.status)
   }
   if (response.status === 204) return undefined as T
   return response.json() as Promise<T>

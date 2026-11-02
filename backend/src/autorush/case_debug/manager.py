@@ -5,7 +5,7 @@ from autorush.agent.manager import AgentRunManager
 from autorush.api_testing.nodes import freeze_case
 from autorush.api_testing.variables import secret_strings
 from autorush.evidence.redaction import redact_execution_payload
-from autorush.case_debug.models import DebugRecord
+from autorush.case_debug.models import DebugRecord, debug_summary
 from autorush.case_debug.preflight import check_debug
 from autorush.case_debug.store import DebugStore
 from autorush.domain.models import CaseRecord, PlanRecord, ResultStatus
@@ -27,7 +27,7 @@ class DebugRunManager(AgentRunManager):
             if old:
                 if old.request_hash != fingerprint: raise HTTPException(409, 'idempotency key belongs to different debug content')
                 return old
-            if any(row.state in {'running', 'stopping'} for row in self.store.list_agent_executions()):
+            if self.store.has_active():
                 raise HTTPException(409, 'another debug run is active; stop it or wait for completion')
             original = self.store.formal.get_case(payload.source_case_id) if payload.source_case_id else None
             if payload.source_case_id:
@@ -61,12 +61,7 @@ class DebugRunManager(AgentRunManager):
         await self.emit('finished', {'run_id': str(record.id)})
 
     def public(self, record, *, summary=False):
-        data = {'id': str(record.id), 'state': record.state, 'title': record.case_snapshots[0].title,
-            'source_case_id': str(record.source_case_id) if record.source_case_id else None,
-            'source_version': record.source_version, 'session_id': str(record.session_id) if record.session_id else None,
-            'unsaved': record.unsaved, 'execution_mode': record.case_snapshots[0].execution_mode,
-            'platform': record.case_snapshots[0].platform or 'mixed',
-            'created_at': record.created_at.isoformat(), 'status': record.result.status.value if record.result else None}
+        data = debug_summary(record)
         if summary: return data
         data.update(progress=record.progress, result=record.result.model_dump(mode='json') if record.result else None,
             termination_reason=record.termination_reason)

@@ -45,3 +45,12 @@ class DebugRecord(AgentExecutionRecord):
     unsaved: bool = False
     request_hash: str
     result: CaseResult | None = None
+
+
+def debug_summary(record: DebugRecord) -> dict:
+    return {'id':str(record.id),'state':record.state,'title':record.case_snapshots[0].title,
+        'source_case_id':str(record.source_case_id) if record.source_case_id else None,
+        'source_version':record.source_version,'session_id':str(record.session_id) if record.session_id else None,
+        'unsaved':record.unsaved,'execution_mode':record.case_snapshots[0].execution_mode,
+        'platform':record.case_snapshots[0].platform or 'mixed','created_at':record.created_at.isoformat(),
+        'status':record.result.status.value if record.result else None}

@@ -9,6 +9,8 @@
 .debug-config .field { margin:12px 0; }
 .case-debug-panel input:not([type=checkbox]), .case-debug-panel select { min-width:0; width:100%; min-height:34px; padding:7px 9px; border:1px solid var(--line-strong); border-radius:var(--radius); color:var(--ink); background:var(--surface); font:inherit; font-size:13px; }
 .debug-actions { display:flex; gap:8px; margin-top:16px; }
+.debug-active-bar { padding:12px; border:1px solid var(--line-strong); border-radius:var(--radius); background:var(--accent-soft); }
+.debug-active-bar p { margin:0; }
 .debug-step { padding:12px; margin:10px 0; border:1px solid var(--line); border-radius:var(--radius); font-size:13px; }
 .debug-step summary { display:flex; justify-content:space-between; gap:10px; cursor:pointer; }
 .debug-step p { overflow-wrap:anywhere; }
