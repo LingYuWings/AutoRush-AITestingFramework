@@ -326,7 +326,7 @@ export const api = {
   adbScreenUrl: () => `${socketBase()}/api/v1/devices/adb/screen/ws`,
   adbDevices: () => request<{ devices: AdbDevice[]; error?: string }>('/api/v1/devices/adb'),
   screenshot: async (path: string, signal?: AbortSignal): Promise<Blob> => {
-    if (!/^\/api\/v1\/runs\/[A-Za-z0-9-]+\/(?:screenshots|evidence)\/[A-Za-z0-9_-]+\.jpg$/.test(path)) throw new Error('截图资源地址无效')
+    if (!/^\/api\/v1\/(?:runs\/[A-Za-z0-9-]+\/(?:screenshots|evidence)|case-debug-runs\/[A-Za-z0-9-]+\/evidence)\/[A-Za-z0-9_-]+\.jpg$/.test(path)) throw new Error('截图资源地址无效')
     checkScreenshotAbort(signal)
     if (!operatorToken) await authorizeScreenshot()
     checkScreenshotAbort(signal)

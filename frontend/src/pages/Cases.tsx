@@ -1,5 +1,5 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Archive, Check, ClipboardList, Pencil, Plus, Search, Trash2, Undo2 } from '../components/icons'
+import { Archive, Check, ClipboardList, Pencil, Play, Plus, Search, Trash2, Undo2 } from '../components/icons'
 import type { CaseRecord, DriverKind, StepSpec } from '../shared/api'
 import { filterCases, platformLabels, platformOf, type CasePlatform } from '../features/cases/platform'
 import { DriverChip, EmptyState, StatusBadge } from '../components/ui'
@@ -25,7 +25,7 @@ function StepList({ steps, cleanup = false }: { steps: StepSpec[]; cleanup?: boo
   </ol>
 }
 
-function CaseDetail({ item, busy, onEdit, onApprove, onArchive, onRestore }: { item: CaseRecord; busy: boolean; onEdit: () => void; onApprove: () => void; onArchive: () => void; onRestore: () => void }) {
+function CaseDetail({ item, busy, onEdit, onApprove, onArchive, onRestore, onDebug }: { item: CaseRecord; busy: boolean; onEdit: () => void; onApprove: () => void; onArchive: () => void; onRestore: () => void; onDebug:()=>void }) {
   const assertions = [...item.steps, ...item.postconditions].reduce((sum, step) => sum + step.assertions.length, 0)
   return <article className="case-detail">
     <header className="case-detail-header">
@@ -38,6 +38,7 @@ function CaseDetail({ item, busy, onEdit, onApprove, onArchive, onRestore }: { i
         {item.archived_at
           ? <button className="secondary-button" disabled={busy} onClick={onRestore}><Undo2 size={14} />恢复</button>
           : <>
+            <button className="secondary-button" disabled={busy} onClick={onDebug}><Play size={14}/>运行调试</button>
             <button className="icon-button danger" disabled={busy} onClick={onArchive} aria-label={'删除用例 ' + item.title} title="删除（可恢复）"><Trash2 size={16} /></button>
             <button className="secondary-button" disabled={busy} onClick={onEdit}><Pencil size={14} />编辑</button>
             {item.status === 'draft' && <button className="primary-button" disabled={busy} onClick={onApprove}><Check size={14} />批准</button>}
@@ -61,7 +62,7 @@ function CaseDetail({ item, busy, onEdit, onApprove, onArchive, onRestore }: { i
   </article>
 }
 
-export default function Cases({ cases, selectedId, editor, onSelect, onApprove, onCreate, onEdit, onArchive, onRestore }: {
+export default function Cases({ cases, selectedId, editor, onSelect, onApprove, onCreate, onEdit, onArchive, onRestore, onDebug, onDebugHistory }: {
   cases: CaseRecord[]
   selectedId: string | null
   editor: ReactNode
@@ -71,6 +72,8 @@ export default function Cases({ cases, selectedId, editor, onSelect, onApprove, 
   onEdit: (item: CaseRecord) => void
   onArchive: (id: string) => Promise<void>
   onRestore: (id: string) => Promise<void>
+  onDebug:(item:CaseRecord)=>void
+  onDebugHistory:()=>void
 }) {
   const [query, setQuery] = useState('')
   const deferredQuery = useDeferredValue(query)
@@ -114,7 +117,7 @@ export default function Cases({ cases, selectedId, editor, onSelect, onApprove, 
         <h1>用例管理</h1>
         <p className="page-description">按执行端管理用例；跨端场景在测试计划中组合。批准后的修改另存为新草稿版本。</p>
       </div>
-      <button className="primary-button" onClick={() => onCreate(platform === 'all' || platform === 'mixed' ? 'web' : platform)}><Plus size={15} /> 新建用例</button>
+      <div className="debug-actions"><button className="secondary-button" onClick={onDebugHistory}>调试记录</button><button className="primary-button" onClick={() => onCreate(platform === 'all' || platform === 'mixed' ? 'web' : platform)}><Plus size={15} /> 新建用例</button></div>
     </div>
 
     <div className="cases-layout">
@@ -140,7 +143,7 @@ export default function Cases({ cases, selectedId, editor, onSelect, onApprove, 
         <div className="case-list" ref={listRef} role="listbox" aria-label="用例" onKeyDown={moveSelection}>
           {filtered.map(item => {
             const active = item.id === selectedId
-            return <button key={item.id} data-id={item.id} role="option" aria-selected={active} tabIndex={active || (!selectedId && item === filtered[0]) ? 0 : -1}
+            return <div key={item.id} className="case-list-row" role="presentation"><button data-id={item.id} role="option" aria-selected={active} tabIndex={active || (!selectedId && item === filtered[0]) ? 0 : -1}
               className={active ? 'case-item active' : 'case-item'} onClick={() => onSelect(item.id)}>
               <span className="case-item-title">
                 <span className={`status-pip pip-${item.status}`} title={item.status === 'draft' ? '草稿' : '已批准'} />
@@ -152,7 +155,7 @@ export default function Cases({ cases, selectedId, editor, onSelect, onApprove, 
                 <span className="mono">v{item.version}</span>
                 <time dateTime={item.created_at}>{relative(item.created_at)}</time>
               </span>
-            </button>
+            </button>{!item.archived_at&&<button className="icon-button case-debug-button" aria-label={'运行调试 '+item.title} title="运行调试此用例" onClick={()=>onDebug(item)}><Play size={14}/></button>}</div>
           })}
           {!filtered.length && <EmptyState icon={ClipboardList} title={cases.length ? '没有匹配的用例' : '还没有用例'} description={cases.length ? '换个关键词或筛选条件试试。' : '从第一个测试场景开始。'} />}
         </div>
@@ -162,6 +165,7 @@ export default function Cases({ cases, selectedId, editor, onSelect, onApprove, 
       <section className={editor ? 'case-pane editing' : 'case-pane'} ref={paneRef} aria-live="polite">
         {editor ?? (selected
           ? <CaseDetail key={selected.id} item={selected} busy={busy === selected.id}
+              onDebug={()=>onDebug(selected)}
               onEdit={() => onEdit(selected)}
               onApprove={() => void act(selected.id, onApprove)}
               onArchive={() => void act(selected.id, onArchive)}

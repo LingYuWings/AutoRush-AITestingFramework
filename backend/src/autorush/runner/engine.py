@@ -59,7 +59,9 @@ class Runner:
                 from autorush.api_testing.nodes import resolve_ui_step
                 step = resolve_ui_step(step, self._drivers)
             action = await driver.execute(step)
-            checks = [*action.checks, *[evaluate_assertion(assertion, action.output) for assertion in step.assertions]]
+            checks = list(action.checks)
+            if action.status not in {ResultStatus.BLOCKED, ResultStatus.ERROR}:
+                checks.extend(evaluate_assertion(assertion, action.output) for assertion in step.assertions)
             status = action.status or (ResultStatus.PASSED if all(ok for ok, _ in checks) else ResultStatus.FAILED)
             result = StepResult(order=step.order, intent=step.intent, status=status, detail=action.summary, assertions=[text for _, text in checks], evidence=action.evidence)
         except (DriverBlockedError, ApiBlocked) as exc:

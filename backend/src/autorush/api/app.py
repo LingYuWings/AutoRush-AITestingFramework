@@ -55,6 +55,8 @@ from autorush.api.model_catalog import create_model_catalog_router
 from autorush.api.agent_runs import create_agent_run_router
 from autorush.agent.executions import validate_agent_configuration
 from autorush.agent.manager import AgentRunManager
+from autorush.case_debug.manager import DebugRunManager
+from autorush.case_debug.router import create_debug_router
 from autorush.llm.client import ModelClient
 from autorush.runner.factory import DriverSession
 from autorush.evidence.report import save_reports
@@ -105,10 +107,12 @@ def create_app(
     async def lifespan(_):
         try:
             await agent_manager.recover_interrupted()
+            await debug_manager.recover_interrupted()
             await app.state.api_runner.recover_interrupted()
             yield
         finally:
             await agent_manager.close()
+            await debug_manager.close()
             await app.state.api_runner.close()
             await adb_screen_hub.close()
             await local_server.stop()
@@ -126,6 +130,9 @@ def create_app(
     agent_manager=AgentRunManager(settings,store,make_agent_session,
         model_client_factory or (lambda config,hosts,**kwargs:ModelClient(config,hosts,transport=llm_transport,**kwargs)),event_broker)
     app.state.agent_runs=agent_manager
+    debug_manager=DebugRunManager(settings,store,make_agent_session,
+        model_client_factory or (lambda config,hosts,**kwargs:ModelClient(config,hosts,transport=llm_transport,**kwargs)),event_broker,device_hub)
+    app.state.case_debug=debug_manager
     browser_origins = {
         f"http://127.0.0.1:{settings.frontend_port}",
         f"http://localhost:{settings.frontend_port}",
@@ -142,7 +149,7 @@ def create_app(
     @app.middleware("http")
     async def do_not_cache_device_credentials(request: Request, call_next):
         response = await call_next(request)
-        if request.url.path.startswith(("/api/v1/devices", "/api/v1/automation", "/api/v1/providers")) or '/agent-runs' in request.url.path:
+        if request.url.path.startswith(("/api/v1/devices", "/api/v1/automation", "/api/v1/providers", "/api/v1/case-debug-runs")) or '/agent-runs' in request.url.path:
             response.headers["Cache-Control"] = "no-store"
         return response
 
@@ -151,6 +158,8 @@ def create_app(
         # FastAPI's default validation payload includes raw request values.
         if request.url.path.startswith("/api/v1/devices/pairings"):
             return JSONResponse(status_code=422, content={"detail": "invalid pairing request"})
+        if request.url.path.startswith('/api/v1/case-debug-runs'):
+            return JSONResponse(status_code=422, content={"detail": "调试参数无效，请检查标题、步骤、预期结果及目标配置。"})
         return await request_validation_exception_handler(request, exc)
 
     @app.get("/health")
@@ -784,6 +793,7 @@ def create_app(
     app.include_router(create_automation_router(settings,require_operator,trusted_local_request))
     app.include_router(create_model_catalog_router(settings,store,require_operator,trusted_local_request))
     app.include_router(create_agent_run_router(agent_manager,settings,store,device_hub,require_operator,trusted_local_request))
+    app.include_router(create_debug_router(debug_manager,settings,require_operator,trusted_local_request))
     return app
 
 

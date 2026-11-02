@@ -61,6 +61,7 @@ Natural-language runs are bounded by timeouts, round limits, cancellation and no
 
 - **Console**: a React web console, also available as an Electron desktop app, with light and dark themes.
 - **Case management**: natural-language and structured modes, filtering by platform, versioning, approval and recoverable deletion.
+- **Single-case debugging**: run a saved case from its list row, or use the editor's **Debug current content** action without saving. Configure targets and the model in the debug panel, inspect live progress, stop the run and review step evidence. The latest 20 debug records are separate from formal plans and reports; debugging does not save or approve the case.
 - **API workbench**: a request editor with tabs, nested folders, environments and `{{variables}}`. It also has a collection runner with CSV/JSON data-driven iterations and a searchable run history. Any request or collection can be saved as an API test case.
 - **Android devices**: pair a phone by scanning a QR code, manage authorised devices and watch the screen live.
 - **Model settings**: discover local model servers, fetch model lists and verify text and vision capabilities.

@@ -36,23 +36,26 @@ class AgentRunManager:
             validate_agent_configuration(self.settings,self.store,plan,cases)
             record=AgentExecutionRecord(plan_id=plan.id,idempotency_key=idempotency_key,plan_snapshot=plan,case_snapshots=cases)
             self.store.save_agent_execution(record)
-            self.cancel_events[record.id]=asyncio.Event()
-            task=asyncio.create_task(self._execute(record));self.tasks[record.id]=task
-            def done(completed):
-                if not completed.cancelled():
-                    error=completed.exception()
-                    if error:
-                        logging.getLogger(__name__).error('Agent task failed: %s',type(error).__name__)
-                        try:
-                            saved=self.get(record.id)
-                            if saved and saved.state in {'running','stopping'}:
-                                saved.state='interrupted';saved.termination_reason=f'execution persistence failed: {type(error).__name__}'
-                                self.store.update_agent_execution(saved)
-                        except Exception:
-                            logging.getLogger(__name__).error('Agent failure state could not be persisted')
-                self.tasks.pop(record.id,None);self.cancel_events.pop(record.id,None);self.started.discard(record.id)
-            task.add_done_callback(done)
-            return record
+            return self._schedule(record)
+
+    def _schedule(self, record):
+        self.cancel_events[record.id]=asyncio.Event()
+        task=asyncio.create_task(self._execute(record));self.tasks[record.id]=task
+        def done(completed):
+            if not completed.cancelled():
+                error=completed.exception()
+                if error:
+                    logging.getLogger(__name__).error('Agent task failed: %s',type(error).__name__)
+                    try:
+                        saved=self.get(record.id)
+                        if saved and saved.state in {'running','stopping'}:
+                            saved.state='interrupted';saved.termination_reason=f'execution persistence failed: {type(error).__name__}'
+                            self.store.update_agent_execution(saved)
+                    except Exception:
+                        logging.getLogger(__name__).error('Agent failure state could not be persisted')
+            self.tasks.pop(record.id,None);self.cancel_events.pop(record.id,None);self.started.discard(record.id)
+        task.add_done_callback(done)
+        return record
 
     async def cancel(self,execution_id):
         record=self.get(execution_id)
@@ -108,9 +111,9 @@ class AgentRunManager:
         event=self.cancel_events[record.id]
         try:
             if event.is_set(): raise asyncio.CancelledError()
-            config=validate_agent_configuration(self.settings,self.store,record.plan_snapshot,record.case_snapshots)
+            config=validate_agent_configuration(self.settings,self.store,record.plan_snapshot,record.case_snapshots) if any(c.execution_mode=='agent' for c in record.case_snapshots) else None
             session=await self.session_factory(record.plan_snapshot,record.case_snapshots,record.id)
-            client=self.client_factory(config,set(self.settings.allowed_llm_hosts),timeout=record.plan_snapshot.agent_options.model_timeout_seconds)
+            client=self.client_factory(config,set(self.settings.allowed_llm_hosts),timeout=record.plan_snapshot.agent_options.model_timeout_seconds) if config else None
             await self.emit('run.started',{'run_id':str(record.id),'plan_id':str(record.plan_id),'case_count':len(record.case_snapshots)})
             async def checkpoint(value):
                 record.progress={'completed_cases':[c.model_dump(mode='json') for c in results],'active':value}
