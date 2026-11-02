@@ -1,6 +1,9 @@
 # Python environment and caches
 .venv/
 .venv-dev/
+.venv-*/
+.tox/
+.nox/
 .playwright-browsers/
 *.egg-info/
 __pycache__/
@@ -11,12 +14,21 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .coverage
+.coverage.*
 htmlcov/
+coverage/
+*.lcov
+*.whl
+/backend/build/
+/backend/dist/
 
 # Frontend / Android build outputs
 node_modules/
 frontend/dist/
 frontend/release/
+frontend/.vite/
+frontend/.cache/
+/release/
 *.tsbuildinfo
 android/**/.gradle/
 android/**/.kotlin/
@@ -31,7 +43,11 @@ android/**/local.properties
 *.sqlite3
 *.sqlite
 *.db
+*.sqlite3-*
+*.sqlite-*
+*.db-*
 *.log
+*.pid
 *.apk
 *.aab
 *.gguf

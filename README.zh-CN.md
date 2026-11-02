@@ -112,6 +112,8 @@ Android Portal 及演示应用位于 [`android/portal/`](android/portal/)。构�
 .\scripts\build-android.ps1
 ```
 
+APK 及对应的 SHA-256 校验文件输出到本地 `release/` 目录：`autorush-portal-debug.apk`（Portal）与 `autorush-fixture-debug.apk`（演示应用）。该目录不纳入 Git；这些安装包是调试构建，并非生产发布版本。
+
 然后在控制台进入 **Android 设备**，生成配对二维码，用 Portal 应用扫码连接。
 
 ## 目录结构

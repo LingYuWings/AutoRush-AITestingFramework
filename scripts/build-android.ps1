@@ -26,7 +26,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $taskProject 'gradle\wrapper\gradle-
 }
 & $taskGradle --no-daemon --console=plain -p $taskProject @taskChecks
 if ($LASTEXITCODE -ne 0) { throw 'Android build or checks failed.' }
-$taskApkDirectory = Join-Path $taskRoot 'artifacts\apk'
+$taskApkDirectory = Join-Path $taskRoot 'release'
 New-Item -ItemType Directory -Path $taskApkDirectory -Force | Out-Null
 $taskApk = Join-Path $taskApkDirectory 'autorush-portal-debug.apk'
 Copy-Item -LiteralPath (Join-Path $taskProject 'app\build\outputs\apk\debug\app-debug.apk') -Destination $taskApk -Force
@@ -45,4 +45,7 @@ $taskFixtureApk = Join-Path $taskApkDirectory 'autorush-fixture-debug.apk'
 Copy-Item -LiteralPath (Join-Path $taskProject 'fixture\build\outputs\apk\debug\fixture-debug.apk') -Destination $taskFixtureApk -Force
 & (Join-Path $env:ANDROID_HOME 'build-tools\35.0.0\apksigner.bat') verify $taskFixtureApk
 if ($LASTEXITCODE -ne 0) { throw 'Fixture APK signature validation failed.' }
+$taskFixtureHash = (Get-FileHash -LiteralPath $taskFixtureApk -Algorithm SHA256).Hash.ToLowerInvariant()
+Set-Content -LiteralPath "$taskFixtureApk.sha256" -Value "$taskFixtureHash  autorush-fixture-debug.apk" -Encoding utf8
 Write-Output "FixtureAPK=$taskFixtureApk"
+Write-Output "FixtureSHA256=$taskFixtureHash"
