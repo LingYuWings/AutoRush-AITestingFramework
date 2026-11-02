@@ -112,6 +112,8 @@ The Android Portal app and a demo app live in [`android/portal/`](android/portal
 .\scripts\build-android.ps1
 ```
 
+Built APKs and their SHA-256 checksums are saved in the local `release/` directory: `autorush-portal-debug.apk` (Portal) and `autorush-fixture-debug.apk` (demo app). This directory is ignored by Git; these are debug builds, not production releases.
+
 Then open **Android Devices** in the console, generate a pairing QR code and scan it with the Portal app.
 
 ## Project layout
