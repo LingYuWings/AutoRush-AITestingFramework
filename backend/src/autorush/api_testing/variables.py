@@ -104,7 +104,9 @@ def redact(value, secrets=()):
     if isinstance(value, str):
         if value.lstrip().startswith(('{', '[')):
             try:
-                return json.dumps(redact(json.loads(value), secrets), ensure_ascii=False)
+                redacted = json.dumps(redact(json.loads(value), secrets), ensure_ascii=False)
+                # JSON text embedded in a string may contain escaped lone surrogates.
+                return re.sub(r'[\ud800-\udfff]', lambda match: f'\\u{ord(match[0]):04x}', redacted)
             except (ValueError, RecursionError):
                 pass
         if value.startswith(('http://', 'https://', '{{')):

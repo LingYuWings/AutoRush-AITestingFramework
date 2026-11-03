@@ -1,12 +1,33 @@
-import {api,request} from '../../shared/api'
+import {api,ApiRequestError,request} from '../../shared/api.ts'
 import type {ApiRequest,ApiRequestRecord,Collection,CollectionRecord,ApiExecution,CollectionResult,ImportResult,Folder,FolderRecord} from './types'
 
 const prefix='/api/v1/api-testing'
-async function call<T>(path:string,init?:RequestInit):Promise<T>{
-  if(!api.getOperatorToken()) await authorizeApi()
-  return request<T>(prefix+path,init)
+let authorization:Promise<void>|undefined
+
+export function authorizeApi():Promise<void>{
+  authorization??=api.operatorSession()
+    .then(session=>{api.setOperatorToken(session.operator_token)})
+    .finally(()=>{authorization=undefined})
+  return authorization
 }
-export async function authorizeApi(){api.setOperatorToken((await api.operatorSession()).operator_token)}
+
+export async function withApiAuthorization<T>(operation:()=>Promise<T>,signal?:AbortSignal|null):Promise<T>{
+  signal?.throwIfAborted()
+  if(!api.getOperatorToken())await authorizeApi()
+  signal?.throwIfAborted()
+  const token=api.getOperatorToken()
+  try{return await operation()}
+  catch(cause){
+    if(!(cause instanceof ApiRequestError)||![401,403].includes(cause.status))throw cause
+    signal?.throwIfAborted()
+    const current=api.getOperatorToken()
+    if(!current||current===token)await authorizeApi()
+    signal?.throwIfAborted()
+    return operation()
+  }
+}
+
+const call=<T>(path:string,init?:RequestInit)=>withApiAuthorization(()=>request<T>(prefix+path,init),init?.signal)
 const post=<T>(path:string,payload:unknown,signal?:AbortSignal)=>call<T>(path,{method:'POST',body:JSON.stringify(payload),signal})
 function save<T>(kind:string,payload:unknown,previous?:{id:string;version:number}){
   return previous?call<T>(`/${kind}/${encodeURIComponent(previous.id)}?expected_version=${previous.version}`,{method:'PUT',body:JSON.stringify(payload)}):post<T>(`/${kind}`,payload)

@@ -2,9 +2,11 @@
 from __future__ import annotations
 import asyncio
 import base64
+from contextlib import aclosing
 from dataclasses import dataclass
 from copy import deepcopy
 import json
+import math
 import time
 from urllib.parse import parse_qsl, urljoin, urlsplit
 
@@ -16,6 +18,10 @@ from autorush.api_testing.variables import ApiBlocked, SENSITIVE, json_field, re
 MAX_RESPONSE = 1048576
 MAX_REQUEST = 1048576
 FORBIDDEN_HEADERS = {'host', 'content-length', 'transfer-encoding', 'connection', 'proxy-authorization', 'upgrade'}
+
+
+class InvalidResponseJson(ValueError):
+    pass
 
 
 def bounded_evidence(value, limit=65536):
@@ -81,6 +87,50 @@ def decode_file(encoded):
     except (ValueError, TypeError): raise ApiBlocked('invalid base64 upload') from None
     if len(value) > MAX_REQUEST: raise ApiBlocked('upload exceeds 1 MiB')
     return value
+
+
+def response_body(text):
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError:
+        return text
+    except (ValueError, RecursionError) as exc:
+        raise InvalidResponseJson from exc
+
+    def validate(item, depth=0):
+        if depth > 128:
+            raise InvalidResponseJson
+        if isinstance(item, dict):
+            for key, child in item.items():
+                key.encode('utf-8')
+                validate(child, depth + 1)
+        elif isinstance(item, list):
+            for child in item:
+                validate(child, depth + 1)
+        elif isinstance(item, str):
+            item.encode('utf-8')
+        elif isinstance(item, float) and not math.isfinite(item):
+            raise InvalidResponseJson
+
+    try:
+        validate(value)
+    except UnicodeError as exc:
+        raise InvalidResponseJson from exc
+    return value
+
+
+def extract_cookie(cookies, name, url):
+    try:
+        return cookies[name]
+    except httpx.CookieConflict:
+        # CookieJar applies URL scope and orders applicable cookies by longest path.
+        request = httpx.Request('GET', url)
+        cookies.set_cookie_header(request)
+        for item in request.headers.get('cookie', '').split(';'):
+            key, separator, value = item.strip().partition('=')
+            if separator and key == name:
+                return value
+        raise KeyError(name) from None
 
 
 class ApiEngine:
@@ -167,18 +217,20 @@ class ApiEngine:
                 content_type = 'application/x-www-form-urlencoded' if body['mode'] == 'urlencoded' else body['content_type']
                 if '\r' in content_type or '\n' in content_type: raise ApiBlocked('invalid content type')
                 headers.append(('Content-Type', content_type))
-            size = len(kwargs.get('content', b'')) + len(json.dumps(json_body).encode() if body['mode'] == 'json' else b'')
-            size += sum(len(item[1][1]) for item in kwargs.get('files', []))
-            if size > MAX_REQUEST: raise ApiBlocked('request body exceeds 1 MiB')
-            request_evidence.update(url=str(url), headers=dict(headers), body=json_body if body['mode'] == 'json' else
-                {'mode': body['mode'], 'text': str(body['text'])[:4096] if body['mode'] == 'raw' else '', 'bytes': size})
             method = spec.method
             async with asyncio.timeout(spec.timeout_ms / 1000):
                 async with httpx.AsyncClient(follow_redirects=False, trust_env=spec.proxy == 'system',
                     timeout=spec.timeout_ms / 1000, cookies=self.cookies, transport=self.transport) as client:
                     for hop in range(6):
                         validate_url(str(url), self.allowed_hosts)
-                        async with client.stream(method, url, headers=headers, **kwargs) as response:
+                        request = client.build_request(method, url, headers=headers, **kwargs)
+                        size = int(request.headers.get('content-length', '0'))
+                        if size > MAX_REQUEST:
+                            raise ApiBlocked('request body exceeds 1 MiB')
+                        if hop == 0:
+                            request_evidence.update(url=str(url), headers=dict(headers), body=json_body if body['mode'] == 'json' else
+                                {'mode': body['mode'], 'text': str(body['text'])[:4096] if body['mode'] == 'raw' else '', 'bytes': size})
+                        async with aclosing(await client.send(request, stream=True)) as response:
                             chunks, received = [], 0
                             async for chunk in response.aiter_bytes(chunk_size=65536):
                                 received += len(chunk)
@@ -207,8 +259,7 @@ class ApiEngine:
                         self.cookies = httpx.Cookies(client.cookies)
                         break
             text = content.decode(encoding, errors='replace')
-            try: parsed_body = json.loads(text)
-            except ValueError: parsed_body = text
+            parsed_body = response_body(text)
             self.secrets.update(secret_strings(parsed_body))
             self.secrets.update(secret_strings(response_headers))
             elapsed = (time.perf_counter() - started) * 1000
@@ -219,7 +270,7 @@ class ApiEngine:
             for extraction in resolved_extractions:
                 try:
                     value = json_field(parsed_body, extraction.path) if extraction.source == 'json' else (
-                        response_headers[extraction.path.lower()] if extraction.source == 'header' else self.cookies[extraction.path])
+                        response_headers[extraction.path.lower()] if extraction.source == 'header' else extract_cookie(self.cookies, extraction.path, url))
                     extracted[extraction.key] = value
                     if extraction.secret or SENSITIVE.search(extraction.key): self.secrets.update(secret_strings({'secret': value}))
                 except (KeyError, IndexError, TypeError):
@@ -230,6 +281,8 @@ class ApiEngine:
                 detail=f'{method} → HTTP {status_code}; {sum(ok for ok, _ in checks)}/{len(checks)} checks passed',
                 response=output, extracted=extracted,
                 assertions=[{'passed': ok, 'detail': detail} for ok, detail in checks])
+        except InvalidResponseJson:
+            public.update(status='error', detail='HTTP response JSON contains unsupported numbers, Unicode or nesting')
         except (ApiBlocked, ValueError, TypeError) as exc:
             public.update(status='blocked', detail=str(exc) if isinstance(exc, ApiBlocked) else 'invalid request configuration')
         except (httpx.HTTPError, TimeoutError, OverflowError, LookupError) as exc:

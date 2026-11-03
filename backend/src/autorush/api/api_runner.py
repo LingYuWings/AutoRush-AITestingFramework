@@ -1,12 +1,13 @@
 """Trusted-local asynchronous collection Runner routes."""
 import html
 import json
-from xml.etree.ElementTree import Element, SubElement, tostring
+from xml.etree.ElementTree import Element, SubElement
 from fastapi import APIRouter, Body, Header, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import ValidationError
 from autorush.api_testing.runner_models import RunCommand
 from autorush.api_testing.tree import TreeError
+from autorush.evidence.report import serialize_junit
 
 
 def create_runner_router(manager, authorize):
@@ -91,7 +92,7 @@ def create_runner_router(manager, authorize):
                     SubElement(case, tag, message=step.get('detail', '')).text = json.dumps(step.get('assertions', []), ensure_ascii=False)
             if run['counts']['skipped']:
                 SubElement(SubElement(root, 'testcase', name='Unexecuted requests'), 'skipped', message=str(run['counts']['skipped']))
-            content, media, suffix = tostring(root, encoding='unicode'), 'application/xml', 'xml'
+            content, media, suffix = serialize_junit(root), 'application/xml', 'xml'
         else: raise HTTPException(422, 'export format must be json, html or junit')
         return Response(content, media_type=media, headers={'Content-Disposition': f'attachment; filename="api-run-{run_id}.{suffix}"'})
 

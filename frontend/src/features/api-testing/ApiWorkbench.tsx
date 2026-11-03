@@ -19,7 +19,9 @@ export default function ApiWorkbench({onCaseCreated,initialRequest,initialDraft,
 }){
   const [requests,setRequests]=useState<ApiRequestRecord[]>([]),[collections,setCollections]=useState<CollectionRecord[]>([])
   const [environments,setEnvironments]=useState<CollectionRecord[]>([]),[history,setHistory]=useState<ApiExecution[]>([])
-  const [draft,setDraft]=useState<ApiRequest>(()=>initialRequest?configuration(initialRequest):initialDraft??newRequest()),[selected,setSelected]=useState<ApiRequestRecord|null>(initialRequest??null)
+  const [draft,setDraftState]=useState<ApiRequest>(()=>initialRequest?configuration(initialRequest):initialDraft??newRequest()),[selected,setSelected]=useState<ApiRequestRecord|null>(initialRequest??null)
+  const latestDraft=useRef(draft)
+  const setDraft=(value:ApiRequest)=>{latestDraft.current=value;setDraftState(value)}
   const [folders,setFolders]=useState<FolderRecord[]>([])
   const [mode,setMode]=useState<'requests'|'environments'|'history'>('requests'),[filter,setFilter]=useState(''),[collectionId,setCollectionId]=useState('')
   const [environmentId,setEnvironmentId]=useState(''),[response,setResponse]=useState<ApiExecution|null>(null)
@@ -39,7 +41,7 @@ export default function ApiWorkbench({onCaseCreated,initialRequest,initialDraft,
   useEffect(()=>{if(resources)applyResources(resources)},[resources])
   useEffect(()=>{if(epoch)void refresh().catch(cause=>setError(String(cause)))},[epoch])
   useEffect(()=>{onStatus?.({name:draft.name,sourceId:selected?.id??null,dirty,busy})},[draft.name,selected?.id,dirty,busy,onStatus])
-  const work=async(callback:()=>Promise<void>)=>{if(actionPending.current)return;actionPending.current=true;setBusy(true);setError('');setNotice('');try{await callback()}catch(cause){if(cause instanceof Error&&cause.name==='AbortError')setNotice('已停止等待，未开始的后续请求不会执行；已发送的请求可能已由服务端处理。');else setError(cause instanceof Error?cause.message:'操作失败')}finally{actionPending.current=false;setBusy(false)}}
+  const work=async(callback:()=>Promise<unknown>)=>{if(actionPending.current)return;actionPending.current=true;setBusy(true);setError('');setNotice('');try{await callback()}catch(cause){if(cause instanceof Error&&cause.name==='AbortError')setNotice('已停止等待，未开始的后续请求不会执行；已发送的请求可能已由服务端处理。');else setError(cause instanceof Error?cause.message:'操作失败')}finally{actionPending.current=false;setBusy(false)}}
   const loadRequest=(item:ApiRequestRecord|null)=>{
     if(busy)return
     if(workspace&&onOpenRequest){onOpenRequest(item);return}
@@ -48,12 +50,20 @@ export default function ApiWorkbench({onCaseCreated,initialRequest,initialDraft,
     setDirty(false);setConfig(null);setMode('requests');setResponse(null);setCollectionResult(null);currentHistory.current=''
   }
   const save=async(copy=false)=>{
-    const value=copy?{...draft,name:draft.name.slice(0,195)+' 副本'}:draft
-    const record=await apiTesting.saveRequest(value,copy?undefined:selected??undefined)
+    const submitted=latestDraft.current
+    const value=copy?{...submitted,name:submitted.name.slice(0,195)+' 副本'}:submitted
+    const record=await apiTesting.saveRequest(value,copy?undefined:selectedRef.current??undefined)
     selectedRef.current=record
-    setSelected(record);setDraft(configuration(record));setDirty(false);setNotice('请求已保存');await refresh()
+    setSelected(record)
+    const savedDraft={...configuration(record),body:submitted.body}
+    const unchanged=latestDraft.current===submitted
+    if(unchanged){setDraft(savedDraft);setDirty(false)}
+    setNotice(unchanged?'请求已保存':'提交的版本已保存，后续编辑尚未保存。')
+    try{await refresh()}
+    catch{setError('请求已保存，资源列表刷新失败。')}
+    return latestDraft.current===savedDraft
   }
-  const guardedSave=async(copy=false)=>{if(busy||!draft.name.trim()||!draft.url.trim()){setError('请填写请求名称和 URL 后保存');return false}let saved=false;await work(async()=>{await save(copy);saved=true});return saved}
+  const guardedSave=async(copy=false)=>{if(busy||!latestDraft.current.name.trim()||!latestDraft.current.url.trim()){setError('请填写请求名称和 URL 后保存');return false}let saved=false;await work(async()=>{saved=await save(copy)});return saved}
   useEffect(()=>{onController?.({abort:()=>active.current?.abort(),save:()=>guardedSave(),saveCopy:()=>guardedSave(true)})},[draft,selected,busy,onController])
   const send=async(collection=false)=>{
     if(busy||actionPending.current)return
@@ -86,7 +96,7 @@ export default function ApiWorkbench({onCaseCreated,initialRequest,initialDraft,
       {config?<ConfigEditor key={`${config.kind}:${config.record?.id??'new'}`} initial={config.record} kind={config.kind} onCancel={()=>setConfig(null)} onSave={async value=>{const record=config.kind==='集合'?await apiTesting.saveCollection(value,config.record??undefined):await apiTesting.saveEnvironment(value,config.record??undefined);await refresh();if(config.kind==='集合')setCollectionId(record.id);else setEnvironmentId(record.id);setConfig(null);setNotice(`${config.kind}已保存`)}} onDelete={config.record?async()=>{await apiTesting.remove(config.kind==='集合'?'collections':'environments',config.record!.id);if(config.kind==='集合')setCollectionId('');else if(environmentId===config.record!.id)setEnvironmentId('');await refresh();setConfig(null)}:undefined}/>:<>
       <div className="api-toolbar api-execute-toolbar"><label className="api-environment"><span>环境</span><select aria-label="执行环境" value={environmentId} onChange={e=>setEnvironmentId(e.target.value)}><option value="">无环境</option>{environments.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label><button type="button" className="primary-button" disabled={busy||!draft.url.trim()} onClick={()=>void send()}>发送</button><button type="button" className="secondary-button" disabled={busy||!collectionId} onClick={()=>{if(workspace)onRun?.({collectionId});else void send(true)}}>运行集合</button>{busy&&<button type="button" className="secondary-button" onClick={()=>active.current?.abort()}>取消请求</button>}</div>
       <div className="api-editor-title"><strong>{draft.name}{dirty?' *':''}</strong><span className="muted">{selected?`v${selected.version}`:'未保存'}</span></div>
-      <RequestEditor key={selected?.id??'new'} value={draft} collections={collections} folders={workspace?folders:undefined} onChange={value=>{setDraft(value);setDirty(true)}}/>
+      <RequestEditor key={workspace?undefined:selected?.id??'new'} value={draft} collections={collections} folders={workspace?folders:undefined} onChange={value=>{setDraft(value);setDirty(true)}}/>
       <div className="api-toolbar api-save-toolbar"><button type="button" className="primary-button" disabled={busy||!draft.name.trim()||!draft.url.trim()} onClick={()=>void work(()=>save())}>保存请求</button><button type="button" className="secondary-button" disabled={busy} onClick={()=>{const copy={...draft,name:draft.name+' 副本'};if(onNewDraft)onNewDraft(copy);else{setSelected(null);setDraft(copy);setDirty(true)}}}>另存为副本</button><button type="button" className="secondary-button" disabled={busy||!draft.url.trim()} onClick={()=>void work(promote)}>保存为 API 用例</button><button type="button" className="text-button" onClick={()=>void work(async()=>{const value=await apiTesting.export({format:'curl',request:draft});downloadText(value.filename,value.content)})}>导出 cURL</button><button type="button" className="text-button" disabled={!collectionId} onClick={()=>void work(exportCollection)}>导出集合</button><button type="button" className="secondary-button" disabled={busy||!collectionId} onClick={()=>{const create=async()=>{let id:string|undefined;await work(async()=>{const draftCase=await apiTesting.collectionCase(collectionId);const created=await api.createCase(draftCase);id=created.id});return id};if(onPrepareCase)onPrepareCase(create);else void create().then(id=>{if(id)void onCaseCreated(id)})}}>保存集合为 API 用例</button><button type="button" className="text-button" disabled={!environmentId} onClick={()=>void work(async()=>{const value=await apiTesting.export({format:'postman_environment',environment_id:environmentId});downloadText(value.filename,value.content)})}>导出环境</button>{selected&&<button type="button" className="text-button danger" disabled={busy} onClick={()=>{const source=selected;const remove=async()=>{await apiTesting.remove('requests',source.id);if(selectedRef.current?.id===source.id){setSelected(null);setDraft(newRequest());setDirty(false)}await refresh()};if(dirty&&workspace&&onDeleteRequest){onDeleteRequest(remove);return}if(window.confirm(`删除请求“${source.name}”？`))void work(remove)}}>删除请求</button>}</div>
       <p className="quiet-note">允许的目标主机：{hosts.join('、')||'尚未配置；请设置 -ApiHosts 后重启后端'}。历史最多保留 200 条，响应与上传上限 1 MiB。</p>
       {mode==='history'&&currentHistory.current&&<button type="button" className="secondary-button" onClick={()=>void work(async()=>{const restored=await apiTesting.historyRequest(currentHistory.current);if(workspace&&onNewDraft)onNewDraft(restored.request);else{setDraft(restored.request);setEnvironmentId('');setSelected(null);setDirty(true);setMode('requests');setNotice('已恢复历史请求配置，请核对后手动发送')}})}>恢复历史请求到编辑器</button>}

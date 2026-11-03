@@ -13,6 +13,7 @@ from uuid import UUID
 
 from autorush.domain.models import StepSpec
 from autorush.drivers.base import ActionResult
+from autorush.drivers.web.network import BrowserNetworkGate
 from autorush.drivers.web.validation import validate_web_step
 
 
@@ -62,8 +63,29 @@ class PlaywrightWebDriver:
             raise
         browser = None
         context = None
+        network_gate = BrowserNetworkGate(allowed_hosts)
+
+        async def closer() -> None:
+            try:
+                if context is not None:
+                    await context.close()
+            finally:
+                try:
+                    if browser is not None:
+                        await browser.close()
+                finally:
+                    try:
+                        await playwright.stop()
+                    finally:
+                        await network_gate.close()
+
         try:
-            browser = await playwright.chromium.launch(headless=headless)
+            # Playwright routes only the first request in a redirect chain.
+            # Apply host policy at Chromium's connection boundary as well.
+            proxy = await network_gate.start()
+            browser = await playwright.chromium.launch(
+                headless=headless, proxy=proxy, args=["--disable-quic", "--force-webrtc-ip-handling-policy=disable_non_proxied_udp"],
+            )
             context = await browser.new_context(viewport=viewport or {'width': 1280, 'height': 800}, service_workers='block')
             allowed = {host.lower() for host in allowed_hosts}
 
@@ -79,22 +101,13 @@ class PlaywrightWebDriver:
             page.set_default_timeout(10_000)
             page.set_default_navigation_timeout(15_000)
 
-            async def closer() -> None:
-                try:
-                    await context.close()
-                finally:
-                    try: await browser.close()
-                    finally: await playwright.stop()
-
             return cls(base_url, allowed_hosts, page, closer, capture_screenshots=capture_screenshots,
                        evidence_directory=evidence_directory, run_id=run_id)
-        except BaseException:
+        except BaseException as exc:
             try:
-                if context is not None: await context.close()
-            finally:
-                try:
-                    if browser is not None: await browser.close()
-                finally: await playwright.stop()
+                await asyncio.shield(closer())
+            except BaseException as cleanup:
+                exc.add_note(f"browser cleanup also failed: {type(cleanup).__name__}")
             raise
 
     async def execute(self, step: StepSpec) -> ActionResult:

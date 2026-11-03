@@ -142,7 +142,7 @@ def create_app(
         CORSMiddleware,
         allow_origins=allowed_origins,
         allow_credentials=False,
-        allow_methods=["GET", "POST"],
+        allow_methods=["GET", "POST", "PUT", "DELETE"],
         allow_headers=["Content-Type", "X-Autorush-Operator-Token"],
     )
 
@@ -691,6 +691,7 @@ def create_app(
             raise HTTPException(409,str(exc)) from exc
         drivers = session.drivers
         runner = Runner(drivers)
+        cleanup_failure = None
         try:
             await event_broker.publish(PlatformEvent(type="run.started", payload={
                 "run_id": str(run_id), "plan_id": str(plan.id), "case_count": len(cases),
@@ -705,14 +706,17 @@ def create_app(
                     "status": case_result.status.value, "completed": index, "total": len(cases),
                 }))
         finally:
-            with anyio.CancelScope(shield=True):
-                await asyncio.shield(session.close())
-        status = next(
+            try:
+                with anyio.CancelScope(shield=True):
+                    await asyncio.shield(session.close())
+            except Exception as exc:
+                cleanup_failure = f"driver cleanup failed: {type(exc).__name__}"
+        status = ResultStatus.ERROR if cleanup_failure else next(
             (candidate for candidate in (ResultStatus.ERROR, ResultStatus.FAILED, ResultStatus.BLOCKED)
              if any(item.status == candidate for item in results)),
             ResultStatus.PASSED,
         )
-        run = RunRecord(id=run_id, plan_id=plan.id, status=status, cases=results)
+        run = RunRecord(id=run_id, plan_id=plan.id, status=status, cases=results, termination_reason=cleanup_failure)
         report_paths = save_reports(run, settings.report_dir)
         serialized_paths = {name: str(path) for name, path in report_paths.items()}
         run = run.model_copy(update={"report_path": serialized_paths["json"], "report_paths": serialized_paths})

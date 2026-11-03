@@ -30,7 +30,7 @@ function registerLocalProtocol() {
       return new Response(contents, {
         headers: {
           'Content-Type': mime,
-          'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src http://127.0.0.1:8000 ws://127.0.0.1:8000; object-src 'none'; base-uri 'none'; frame-src 'none'",
+          'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src http://127.0.0.1:8000 ws://127.0.0.1:8000; object-src 'none'; base-uri 'none'; frame-src 'none'",
         },
       })
     } catch { return new Response('Not found', { status: 404 }) }
