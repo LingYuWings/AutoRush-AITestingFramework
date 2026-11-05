@@ -149,7 +149,7 @@ def create_app(
     @app.middleware("http")
     async def do_not_cache_device_credentials(request: Request, call_next):
         response = await call_next(request)
-        if request.url.path.startswith(("/api/v1/devices", "/api/v1/automation", "/api/v1/providers", "/api/v1/case-debug-runs")) or '/agent-runs' in request.url.path:
+        if request.url.path.startswith(("/api/v1/devices", "/api/v1/automation", "/api/v1/providers", "/api/v1/case-debug-runs", "/api/v1/case-imports")) or '/agent-runs' in request.url.path:
             response.headers["Cache-Control"] = "no-store"
         return response
 
@@ -160,6 +160,8 @@ def create_app(
             return JSONResponse(status_code=422, content={"detail": "invalid pairing request"})
         if request.url.path.startswith('/api/v1/case-debug-runs'):
             return JSONResponse(status_code=422, content={"detail": "调试参数无效，请检查标题、步骤、预期结果及目标配置。"})
+        if request.url.path.startswith('/api/v1/case-imports'):
+            return JSONResponse(status_code=422, content={'detail':'导入参数无效，请重新检查文件、会话和选择项。'})
         return await request_validation_exception_handler(request, exc)
 
     @app.get("/health")
@@ -798,6 +800,8 @@ def create_app(
     app.include_router(create_model_catalog_router(settings,store,require_operator,trusted_local_request))
     app.include_router(create_agent_run_router(agent_manager,settings,store,device_hub,require_operator,trusted_local_request))
     app.include_router(create_debug_router(debug_manager,settings,require_operator,trusted_local_request))
+    from autorush.case_imports.router import create_import_router
+    app.include_router(create_import_router(settings,require_operator,trusted_local_request))
     return app
 
 

@@ -61,6 +61,7 @@ Natural-language runs are bounded by timeouts, round limits, cancellation and no
 
 - **Console**: a React web console, also available as an Electron desktop app, with light and dark themes.
 - **Case management**: natural-language and structured modes, filtering by platform, versioning, approval and recoverable deletion.
+- **Case import**: upload UTF-8 Markdown or XMind from **Case management → Import cases**, review source locations, edit candidates and create selected drafts in one batch. Download the Markdown template in the dialog or start from [`standard-cases.markdown`](examples/imports/standard-cases.markdown). Missing expectations and ambiguous source content need review; imports never approve or execute cases automatically. Failed batches roll back, and retrying a submission does not create duplicates.
 - **Single-case debugging**: run a saved case from its list row, or use the editor's **Debug current content** action without saving. Configure targets and the model in the debug panel, inspect live progress, stop the run and review step evidence. The latest 20 debug records are separate from formal plans and reports; debugging does not save or approve the case.
 - **API workbench**: a request editor with tabs, nested folders, environments and `{{variables}}`. It also has a collection runner with CSV/JSON data-driven iterations and a searchable run history. Any request or collection can be saved as an API test case.
 - **Android devices**: pair a phone by scanning a QR code, manage authorised devices and watch the screen live.

@@ -252,6 +252,7 @@ export default function App() {
         <Suspense fallback={<div className="page-loading" aria-busy="true" />}>
           {view === 'overview' && <Overview cases={activeCases} plans={plans} runs={runs} events={events} onNavigate={navigate} onNewCase={() => { setNewCasePlatform('web'); go({ view: 'cases', id: 'new' }) }} onOpenRun={id => go({ view: 'reports', id })} />}
           {view === 'cases' && <Cases cases={cases} selectedId={creatingCase ? null : route.id ?? null} editor={caseEditor || null}
+            onImported={refresh}
             onDebug={item=>{setDebugSelection({read:()=>item,source:item,saved:true,sessionId:crypto.randomUUID()});setDebugOpen(true)}}
             onDebugHistory={()=>{setDebugSelection(null);setDebugOpen(true)}}
             onSelect={id => go({ view: 'cases', id: id ?? undefined }, { replace: true })}

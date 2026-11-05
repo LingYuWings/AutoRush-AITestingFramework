@@ -17,6 +17,9 @@ dependencies = [
   "cryptography>=44,<49",
   "anyio>=4,<5",
   "Pillow>=10,<13",
+  "markdown-it-py>=4.2,<5",
+  "defusedxml>=0.7.1,<1",
+  "python-multipart>=0.0.20,<1",
 ]
 
 [project.optional-dependencies]
@@ -27,6 +30,9 @@ mcp = ["mcp>=1.26,<2"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"autorush.case_imports" = ["*.markdown"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

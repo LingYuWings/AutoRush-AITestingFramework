@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from contextlib import nullcontext
 import json
 import os
 from pathlib import Path
@@ -42,8 +43,8 @@ class ApiStore:
     def decode(self, value):
         return json.loads(self.cipher.decrypt(value.encode()))
 
-    def get(self, kind, record_id):
-        with self.connect() as connection:
+    def get(self, kind, record_id, *, connection=None):
+        with (nullcontext(connection) if connection is not None else self.connect()) as connection:
             row = connection.execute('SELECT payload FROM api_testing_records WHERE kind=? AND id=?',
                 (kind, str(record_id))).fetchone()
         return self.decode(row[0]) if row else None
@@ -54,10 +55,10 @@ class ApiStore:
                 (kind,)).fetchall()
         return [self.decode(row[0]) for row in rows]
 
-    def create(self, kind, value):
+    def create(self, kind, value, *, connection=None):
         now = datetime.now(timezone.utc).isoformat()
         record = {**value, 'id': str(uuid4()), 'version': 1, 'created_at': now, 'updated_at': now}
-        with self.connect() as connection:
+        with (nullcontext(connection) if connection is not None else self.connect()) as connection:
             connection.execute('INSERT INTO api_testing_records(kind,id,version,payload) VALUES(?,?,?,?)',
                 (kind, record['id'], 1, self.encode(record)))
         return record

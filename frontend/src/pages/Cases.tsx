@@ -4,6 +4,7 @@ import type { CaseRecord, DriverKind, StepSpec } from '../shared/api'
 import { filterCases, platformLabels, platformOf, type CasePlatform } from '../features/cases/platform'
 import { DriverChip, EmptyState, StatusBadge } from '../components/ui'
 import { date, driversOf, relative, shortId } from '../shared/format'
+import CaseImportDialog from '../features/case-import/CaseImportDialog'
 
 type Filter = 'all' | 'draft' | 'approved'
 const platforms = ['all', 'web', 'android', 'desktop', 'api', 'mixed'] as const
@@ -62,7 +63,7 @@ function CaseDetail({ item, busy, onEdit, onApprove, onArchive, onRestore, onDeb
   </article>
 }
 
-export default function Cases({ cases, selectedId, editor, onSelect, onApprove, onCreate, onEdit, onArchive, onRestore, onDebug, onDebugHistory }: {
+export default function Cases({ cases, selectedId, editor, onSelect, onApprove, onCreate, onEdit, onArchive, onRestore, onDebug, onDebugHistory, onImported }: {
   cases: CaseRecord[]
   selectedId: string | null
   editor: ReactNode
@@ -74,6 +75,7 @@ export default function Cases({ cases, selectedId, editor, onSelect, onApprove, 
   onRestore: (id: string) => Promise<void>
   onDebug:(item:CaseRecord)=>void
   onDebugHistory:()=>void
+  onImported:()=>Promise<void>
 }) {
   const [query, setQuery] = useState('')
   const deferredQuery = useDeferredValue(query)
@@ -81,6 +83,7 @@ export default function Cases({ cases, selectedId, editor, onSelect, onApprove, 
   const [platform, setPlatform] = useState<CasePlatform | 'all'>('all')
   const [archived, setArchived] = useState(false)
   const [busy, setBusy] = useState('')
+  const [importOpen,setImportOpen]=useState(false)
   const listRef = useRef<HTMLDivElement>(null)
   const paneRef = useRef<HTMLElement>(null)
 
@@ -117,8 +120,12 @@ export default function Cases({ cases, selectedId, editor, onSelect, onApprove, 
         <h1>用例管理</h1>
         <p className="page-description">按执行端管理用例；跨端场景在测试计划中组合。批准后的修改另存为新草稿版本。</p>
       </div>
-      <div className="debug-actions"><button className="secondary-button" onClick={onDebugHistory}>调试记录</button><button className="primary-button" onClick={() => onCreate(platform === 'all' || platform === 'mixed' ? 'web' : platform)}><Plus size={15} /> 新建用例</button></div>
+      <div className="debug-actions"><button className="secondary-button" onClick={()=>setImportOpen(true)}>导入用例</button><button className="secondary-button" onClick={onDebugHistory}>调试记录</button><button className="primary-button" onClick={() => onCreate(platform === 'all' || platform === 'mixed' ? 'web' : platform)}><Plus size={15} /> 新建用例</button></div>
     </div>
+    {importOpen&&<CaseImportDialog onClose={()=>setImportOpen(false)} onCreated={onImported} onOpenCase={id=>{
+      if(editor&&!window.confirm('当前用例编辑尚未保存，跳转会丢弃这些修改。确认查看导入用例？'))return
+      setImportOpen(false);setPlatform('all');setFilter('draft');setArchived(false);setQuery('');onSelect(id)
+    }}/>}
 
     <div className="cases-layout">
       <aside className="case-list-pane" aria-label="用例列表">

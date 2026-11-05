@@ -1,0 +1,72 @@
+[
+  {
+    "id": "sheet-web",
+    "title": "Web 回归",
+    "rootTopic": {
+      "id": "root-web",
+      "title": "专用演示服务",
+      "children": {
+        "attached": [
+          {
+            "id": "case-web",
+            "title": "用例：演示首页",
+            "notes": {"plain": {"content": "验证首页加载。\n仅使用专用演示环境。"}},
+            "labels": ["冒烟"],
+            "children": {
+              "attached": [
+                {"id": "web-platform", "title": "执行端：web"},
+                {
+                  "id": "web-steps",
+                  "title": "步骤",
+                  "children": {
+                    "attached": [
+                      {
+                        "id": "web-step-1",
+                        "title": "1. 打开 /fixture.html",
+                        "children": {"attached": [{"id": "web-expected-1", "title": "预期：显示 AutoRush Web Fixture"}]}
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "sheet-android",
+    "title": "Android 回归",
+    "rootTopic": {
+      "id": "root-android",
+      "title": "专用测试手机",
+      "children": {
+        "attached": [
+          {
+            "id": "case-android",
+            "title": "用例：演示首页",
+            "children": {
+              "attached": [
+                {"id": "android-platform", "title": "执行端：android"},
+                {
+                  "id": "android-steps",
+                  "title": "步骤",
+                  "children": {
+                    "attached": [
+                      {
+                        "id": "android-step-1",
+                        "title": "1. 打开 AutoRush Test Fixture",
+                        "children": {"attached": [{"id": "android-expected-1", "title": "预期：显示 Waiting"}]}
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+]

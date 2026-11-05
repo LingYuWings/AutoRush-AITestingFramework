@@ -1,0 +1,119 @@
+/* Shared .field, .field-grid, buttons and step-card define the controls. */
+.case-import-overlay {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px; background: #0006;
+}
+.case-import-dialog {
+  display: flex; flex-direction: column;
+  width: min(1160px, 100%); height: min(900px, calc(100dvh - 48px)); min-width: 0;
+  border: 1px solid var(--line-strong); border-radius: var(--radius-lg);
+  background: var(--surface); color: var(--ink); box-shadow: var(--shadow-pop); overflow: hidden;
+}
+.case-import-heading, .case-import-footer {
+  display: flex; align-items: center; gap: 16px; flex-shrink: 0; padding: 16px 24px;
+}
+.case-import-heading { justify-content: space-between; border-bottom: 1px solid var(--line); }
+.case-import-heading-main { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.case-import-heading-icon {
+  display: grid; place-items: center; width: 36px; height: 36px; flex-shrink: 0;
+  border-radius: var(--radius); background: var(--accent-soft); color: var(--accent);
+}
+.case-import-heading h2 { margin: 0; font-size: 18px; line-height: 1.4; }
+.case-import-heading p { margin: 3px 0 0; color: var(--ink-3); font-size: 13px; }
+.case-import-content { flex: 1; min-height: 0; overflow: auto; padding: 20px 24px 24px; }
+.case-import-config { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px 16px; }
+.case-import-file-field, .case-import-platform-field, .case-import-sheets-field { grid-column: span 2; }
+.case-import-config > .quiet-note, .case-import-actions { grid-column: 1 / -1; }
+.case-import-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
+.case-import-actions .text-button { margin-left: 6px; }
+.case-import-dialog .field input[type=file] { padding: 0; color: var(--ink-3); font-size: 12.5px; cursor: pointer; }
+.case-import-dialog input[type=file]::file-selector-button {
+  height: 32px; padding: 0 10px; margin-right: 10px;
+  border: 0; border-right: 1px solid var(--line-strong);
+  background: var(--surface-sunken); color: var(--ink-2); font: inherit; cursor: pointer;
+  transition: background var(--dur-1) var(--ease);
+}
+.case-import-dialog input[type=file]:hover:not(:disabled)::file-selector-button { background: var(--hover); }
+.case-import-dialog .field :is(input, select, textarea):disabled { background: var(--surface-sunken); color: var(--ink-4); }
+.case-import-dialog input[type=checkbox] { flex-shrink: 0; }
+.case-import-summary {
+  display: flex; align-items: center; gap: 12px 20px; flex-wrap: wrap;
+  margin: 20px 0 12px; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface-sunken); color: var(--ink-2); font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.case-import-summary strong { display: flex; align-items: center; gap: 7px; color: var(--ink); font-weight: 500; overflow-wrap: anywhere; min-width: 0; }
+.case-import-summary strong svg { flex-shrink: 0; color: var(--ink-3); }
+.case-import-expiry { margin-left: auto; color: var(--ink-3); font-size: 11.5px; }
+.case-import-error, .case-import-warning {
+  margin: 10px 0; padding: 9px 12px; border-radius: var(--radius);
+  font-size: 13px; line-height: 1.6; overflow-wrap: anywhere;
+}
+.case-import-error { background: var(--fail-soft); color: var(--fail); }
+.case-import-warning { background: var(--warn-soft); color: var(--warn); }
+.case-import-progress { display: flex; align-items: center; gap: 7px; color: var(--ink-3); font-size: 13px; }
+.case-import-dialog label.case-import-warning, .case-import-review { display: flex; align-items: flex-start; gap: 8px; }
+.case-import-dialog label.case-import-warning input, .case-import-review input { margin-top: 3px; }
+.case-import-preview {
+  display: grid; grid-template-columns: 244px minmax(0, 1fr);
+  border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface);
+}
+.case-import-preview aside { min-width: 0; padding: 12px; border-right: 1px solid var(--line); background: var(--surface-sunken); border-radius: var(--radius-lg) 0 0 var(--radius-lg); }
+.case-import-preview aside > .text-button { padding: 0 4px 10px; font-size: 12.5px; }
+.case-import-candidate { display: flex; align-items: flex-start; gap: 8px; padding: 9px 8px; border-radius: var(--radius); transition: background var(--dur-1) var(--ease); }
+.case-import-candidate:hover { background: var(--hover); }
+.case-import-candidate.active { background: var(--accent-soft); }
+.case-import-candidate > input { margin-top: 4px; }
+.case-import-candidate-button { flex: 1; min-width: 0; padding: 0; border: 0; background: transparent; color: var(--ink-2); text-align: left; }
+.case-import-candidate-button strong { display: block; font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
+.case-import-candidate.active .case-import-candidate-button strong { color: var(--accent); }
+.case-import-candidate-button .case-import-state { display: block; margin-top: 4px; font-size: 11.5px; }
+.case-import-state.ready { color: var(--pass); }
+.case-import-state.pending { color: var(--warn); }
+.case-import-editor { min-width: 0; padding: 16px 20px 20px; }
+.case-import-source { margin: 0 0 16px; color: var(--ink-3); font-size: 11.5px; line-height: 1.6; overflow-wrap: anywhere; }
+.case-import-identity { grid-template-columns: minmax(0, 1fr) 140px; margin-bottom: 12px; }
+.case-import-dialog .case-import-step { min-width: 0; margin: 16px 0 0; padding: 10px 14px 14px; }
+.case-import-step legend { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 0 6px; color: var(--ink-2); font-size: 13px; font-weight: 500; }
+.case-import-step .field + .field { margin-top: 12px; }
+.case-import-advanced { margin-top: 16px; border: 1px solid var(--line); border-radius: var(--radius); }
+.case-import-advanced summary { padding: 9px 12px; color: var(--ink-2); font-size: 12.5px; cursor: pointer; }
+.case-import-advanced summary:hover { background: var(--hover); }
+.case-import-advanced > .field { margin: 0 12px 12px; }
+.case-import-dialog .case-import-json { min-height: 200px; background: var(--surface-sunken); font: 12.5px/1.6 var(--font-mono); tab-size: 2; }
+.case-import-review { margin: 12px 0; color: var(--ink-2); font-size: 13px; line-height: 1.6; }
+.case-import-validation { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.case-import-validation .quiet-note { font-size: 12px; }
+.case-import-result { padding: 24px 0; }
+.case-import-result h3 { margin: 0 0 6px; font-size: 17px; }
+.case-import-result p { color: var(--ink-3); font-size: 13px; }
+.case-import-result button { margin: 4px; }
+.case-import-footer { padding-top: 12px; padding-bottom: 12px; border-top: 1px solid var(--line); background: var(--surface); }
+.case-import-footer > span { flex: 1; min-width: 0; color: var(--ink-3); font-size: 12.5px; }
+@media (max-width: 900px) {
+  .case-import-overlay { padding: 16px; }
+  .case-import-dialog { height: calc(100dvh - 32px); }
+  .case-import-preview { grid-template-columns: 196px minmax(0, 1fr); }
+  .case-import-heading, .case-import-footer { padding-left: 18px; padding-right: 18px; }
+  .case-import-content { padding: 16px 18px 18px; }
+  .case-import-editor { padding: 14px; }
+  .case-import-identity { grid-template-columns: minmax(0, 1fr); }
+  .case-import-config { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .case-import-file-field, .case-import-platform-field { grid-column: auto; }
+}
+@media (max-width: 640px) {
+  .case-import-overlay { padding: 0; }
+  .case-import-dialog { width: 100%; height: 100dvh; border-radius: 0; }
+  .case-import-heading-icon { display: none; }
+  .case-import-config { grid-template-columns: minmax(0, 1fr); }
+  .case-import-config > label { grid-column: auto; }
+  .case-import-preview { grid-template-columns: minmax(0, 1fr); }
+  .case-import-preview aside { max-height: 192px; overflow: auto; border-right: 0; border-bottom: 1px solid var(--line); border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+  .case-import-expiry { margin-left: 0; }
+  .case-import-actions .text-button { margin-left: 0; }
+  .case-import-footer { flex-wrap: wrap; gap: 8px; }
+  .case-import-footer > span { flex-basis: 100%; }
+  .case-import-footer > button:first-of-type { margin-left: auto; }
+}

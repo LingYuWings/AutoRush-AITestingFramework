@@ -4,13 +4,13 @@ from autorush.api_testing.models import ApiRequest, Variable
 from autorush.api_testing.variables import ApiBlocked, substitute
 
 
-def create_snapshot(store, spec, source_id=None, source_version=None, inherited_variables=None):
+def create_snapshot(store, spec, source_id=None, source_version=None, inherited_variables=None, *, connection=None):
     spec = ApiRequest.model_validate(spec)
-    collection = store.get('collections', spec.collection_id) if spec.collection_id else None
+    collection = store.get('collections', spec.collection_id, connection=connection) if spec.collection_id else None
     if spec.collection_id and collection is None: raise ValueError('API collection not found')
     return store.create('request_snapshots', {'request': spec.model_copy(update={'collection_id': None, 'folder_id': None, 'position': 0}).model_dump(),
         'collection_variables': deepcopy(collection['variables']) if collection else [Variable.model_validate(item).model_dump() for item in (inherited_variables or [])],
-        'source_request_id': source_id, 'source_version': source_version})
+        'source_request_id': source_id, 'source_version': source_version}, connection=connection)
 
 
 def snapshot_parameters(record):
@@ -19,14 +19,14 @@ def snapshot_parameters(record):
         'source_version': record.get('source_version')}
 
 
-def freeze_case(case, store):
+def freeze_case(case, store, *, connection=None):
     def freeze(step):
         if step.driver != 'api': return step
         if 'request' in step.parameters:
             record = create_snapshot(store, step.parameters['request'], step.parameters.get('source_request_id'),
-                step.parameters.get('source_version'), step.parameters.get('collection_variables'))
+                step.parameters.get('source_version'), step.parameters.get('collection_variables'), connection=connection)
             return step.model_copy(update={'parameters': snapshot_parameters(record)})
-        if step.parameters.get('request_snapshot_id') and store.get('request_snapshots', step.parameters['request_snapshot_id']) is None:
+        if step.parameters.get('request_snapshot_id') and store.get('request_snapshots', step.parameters['request_snapshot_id'], connection=connection) is None:
             raise ValueError('API request snapshot not found')
         return step
     return case.model_copy(update={'steps': [freeze(step) for step in case.steps],
