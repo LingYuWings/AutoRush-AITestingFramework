@@ -8,16 +8,63 @@ import {X} from '../../components/icons'
 const assertionLabels:Record<ApiAssertion['kind'],string>={status_code:'状态码',body_contains:'正文包含',json_field_equals:'JSON 字段相等',json_field_exists:'JSON 字段存在',header_equals:'响应头相等',response_time_less_than:'响应耗时小于（ms）'}
 export default function RequestEditor({value,onChange,collections=[],folders}:{value:ApiRequest;onChange:(value:ApiRequest)=>void;collections?:CollectionRecord[];folders?:FolderRecord[]}){
   const [tab,setTab]=useState('params'),[error,setError]=useState('')
-  const update=(patch:Partial<ApiRequest>)=>onChange({...value,...('collection_id' in patch&&patch.collection_id!==value.collection_id?{folder_id:null,position:0}:{}),...patch})
-  const body=(patch:Partial<ApiRequest['body']>)=>update({body:{...value.body,...patch}})
+  const latest=useRef({value,onChange});latest.current={value,onChange}
+  const rowKeys=useRef(new WeakMap<BodyField,number>())
+  const nextKey=useRef(0)
+  const readers=useRef(new Map<number,FileReader>())
+  const cancelUploads=()=>{
+    const pending=[...readers.current.values()]
+    readers.current.clear()
+    pending.forEach(reader=>reader.abort())
+  }
+  useEffect(()=>cancelUploads,[])
+  const rowKey=(item:BodyField)=>{
+    let key=rowKeys.current.get(item)
+    if(key===undefined){key=nextKey.current++;rowKeys.current.set(item,key)}
+    return key
+  }
+  const update=(patch:Partial<ApiRequest>)=>{
+    const {value:current,onChange:commit}=latest.current
+    const next={...current,...('collection_id' in patch&&patch.collection_id!==current.collection_id?{folder_id:null,position:0}:{}),...patch}
+    latest.current={value:next,onChange:commit}
+    commit(next)
+  }
+  const body=(patch:Partial<ApiRequest['body']>)=>{
+    const current=latest.current.value.body
+    if(patch.mode&&patch.mode!==current.mode)cancelUploads()
+    update({body:{...current,...patch}})
+  }
   const auth=(patch:Partial<ApiRequest['auth']>)=>update({auth:{...value.auth,...patch}})
-  const field=(index:number,patch:Partial<BodyField>)=>body({fields:value.body.fields.map((item,i)=>i===index?{...item,...patch}:item)})
-  async function upload(file:File|undefined,index?:number){
+  const field=(index:number,patch:Partial<BodyField>)=>body({fields:latest.current.value.body.fields.map((item,i)=>{
+    if(i!==index)return item
+    const next={...item,...patch}
+    rowKeys.current.set(next,rowKey(item))
+    return next
+  })})
+  function upload(file:File|undefined,index?:number){
     if(!file)return
     if(file.size>1048576){setError('文件不能超过 1 MiB');return}
+    const row=index===undefined?-1:rowKey(value.body.fields[index])
+    readers.current.get(row)?.abort()
     const reader=new FileReader()
-    reader.onload=()=>{const encoded=String(reader.result).split(',',2)[1];setError('');if(index===undefined)body({filename:file.name,data_base64:encoded});else field(index,{filename:file.name,data_base64:encoded,content_type:file.type||'application/octet-stream'})}
-    reader.onerror=()=>setError('读取文件失败');reader.readAsDataURL(file)
+    readers.current.set(row,reader)
+    reader.onload=()=>{
+      if(readers.current.get(row)!==reader)return
+      readers.current.delete(row)
+      const current=latest.current.value.body
+      const data_base64=String(reader.result).split(',',2)[1]
+      if(row===-1&&current.mode==='binary')body({filename:file.name,data_base64})
+      if(row!==-1&&current.mode==='formdata'){
+        const target=current.fields.findIndex(item=>rowKey(item)===row&&item.type==='file')
+        if(target!==-1)field(target,{filename:file.name,data_base64,content_type:file.type||'application/octet-stream'})
+      }
+      setError('')
+    }
+    reader.onerror=()=>{
+      if(readers.current.get(row)!==reader)return
+      readers.current.delete(row);setError('读取文件失败')
+    }
+    reader.readAsDataURL(file)
   }
   return <div className="api-request-editor">
     {error&&<p role="alert" className="api-error">{error}</p>}
@@ -36,7 +83,7 @@ export default function RequestEditor({value,onChange,collections=[],folders}:{v
         <p className="quiet-note">鉴权配置加密保存在本机，历史和报告脱敏。推荐使用环境变量引用。</p></>}
       {tab==='body'&&<><label className="field"><span>请求体类型</span><select value={value.body.mode} onChange={e=>body({mode:e.target.value as ApiRequest['body']['mode']})}>{[['none','none'],['json','JSON'],['raw','Raw / 文本'],['urlencoded','x-www-form-urlencoded'],['formdata','form-data'],['binary','Binary 文件']].map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></label>
         {['json','raw'].includes(value.body.mode)&&<><label className="field"><span>请求正文</span><textarea className="mono api-code" value={value.body.text} placeholder={value.body.mode==='json'?'提示：JSON 字符串中的 {{变量}} 可保留数字、对象等原始类型':'请求正文'} onChange={e=>body({text:e.target.value})}/></label>{value.body.mode==='raw'&&<label className="field"><span>Content-Type</span><input value={value.body.content_type} onChange={e=>body({content_type:e.target.value})}/></label>}</>}
-        {['urlencoded','formdata'].includes(value.body.mode)&&<><button type="button" className="text-button" onClick={()=>body({fields:[...value.body.fields,newBodyField()]})}>添加表单字段</button>{value.body.fields.map((item,index)=><div key={index} className="api-form-field"><div className="api-kv"><input aria-label={`表单字段 ${index+1} 启用`} type="checkbox" checked={item.enabled} onChange={e=>field(index,{enabled:e.target.checked})}/><input aria-label={`表单字段 ${index+1} 名称`} placeholder="名称" value={item.key} onChange={e=>field(index,{key:e.target.value})}/>{value.body.mode==='formdata'&&<select aria-label={`表单字段 ${index+1} 类型`} value={item.type} onChange={e=>field(index,{type:e.target.value as 'text'|'file'})}><option value="text">Text</option><option value="file">File</option></select>}{item.type==='file'&&value.body.mode==='formdata'?<label className="api-file"><input type="file" aria-label={`表单文件 ${index+1}`} onChange={e=>void upload(e.target.files?.[0],index)}/><small>{item.filename} · {item.data_base64?'已读取':'未选择'}</small></label>:<input aria-label={`表单字段 ${index+1} 值`} placeholder="值或 {{变量}}" value={item.value} onChange={e=>field(index,{value:e.target.value})}/>}<button type="button" className="icon-button" aria-label={`删除表单字段 ${index+1}`} onClick={()=>body({fields:value.body.fields.filter((_,i)=>i!==index)})}><X size={14}/></button></div></div>)}</>}
+        {['urlencoded','formdata'].includes(value.body.mode)&&<><button type="button" className="text-button" onClick={()=>body({fields:[...value.body.fields,newBodyField()]})}>添加表单字段</button>{value.body.fields.map((item,index)=><div key={rowKey(item)} className="api-form-field"><div className="api-kv"><input aria-label={`表单字段 ${index+1} 启用`} type="checkbox" checked={item.enabled} onChange={e=>field(index,{enabled:e.target.checked})}/><input aria-label={`表单字段 ${index+1} 名称`} placeholder="名称" value={item.key} onChange={e=>field(index,{key:e.target.value})}/>{value.body.mode==='formdata'&&<select aria-label={`表单字段 ${index+1} 类型`} value={item.type} onChange={e=>field(index,{type:e.target.value as 'text'|'file'})}><option value="text">Text</option><option value="file">File</option></select>}{item.type==='file'&&value.body.mode==='formdata'?<label className="api-file"><input type="file" aria-label={`表单文件 ${index+1}`} onChange={e=>void upload(e.target.files?.[0],index)}/><small>{item.filename} · {item.data_base64?'已读取':'未选择'}</small></label>:<input aria-label={`表单字段 ${index+1} 值`} placeholder="值或 {{变量}}" value={item.value} onChange={e=>field(index,{value:e.target.value})}/>}<button type="button" className="icon-button" aria-label={`删除表单字段 ${index+1}`} onClick={()=>body({fields:value.body.fields.filter((_,i)=>i!==index)})}><X size={14}/></button></div></div>)}</>}
         {value.body.mode==='binary'&&<label className="field"><span>上传文件（最多 1 MiB）</span><input type="file" onChange={e=>void upload(e.target.files?.[0])}/><small>{value.body.filename} · {value.body.data_base64?'已读取':'未选择'}</small></label>}</>}
       {tab==='assertions'&&<><div className="section-title"><strong>响应断言</strong><button type="button" className="text-button" onClick={()=>update({assertions:[...value.assertions,{kind:'status_code',expected:200,path:null}]})}>添加断言</button></div>{value.assertions.map((item,index)=><AssertionRow key={index} value={item} onChange={assertion=>update({assertions:value.assertions.map((row,i)=>i===index?assertion:row)})} onRemove={()=>update({assertions:value.assertions.filter((_,i)=>i!==index)})}/>)}{!value.assertions.length&&<p className="quiet-note">当前没有断言，收到 HTTP 响应即完成；可添加状态码、字段和耗时检查。</p>}</>}
       {tab==='extractions'&&<><div className="section-title"><strong>响应提取</strong><button type="button" className="text-button" onClick={()=>update({extractions:[...value.extractions,{key:'',source:'json',path:'$.id',required:true,secret:false}]})}>添加提取</button></div>{value.extractions.map((item,index)=><div key={index} className="api-extraction"><input aria-label={`提取 ${index+1} 变量名`} value={item.key} placeholder="变量名" onChange={e=>update({extractions:value.extractions.map((row,i)=>i===index?{...row,key:e.target.value}:row)})}/><select aria-label={`提取 ${index+1} 来源`} value={item.source} onChange={e=>update({extractions:value.extractions.map((row,i)=>i===index?{...row,source:e.target.value as Extraction['source']}:row)})}><option value="json">JSON</option><option value="header">Header</option><option value="cookie">Cookie</option></select><input aria-label={`提取 ${index+1} 路径`} value={item.path} placeholder="$.data[0].id" onChange={e=>update({extractions:value.extractions.map((row,i)=>i===index?{...row,path:e.target.value}:row)})}/><label className="check-line"><input type="checkbox" checked={item.required} onChange={e=>update({extractions:value.extractions.map((row,i)=>i===index?{...row,required:e.target.checked}:row)})}/>必需</label><label className="check-line"><input type="checkbox" checked={item.secret} onChange={e=>update({extractions:value.extractions.map((row,i)=>i===index?{...row,secret:e.target.checked}:row)})}/>敏感</label><button type="button" className="icon-button" aria-label={`删除提取 ${index+1}`} onClick={()=>update({extractions:value.extractions.filter((_,i)=>i!==index)})}><X size={14}/></button></div>)}<p className="quiet-note">提取值用于同一集合运行或同一用例的后续节点，不改写已保存环境。JSON 路径支持 $.data[0].id。</p></>}

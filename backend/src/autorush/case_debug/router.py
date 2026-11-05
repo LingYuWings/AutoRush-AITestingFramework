@@ -21,12 +21,10 @@ def create_debug_router(manager, settings, require_operator, trusted_local_reque
         except (ValueError, PermissionError): raise HTTPException(422, 'invalid debug content, target, environment or model configuration') from None
 
     @router.get('')
-    async def recent(request: Request, source_case_id: UUID | None = None, session_id: UUID | None = None,
+    async def recent(request: Request, source_case_id: UUID | None = None, session_id: UUID | None = None, active_only: bool = False,
                      x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
-        rows = [row for row in manager.store.list_agent_executions()
-            if (source_case_id is None or row.source_case_id == source_case_id) and (session_id is None or row.session_id == session_id)]
-        return [manager.public(row, summary=True) for row in rows[:20]]
+        return manager.store.list_recent_summaries(source_case_id=source_case_id,session_id=session_id,active_only=active_only)
 
     def find(ident):
         record = manager.get(ident)

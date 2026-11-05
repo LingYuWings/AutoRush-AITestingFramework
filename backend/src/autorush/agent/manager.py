@@ -76,11 +76,18 @@ class AgentRunManager:
                 steps=[StepResult.model_validate(s) for s in active.get('steps',[])]
                 current=active.get('active_step')
                 if current:
-                    evidence=({'agent':{**current,'pending_action':active.get('pending_action')}} if case.execution_mode=='agent'
-                        else {'interrupted_action':active.get('pending_action')})
+                    pending=active.get('pending_action')
+                    if case.execution_mode=='agent':
+                        evidence={'agent':{**current,'pending_action':pending}}
+                    else:
+                        # Older checkpoints can contain plaintext request headers or input.
+                        action={key: pending[key] for key in ('operation', 'lifecycle') if key in pending} if pending else None
+                        active['pending_action']=action
+                        evidence={'interrupted_action':action}
                     steps.append(StepResult(order=current['order'],intent=current['intent'],status=ResultStatus.BLOCKED,detail=reason,
                         evidence=evidence))
-            for step in (case.steps+case.postconditions)[len(steps):]:
+            ordered=sorted(case.steps,key=lambda s:s.order)+sorted(case.postconditions,key=lambda s:s.order)
+            for step in ordered[len(steps):]:
                 steps.append(StepResult(order=step.order,intent=step.intent,status=ResultStatus.SKIPPED,detail=reason))
             results.append(CaseResult(case_id=case.id,title=case.title,status=ResultStatus.BLOCKED,steps=steps))
         return results
@@ -130,7 +137,7 @@ class AgentRunManager:
                     async def structured_progress(steps,current):
                         await checkpoint({'case_id':str(case.id),'steps':[s.model_dump(mode='json') for s in steps],
                             'active_step':{'order':current.order,'intent':current.intent,'expected_result':'结构化断言','traces':[]} if current else None,
-                            'pending_action':{'operation':current.operation,'parameters':current.parameters,'lifecycle':'pending'} if current else None})
+                            'pending_action':{'operation':current.operation,'lifecycle':'pending'} if current else None})
                     result=await Runner(session.drivers).run_case(case,on_progress=structured_progress)
                 results.append(result)
                 record.progress={'completed_cases':[c.model_dump(mode='json') for c in results]};self.store.update_agent_execution(record)

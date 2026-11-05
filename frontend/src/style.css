@@ -633,8 +633,14 @@ tbody tr.selected { background: var(--accent-soft); }
 .editor-panel textarea { min-height: 76px; padding: 10px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface); color: inherit; font: inherit; }
 .editor-panel textarea:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus); }
 .screenshot-image-frame { display: flex; align-items: center; justify-content: center; overflow: hidden; border-radius: var(--radius); background: var(--surface-sunken); }
-.screenshot-image-frame a, .screenshot-image-frame img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.screenshot-image-frame .screenshot-open, .screenshot-image-frame img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.screenshot-open { padding: 0; border: 0; background: transparent; cursor: zoom-in; }
+.screenshot-open:focus-visible { outline-offset: -3px; }
 .screenshot-image-frame p { padding: 12px; text-align: center; }
+.screenshot-dialog { max-width: 94vw; max-height: 92vh; padding: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--ink); }
+.screenshot-dialog::backdrop { background: rgb(0 0 0 / 70%); }
+.screenshot-dialog-content { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; padding: 12px; }
+.screenshot-dialog img { display: block; max-width: min(88vw, 1400px); max-height: 78vh; object-fit: contain; }
 
 .form-section-label > .form-section-title { color: var(--ink-2); font-weight: 600; }
 .form-section-label > .form-section-title > span { margin-left: 6px; }

@@ -80,9 +80,17 @@ def parse_model_response(body, protocol):
                               if isinstance(item, dict) and isinstance(item.get('content'), list))
             if not content: raise ValueError('model response did not contain output text')
     else:
-        choice = body['choices'][0]
+        choices = body.get('choices')
+        if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+            raise ValueError('model response did not contain a valid choice')
+        choice = choices[0]
+        message = choice.get('message')
+        if not isinstance(message, dict):
+            raise ValueError('model response did not contain a valid message')
         reason = choice.get('finish_reason')
-        content = text_content(choice['message'].get('content'))
+        content = text_content(message.get('content'))
+    if reason is not None and not isinstance(reason, str):
+        raise ValueError('model response contained an invalid stop reason')
     if reason in {'length', 'abort', 'max_tokens', 'incomplete', 'failed', 'cancelled'}:
         raise ValueError('model response was truncated or incomplete')
     usage = body.get('usage') if isinstance(body.get('usage'), dict) else {}

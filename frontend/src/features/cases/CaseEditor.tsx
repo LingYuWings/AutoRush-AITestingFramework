@@ -46,6 +46,9 @@ export default function CaseEditor({ onCancel, onSave, onDebug, providers = EMPT
   const [compiling, setCompiling] = useState(false)
   const [compileWarnings, setCompileWarnings] = useState<string[]>([])
   const [editorError, setEditorError] = useState<string | null>(null)
+  const compileInput={mode,platform,title,description,steps,cleanup,selectedProviderId}
+  const latestCompileInput=useRef(compileInput)
+  latestCompileInput.current=compileInput
   const debugSession=useRef(crypto.randomUUID())
   const buildPayload=():DebugCase=>{
     const payload=mode==='agent'?buildNaturalCase({title,description,steps:naturalSteps,postconditions:naturalCleanup}):{execution_mode:'structured' as const,title:title.trim(),description:description.trim(),steps:steps.map(compileStep),postconditions:cleanup.map(compileStep)}
@@ -65,6 +68,7 @@ export default function CaseEditor({ onCancel, onSave, onDebug, providers = EMPT
   }
   const compile = async () => {
     if (!selectedProviderId) return
+    const submitted=latestCompileInput.current
     setCompiling(true)
     try {
       const result = await onCompile({
@@ -73,6 +77,11 @@ export default function CaseEditor({ onCancel, onSave, onDebug, providers = EMPT
         postconditions: cleanup.map(step => ({ intent: step.intent.trim(), driver: step.driver as 'api' | 'web', always_run: step.alwaysRun })),
       })
       if (result) {
+        const current=latestCompileInput.current
+        if (Object.keys(submitted).some(key => submitted[key as keyof typeof submitted] !== current[key as keyof typeof current])) {
+          setCompileWarnings(['编译期间用例已更改，已保留当前内容。'])
+          return
+        }
         setSteps(result.draft.steps.map(editCompiledStep))
         setCleanup(result.draft.postconditions.map(editCompiledStep))
         setCompileWarnings(result.warnings)
@@ -91,7 +100,7 @@ export default function CaseEditor({ onCancel, onSave, onDebug, providers = EMPT
     <div className="field-grid"><label className="field"><span>用例标题</span><input value={title} onChange={event => setTitle(event.target.value)} placeholder="例如：管理后台健康检查" maxLength={200} required /></label><label className="field"><span>描述（可选）</span><input value={description} onChange={event => setDescription(event.target.value)} placeholder="本用例验证的业务场景" /></label></div>
     {initial?.status==='approved'&&<p className="quiet-note">已批准 v{initial.version} 保留，保存将生成 v{initial.version+1} 新草稿；已有计划继续使用原版本。</p>}
     <label className="field"><span>执行端</span><select value={platform} onChange={e=>{const value=e.target.value as DriverKind|'mixed';setPlatform(value);if(value!=='mixed'){if(value==='api')setMode('structured');setNaturalSteps(old=>old.map(step=>step.apiParameters?step:{...step,driver:value}));setNaturalCleanup(old=>old.map(step=>step.apiParameters?step:{...step,driver:value}));const convert=(step:EditableStep)=>step.apiParameters?step:value==='api'?{...switchDriver(step,value),intent:step.intent||'API 请求',apiParameters:{request:newRequest()}}:switchDriver(step,value);setSteps(old=>old.map(convert));setCleanup(old=>old.map(convert))}}}><option value="web">Web · Playwright</option><option value="android">Android · Portal</option><option value="desktop">Desktop · PyAutoGUI</option><option value="api">API · HTTP</option>{initial&&platformOf(initial)==='mixed'&&<option value="mixed">历史混合（兼容原用例）</option>}</select></label>
-    <label className="field"><span>执行方式</span><select value={mode} onChange={e=>{setMode(e.target.value as 'agent'|'structured');setSteps([freshStructured()]);setCleanup([]);setNaturalSteps([freshNatural()]);setNaturalCleanup([]);setCompileWarnings([]);setEditorError(null)}}><option value="agent">自然语言 · 模型观察并执行</option><option value="structured">高级 · 结构化动作</option></select></label>
+    <label className="field"><span>执行方式</span><select value={mode} onChange={e=>{setMode(e.target.value as 'agent'|'structured');setCompileWarnings([]);setEditorError(null)}}><option value="agent">自然语言 · 模型观察并执行</option><option value="structured">高级 · 结构化动作</option></select></label>
     {mode==='agent'?<>
       <p className="quiet-note">填写操作意图和明确的预期结果。模型会读取实时页面或截图，每次选择一个动作，并核验预期；执行模型在测试计划或调试面板中选择。</p>
       {editorError&&<p role="alert">{editorError}</p>}

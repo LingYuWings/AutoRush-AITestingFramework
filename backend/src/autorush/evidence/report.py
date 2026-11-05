@@ -6,12 +6,20 @@ import os
 import json
 import base64
 import hashlib
+import re
 from html import escape
 from pathlib import Path
 from xml.etree import ElementTree
 
 from autorush.domain.models import RunRecord
 from autorush.evidence.screenshot import evidence_path
+
+_INVALID_XML_CHAR = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]")
+
+
+def serialize_junit(suite: ElementTree.Element) -> str:
+    xml = ElementTree.tostring(suite, encoding="unicode")
+    return '<?xml version="1.0" encoding="utf-8"?>\n' + _INVALID_XML_CHAR.sub("\ufffd", xml)
 
 
 def save_json_report(run: RunRecord, report_dir: Path) -> Path:
@@ -111,7 +119,8 @@ th,td{{border-top:1px solid #e8edf1;text-align:left;padding:10px;vertical-align:
 pre{{white-space:pre-wrap;overflow-wrap:anywhere;max-height:420px;overflow:auto}}
 figure{{margin:12px 0}}figure img{{max-width:280px;max-height:520px;object-fit:contain;border:1px solid #e5ebef}}figcaption{{font-size:11px;overflow-wrap:anywhere}}
 </style></head><body><main><header><h1>AutoRush 测试报告</h1><small>Run {escape(str(run.id))} · Plan {escape(str(run.plan_id))} · {escape(run.created_at.isoformat())}</small>
-<div class="summary"><div class="metric">结果 <b>{escape(run.status.value)}</b></div><div class="metric">用例 <b>{total}</b></div><div class="metric">通过 <b>{passed}</b></div></div></header>
+<div class="summary"><div class="metric">结果 <b>{escape(run.status.value)}</b></div><div class="metric">用例 <b>{total}</b></div><div class="metric">通过 <b>{passed}</b></div></div>
+{f'<p>{escape(run.termination_reason)}</p>' if run.termination_reason else ''}</header>
 {''.join(case_sections)}</main></body></html>"""
 
 
@@ -130,11 +139,12 @@ def _agent_html(evidence,run,report_dir):
 
 
 def _render_junit(run: RunRecord) -> str:
+    run_error = run.termination_reason if run.status.value == "error" else None
     failures = sum(case.status.value == "failed" for case in run.cases)
-    errors = sum(case.status.value in {"error", "blocked"} for case in run.cases)
+    errors = sum(case.status.value in {"error", "blocked"} for case in run.cases) + bool(run_error)
     skipped = sum(case.status.value == "skipped" for case in run.cases)
     suite = ElementTree.Element("testsuite", {
-        "name": f"AutoRush plan {run.plan_id}", "tests": str(len(run.cases)),
+        "name": f"AutoRush plan {run.plan_id}", "tests": str(len(run.cases) + bool(run_error)),
         "failures": str(failures), "errors": str(errors), "skipped": str(skipped),
         "timestamp": run.created_at.isoformat(),
     })
@@ -149,5 +159,8 @@ def _render_junit(run: RunRecord) -> str:
         elif case.status.value == "skipped":
             ElementTree.SubElement(item, "skipped")
         ElementTree.SubElement(item, "system-out").text = details
+    if run_error:
+        item = ElementTree.SubElement(suite, "testcase", {"name": "Run completion", "classname": "autorush.run"})
+        ElementTree.SubElement(item, "error", {"message": run_error})
     ElementTree.indent(suite)
-    return '<?xml version="1.0" encoding="utf-8"?>\n' + ElementTree.tostring(suite, encoding="unicode")
+    return serialize_junit(suite)

@@ -75,6 +75,8 @@ class PyAutoGuiDesktopDriver:
                 x,y=self._coordinates(parameters)
                 self._backend.moveTo(x,y)
                 self._preflight()
+                if self._guard is not None and self._coordinates(parameters) != (x, y):
+                    raise DriverBlockedError('target moved before scrolling')
                 # PyAutoGUI 0.9.54 forwards this value as raw Windows wheel
                 # delta. One detent is WHEEL_DELTA=120, not a delta of one.
                 delta=parameters['clicks']*(120 if sys.platform=='win32' else 1)
