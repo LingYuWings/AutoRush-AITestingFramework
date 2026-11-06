@@ -245,7 +245,7 @@ export type PlatformEvent = EventEnvelope & (
   | { type: 'agent.action.completed'; payload: {case_id:string;step:number;round:number;operation:string;status:ResultStatus} }
 )
 
-const API_BASE = window.location.protocol === 'app:' ? 'http://127.0.0.1:8000' : ''
+export const API_BASE = window.location.protocol === 'app:' ? 'http://127.0.0.1:8000' : ''
 let operatorToken = ''
 let screenshotAuthorization: Promise<void> | null = null
 
@@ -281,7 +281,7 @@ export async function request<T>(path: string, init?: RequestInit, authenticated
     response = await fetch(`${API_BASE}${path}`, {
       ...init,
       cache: 'no-store',
-      headers: { 'Content-Type': 'application/json', ...(authenticated && operatorToken ? { 'X-Autorush-Operator-Token': operatorToken } : {}), ...init?.headers },
+      headers: { ...(init?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }), ...(authenticated && operatorToken ? { 'X-Autorush-Operator-Token': operatorToken } : {}), ...init?.headers },
     })
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') throw error

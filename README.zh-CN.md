@@ -61,6 +61,7 @@ flowchart LR
 
 - **控制台**：React 网页控制台，也可打包为 Electron 桌面应用，支持浅色和深色主题。
 - **用例管理**：支持自然语言和结构化两种模式，可按执行端筛选，支持版本管理、批准与可恢复删除。
+- **用例导入**：在“用例管理 → 导入用例”上传 UTF-8 Markdown 或 XMind，查看来源位置、修改预览并批量创建选中的草稿。面板可下载 Markdown 模板，也可参考 [`standard-cases.markdown`](examples/imports/standard-cases.markdown)。缺少预期或原文存在歧义时须核对；不会自动批准或执行。批量失败全部回滚，提交重试不会重复创建。
 - **单用例调试**：从用例列表点击运行按钮，或在编辑器点击“调试当前内容”，无需先保存或批准。在调试面板配置目标与模型、查看实时进度、停止运行并检查逐步证据。“调试记录”保留最近 20 条独立记录，不混入正式计划和报告，调试不会保存或批准原用例。
 - **API 工作台**：多标签请求编辑器，支持多级文件夹、环境和 `{{变量}}`；集合 Runner 支持 CSV/JSON 数据驱动迭代，执行历史可搜索。请求或整个集合都可以一键保存为 API 测试用例。
 - **Android 设备**：扫码配对手机，管理已授权设备，实时查看画面。
@@ -68,9 +69,9 @@ flowchart LR
 
 ## 快速开始
 
-> 以下脚本以 **Windows PowerShell** 为例。桌面自动化需要交互式 Windows 桌面会话。
-
 **环境要求：** Python 3.11+（建议 3.12）· Node.js 20.19+ 或 22.12+ · 自然语言执行需要模型服务（仓库不含模型权重）。
+
+### Windows
 
 ```powershell
 git clone https://github.com/LingYuWings/AutoRush-AITestingFramework.git
@@ -78,13 +79,30 @@ cd AutoRush-AITestingFramework
 py -3.12 -m venv .venv-dev
 
 # 首次启动：安装后端、前端及 Chromium，并启动全部服务。
-.\scripts\start.ps1 -Install `
+.\script\windows\start.ps1 -Install `
   -ApiHosts "127.0.0.1,localhost" `
   -WebHosts "127.0.0.1,localhost" `
   -LlmHosts "127.0.0.1,localhost"
 ```
 
-如需 Windows 桌面测试，加上 `-DesktopAutomation`。完成首次安装后，以后启动可以不加 `-Install`。
+Windows 默认启用桌面自动化，需要交互式桌面会话。可用 `-DesktopAutomation:$false` 显式关闭。后端在启动时读取该设置，切换前请先停止正在运行的后端。完成首次安装后，以后启动可以不加 `-Install`。
+
+### Linux 和 macOS
+
+克隆仓库后，在项目根目录创建虚拟环境，再运行对应平台的入口。需要 Bash 和 curl。
+
+```bash
+python3 -m venv .venv-dev
+export AUTORUSH_ALLOWED_API_HOSTS=127.0.0.1,localhost
+export AUTORUSH_ALLOWED_WEB_HOSTS=127.0.0.1,localhost
+export AUTORUSH_ALLOWED_LLM_HOSTS=127.0.0.1,localhost
+bash script/linux/start.sh --install  # Linux
+# bash script/macos/start.sh --install  # macOS
+```
+
+后续启动可省略 `--install`，在浏览器打开终端显示的控制台地址。如果 Linux 上的 Chromium 提示缺少系统库，可运行 `.venv-dev/bin/python -m playwright install-deps chromium` 安装。原生桌面自动化由 Windows 执行端提供。
+
+### 本地服务地址
 
 | 服务 | 地址 |
 | --- | --- |
@@ -92,7 +110,7 @@ py -3.12 -m venv .venv-dev
 | 接口文档 | <http://127.0.0.1:8000/docs> |
 | 健康检查 | <http://127.0.0.1:8000/health> |
 
-`-ApiHosts`、`-WebHosts`、`-LlmHosts` 分别列出 AutoRush 允许访问的 API、网页和模型主机。测试自己的环境时，把主机名加进去，多个主机名用逗号分隔。
+上面的 Windows 主机参数和 Linux/macOS 环境变量指定 AutoRush 允许访问的 API、网页和模型主机。可添加自己的测试环境，多个主机名用逗号分隔。
 
 ### 用演示 API 体验
 
@@ -123,7 +141,8 @@ APK 及对应的 SHA-256 校验文件输出到本地 `release/` 目录：`autoru
 backend/          FastAPI 服务、用例契约、执行器、模型接入与各平台驱动
 frontend/         React 控制台与 Electron 外壳
 android/portal/   Android Portal 与演示应用
-scripts/          启动、Android 构建与 APK 校验工具
+script/           Windows、Linux 和 macOS 启动脚本
+scripts/          Android 构建、APK 校验与本地模型工具
 examples/         用例样例与本地演示 API 服务
 ```
 
