@@ -69,9 +69,9 @@ Natural-language runs are bounded by timeouts, round limits, cancellation and no
 
 ## Quick start
 
-> The scripts below target **Windows PowerShell**. Desktop automation needs an interactive Windows session.
-
 **Requirements:** Python 3.11+ (3.12 recommended) · Node.js 20.19+ or 22.12+ · a model service for natural-language runs (no model weights are bundled).
+
+### Windows
 
 ```powershell
 git clone https://github.com/LingYuWings/AutoRush-AITestingFramework.git
@@ -79,13 +79,30 @@ cd AutoRush-AITestingFramework
 py -3.12 -m venv .venv-dev
 
 # First run: installs backend, frontend and Chromium, then starts everything.
-.\scripts\start.ps1 -Install `
+.\script\windows\start.ps1 -Install `
   -ApiHosts "127.0.0.1,localhost" `
   -WebHosts "127.0.0.1,localhost" `
   -LlmHosts "127.0.0.1,localhost"
 ```
 
-Add `-DesktopAutomation` to enable Windows desktop testing. You can drop `-Install` on later runs.
+Windows desktop automation is enabled by default and needs an interactive desktop session. Use `-DesktopAutomation:$false` to disable it. Stop any running backend before changing the desktop setting, which is read at startup. You can drop `-Install` on later runs.
+
+### Linux and macOS
+
+From the cloned repository, create the virtual environment and run the entry point for your OS. Bash and curl are required.
+
+```bash
+python3 -m venv .venv-dev
+export AUTORUSH_ALLOWED_API_HOSTS=127.0.0.1,localhost
+export AUTORUSH_ALLOWED_WEB_HOSTS=127.0.0.1,localhost
+export AUTORUSH_ALLOWED_LLM_HOSTS=127.0.0.1,localhost
+bash script/linux/start.sh --install  # Linux
+# bash script/macos/start.sh --install  # macOS
+```
+
+On later runs, omit `--install` and open the console URL shown in the terminal. On Linux, if Chromium reports missing system libraries, install them with `.venv-dev/bin/python -m playwright install-deps chromium`. Native desktop automation is available on Windows.
+
+### Local service addresses
 
 | Service | Address |
 | --- | --- |
@@ -93,7 +110,7 @@ Add `-DesktopAutomation` to enable Windows desktop testing. You can drop `-Insta
 | API docs | <http://127.0.0.1:8000/docs> |
 | Health check | <http://127.0.0.1:8000/health> |
 
-`-ApiHosts`, `-WebHosts` and `-LlmHosts` list the hosts AutoRush is allowed to reach. Add your own test environments there, separated by commas.
+The Windows host options and Linux/macOS environment variables above list the hosts AutoRush is allowed to reach. Add your own test environments there, separated by commas.
 
 ### Try it with the demo API
 
@@ -124,7 +141,8 @@ Then open **Android Devices** in the console, generate a pairing QR code and sca
 backend/          FastAPI service, case contracts, runners, model integration and platform drivers
 frontend/         React console and Electron shell
 android/portal/   Android Portal and demo app
-scripts/          Startup, Android build and APK verification tools
+script/           Windows, Linux and macOS launchers
+scripts/          Android build, APK verification and local model tools
 examples/         Sample cases and a local demo API service
 ```
 
