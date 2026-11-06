@@ -12,6 +12,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 
+# Resolve an evidence filename within the expected run directory.
 def evidence_path(report_dir: Path, run_id: UUID, relative: str) -> Path:
     if not isinstance(relative, str) or not re.fullmatch(rf"{run_id}/[a-f0-9]{{32}}\.jpg", relative):
         raise ValueError("invalid screenshot evidence path")
@@ -22,6 +23,7 @@ def evidence_path(report_dir: Path, run_id: UUID, relative: str) -> Path:
     return path
 
 
+# Decode and validate an Android capture before storing it as evidence.
 def record_screenshot(captured: dict[str, Any], report_dir: Path, run_id: UUID, package: str) -> dict[str, Any]:
     if captured.get("package") != package or captured.get("mime_type") != "image/jpeg":
         raise ValueError("screenshot does not match the Android plan target or image format")
@@ -53,6 +55,7 @@ def record_screenshot(captured: dict[str, Any], report_dir: Path, run_id: UUID, 
         "source_width":source_width,"source_height":source_height,**({'source_bounds':bounds} if bounds is not None else {})})
 
 
+# Write or reuse a JPEG by content hash within the run's evidence directory.
 def store_jpeg(jpeg: bytes, report_dir: Path, run_id: UUID, metadata: dict[str, Any]) -> dict[str, Any]:
     if not 4 <= len(jpeg) <= 1_000_000 or not jpeg.startswith(b"\xff\xd8") or not jpeg.endswith(b"\xff\xd9"):
         raise ValueError("invalid or oversized JPEG screenshot")

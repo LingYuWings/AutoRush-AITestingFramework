@@ -11,10 +11,12 @@ from uuid import UUID, uuid4
 from fastapi import WebSocket, WebSocketDisconnect
 
 
+# Signal a conflict when a device already has an active socket.
 class DeviceAlreadyConnectedError(ValueError):
     """A transient registration conflict while an older socket is still live."""
 
 
+# Track a connected device's socket and pending requests.
 @dataclass
 class DeviceSession:
     device_id: UUID
@@ -23,17 +25,22 @@ class DeviceSession:
     pending: dict[str, asyncio.Future[dict[str, Any]]] = field(default_factory=dict)
 
 
+# Manage live device sessions, exclusive leases, and request routing.
 class DeviceHub:
+    # Initialize the session and lease registries.
     def __init__(self) -> None:
         self._sessions: dict[UUID, DeviceSession] = {}
         self._leases: dict[UUID, UUID] = {}
 
+    # List connected device IDs in stable order.
     def list_devices(self) -> list[str]:
         return sorted(str(device_id) for device_id in self._sessions)
 
+    # Look up the current live session for a device.
     def session(self, device_id: UUID) -> DeviceSession | None:
         return self._sessions.get(device_id)
 
+    # Reserve a connected device for one execution.
     def acquire(self, device_id: UUID) -> UUID:
         if device_id not in self._sessions:
             raise ConnectionError("device is offline")
@@ -43,19 +50,23 @@ class DeviceHub:
         self._leases[device_id] = lease
         return lease
 
+    # Release a device only if the supplied lease matches.
     def release(self, device_id: UUID, lease: UUID) -> None:
         if self._leases.get(device_id) == lease:
             del self._leases[device_id]
 
+    # Check that the device is connected and the lease still belongs to the caller.
     def owns_lease(self, device_id: UUID, lease: UUID) -> bool:
         return device_id in self._sessions and self._leases.get(device_id) == lease
 
+    # Enforce exclusive device access for ordinary requests.
     def _check_access(self, device_id: UUID, lease_id: UUID | None) -> None:
         if lease_id is not None and not self.owns_lease(device_id, lease_id):
             raise ConnectionError("device execution lease expired")
         if device_id in self._leases and self._leases[device_id] != lease_id:
             raise RuntimeError("device is busy with another run")
 
+    # Register a device socket and reject duplicate live sessions.
     def register(self, device_id: UUID, websocket: WebSocket) -> DeviceSession:
         if device_id in self._sessions:
             raise DeviceAlreadyConnectedError("device already connected")
@@ -63,6 +74,7 @@ class DeviceHub:
         self._sessions[device_id] = session
         return session
 
+    # Remove the session and fail its pending requests.
     def unregister(self, session: DeviceSession) -> None:
         if self._sessions.get(session.device_id) is session:
             del self._sessions[session.device_id]
@@ -72,6 +84,7 @@ class DeviceHub:
                 future.set_exception(ConnectionError("device disconnected"))
         session.pending.clear()
 
+    # Disconnect the active session for a device.
     async def disconnect(self, device_id: UUID) -> None:
         session = self._sessions.get(device_id)
         if session is None:
@@ -83,6 +96,7 @@ class DeviceHub:
         except (RuntimeError, WebSocketDisconnect):
             pass
 
+    # Match a device response to its waiting request.
     def response(self, session: DeviceSession, message: dict[str, Any]) -> None:
         if message.get("type") != "response":
             return
@@ -93,6 +107,7 @@ class DeviceHub:
         if future is not None and not future.done():
             future.set_result(message)
 
+    # Send an authorized device command and wait for its matching response.
     async def call(self, device_id: UUID, method: str, params: dict[str, Any], *, lease_id: UUID | None = None, background_control: bool = False) -> dict[str, Any]:
         if background_control and method not in {'screen.start', 'screen.stop'}:
             raise ValueError('background control is limited to screen lifecycle')

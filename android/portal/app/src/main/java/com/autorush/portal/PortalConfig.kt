@@ -25,10 +25,12 @@ object PortalConfig {
     private const val KEY_ALIAS = "autorush.portal.token"
     private val packagePattern = Regex("(?:[A-Za-z_][A-Za-z0-9_]*\\.)+[A-Za-z_][A-Za-z0-9_]*")
 
+    // Read the saved package allowlist, ignoring blanks and Portal's own package.
     fun allowedPackages(context: Context): Set<String> = prefs(context)
         .getString(KEY_ALLOWED_PACKAGES, "").orEmpty().split(',')
         .filter { it.isNotBlank() && it != context.packageName }.toSet()
 
+    // Normalize and save package names, then recheck active screen sharing.
     fun saveAllowedPackages(context: Context, raw: String): String {
         val names = raw.split(',', '\n').map { it.trim() }.filter { it.isNotEmpty() }.distinct()
         require(names.isNotEmpty() || anyPackageAllowed(context)) { "请至少填写一个测试应用包名" }
@@ -40,15 +42,21 @@ object PortalConfig {
         return value
     }
 
+    // Read the saved WebSocket URL, using an empty string before pairing.
     fun serverUrl(context: Context): String = prefs(context).getString(KEY_SERVER, "").orEmpty()
+    // Read whether the user enabled testing outside the allowlist.
     fun anyPackageAllowed(context: Context): Boolean = prefs(context).getBoolean(KEY_ANY_APP, false)
+    // Save the wildcard package setting and recheck active screen sharing.
     fun setAnyPackageAllowed(context: Context, allowed: Boolean) {
         prefs(context).edit().putBoolean(KEY_ANY_APP, allowed).apply()
         ScreenStreamer.policyChanged()
     }
+    // Evaluate a package against the current local policy.
     fun isPackageAllowed(context: Context, pkg: String): Boolean = PackagePolicy.allows(pkg, context.packageName, anyPackageAllowed(context), allowedPackages(context))
+    // Read the saved certificate pin, if the pairing supplied one.
     fun tlsPin(context: Context): String? = prefs(context).getString(KEY_TLS_PIN, null)
 
+    // Require the device WebSocket endpoint and restrict plaintext connections to loopback.
     fun validateServerUrl(raw: String): String {
         val uri = try { URI(raw.trim()) } catch (_: Exception) { throw IllegalArgumentException("服务器地址无效") }
         require(uri.userInfo == null && uri.fragment == null && uri.query == null) { "地址不能包含用户信息、查询或片段" }
@@ -60,6 +68,7 @@ object PortalConfig {
         return uri.toString()
     }
 
+    // Validate the pairing, encrypt its token, and save the credentials in one preferences commit.
     fun savePairing(context: Context, server: String, token: String, allowedPackages: List<String>? = null, tlsPin: String? = null) {
         val validUrl = validateServerUrl(server)
         require(token.length in 32..512 && !token.any { it.isWhitespace() }) { "设备令牌长度需为 32–512 位，且不能含空白" }
@@ -75,6 +84,7 @@ object PortalConfig {
         check(edit.commit()) { "无法保存配对配置，请重试" }
     }
 
+    // Decrypt the saved device token and return null if it cannot be read.
     fun token(context: Context): String? {
         val raw = prefs(context).getString(KEY_TOKEN, null) ?: return null
         return try {
@@ -86,19 +96,24 @@ object PortalConfig {
         } catch (_: Exception) { null }
     }
 
+    // Check whether a saved token is readable.
     fun hasToken(context: Context): Boolean = token(context) != null
 
+    // Remove the paired server address, device token, and certificate pin.
     fun clearPairing(context: Context) {
         prefs(context).edit().remove(KEY_SERVER).remove(KEY_TOKEN).remove(KEY_TLS_PIN).apply()
     }
 
+    // Read the separate screenshot permission, which defaults to off.
     fun screenshotAllowed(context: Context): Boolean = prefs(context).getBoolean(KEY_SCREENSHOT, false)
 
+    // Save the screenshot permission and tell the streamer to recheck access.
     fun setScreenshotAllowed(context: Context, allowed: Boolean) {
         prefs(context).edit().putBoolean(KEY_SCREENSHOT, allowed).apply()
         ScreenStreamer.policyChanged()
     }
 
+    // Return the stored device UUID or generate and save one on first use.
     fun deviceId(context: Context): String {
         val store = prefs(context)
         store.getString(KEY_DEVICE_ID, null)?.let { return it }
@@ -107,8 +122,10 @@ object PortalConfig {
         return store.getString(KEY_DEVICE_ID, id) ?: id
     }
 
+    // Open the app-private preferences used for Portal settings.
     private fun prefs(context: Context) = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
 
+    // Load or create the Android Keystore key used for token encryption.
     private fun secretKey(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         (store.getKey(KEY_ALIAS, null) as? SecretKey)?.let { return it }

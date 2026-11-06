@@ -10,12 +10,14 @@ from autorush.api_testing.variables import redact
 KEY = re.compile(r'^[A-Za-z_][A-Za-z0-9_.-]*$')
 
 
+# Parse a bounded CSV or JSON dataset into rows for parameterized runs.
 def parse_dataset(format, content):
     if not isinstance(content, str) or len(content.encode('utf-8')) > 1048576:
         raise ValueError('dataset must be UTF-8 text no larger than 1 MiB')
     content = content.removeprefix('\ufeff')
     if '\x00' in content or '\ufffd' in content: raise ValueError('dataset encoding is not supported; use UTF-8')
     if format == 'json':
+        # Reject non-finite numeric constants during JSON parsing.
         def invalid_constant(_): raise ValueError('nonfinite JSON number')
         try: rows = json.loads(content, parse_constant=invalid_constant)
         except (ValueError, RecursionError): raise ValueError('dataset must be a valid JSON array of objects') from None
@@ -55,6 +57,7 @@ def parse_dataset(format, content):
     return rows
 
 
+# Summarize the row count, columns, and sample rows in a dataset.
 def dataset_preview(format, content):
     rows = parse_dataset(format, content)
     return {'row_count': len(rows), 'columns': list(dict.fromkeys(key for row in rows for key in row)),

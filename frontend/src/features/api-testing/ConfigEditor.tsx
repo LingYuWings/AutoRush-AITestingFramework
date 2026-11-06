@@ -3,9 +3,11 @@ import type {Collection,CollectionRecord} from './types'
 import {configuration} from './types'
 import {VariablesEditor} from './Fields'
 
+// Edit the description and shared variables of a collection or environment.
 export default function ConfigEditor({initial,initialValue,kind,onSave,onDelete,onCancel}:{initial:CollectionRecord|null;initialValue?:Collection;kind:'集合'|'环境';onSave:(value:Collection)=>Promise<void>;onDelete?:()=>Promise<void>;onCancel:()=>void}){
   const [draft,setDraft]=useState<Collection>(initial?configuration(initial):initialValue??{name:'',description:'',variables:[]})
   const [busy,setBusy]=useState(false),[error,setError]=useState('')
+  // Manage pending state and display failures while saving editor changes.
   const act=async(callback:()=>Promise<void>)=>{setBusy(true);setError('');try{await callback()}catch(cause){setError(cause instanceof Error?cause.message:'保存失败')}finally{setBusy(false)}}
   return <section className="api-config-editor"><h2>{initial?'编辑':'新建'}{kind}</h2>
     <label className="field"><span>{kind}名称</span><input value={draft.name} maxLength={200} onChange={e=>setDraft({...draft,name:e.target.value})}/></label>

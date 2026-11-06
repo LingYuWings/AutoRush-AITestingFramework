@@ -3,7 +3,9 @@ import {statusLabel} from '../../shared/format'
 import type {ApiExecution} from './types'
 import {downloadText} from './client'
 
+// Preserve text responses and indent structured values for display.
 const pretty=(value:unknown)=>typeof value==='string'?value:JSON.stringify(value,null,2)
+// Show the response body, timing, and outcomes of checks and extractions.
 export default function ResponsePanel({value}:{value:ApiExecution|null}){
   const [tab,setTab]=useState('body')
   if(!value)return <section className="api-response api-empty">发送请求后，在此查看响应、耗时、断言和提取结果。</section>
@@ -19,6 +21,7 @@ export default function ResponsePanel({value}:{value:ApiExecution|null}){
   </section>
 }
 
+// Expand a stored API result on demand in a run report.
 export function ApiEvidence({value}:{value:unknown}){
   const [open,setOpen]=useState(false)
   if(!value||typeof value!=='object')return null

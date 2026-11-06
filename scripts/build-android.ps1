@@ -1,3 +1,4 @@
+# Build and verify the Portal and fixture debug APKs for local release.
 [CmdletBinding()]
 param([switch]$SkipChecks)
 $ErrorActionPreference = 'Stop'

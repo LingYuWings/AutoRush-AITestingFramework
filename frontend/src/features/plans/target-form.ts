@@ -1,6 +1,7 @@
 import type { AgentOptions,CaseRecord, DesktopTarget, PlanPayload } from '../../shared/api'
 export type PlanForm={name:string;environment:string;selected:string[];apiBase:string;webBase:string;deviceId:string;androidPackage:string;
   captureScreenshots:boolean;webHeadless:boolean;viewportWidth:string;viewportHeight:string;desktopTarget:DesktopTarget|null;desktopDelay:string;agentOptions?:AgentOptions;apiEnvironmentId?:string}
+// Validate selected cases and include the runtime settings their drivers require.
 export function buildPlanPayload(form:PlanForm,cases:Pick<CaseRecord,'steps'|'postconditions'|'execution_mode'>[]):PlanPayload {
   const agent=cases.some(c=>c.execution_mode==='agent')
   if(agent&&!form.agentOptions?.provider_config_id)throw new Error('请选择已验证的执行模型')

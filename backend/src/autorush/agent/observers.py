@@ -8,19 +8,24 @@ from autorush.domain.models import StepSpec
 from autorush.drivers.base import DriverBlockedError
 from autorush.evidence.screenshot import evidence_path
 
+# Signal that a changed target state requires a new observation.
 class ObservationChangedError(DriverBlockedError):
     """Same authorized target changed before dispatch; discard this decision."""
 
 
+# Produce a stable hash of a JSON-compatible observation value.
 def fingerprint(value):
     return hashlib.sha256(json.dumps(value,sort_keys=True,ensure_ascii=False,default=str).encode()).hexdigest()
 
 
+# Build driver observations and bind model actions to observed targets.
 class AgentObserver:
     kind=''
+    # Store the driver and the run's evidence location.
     def __init__(self,driver,directory,run_id):
         self.driver,self.directory,self.run_id=driver,directory,run_id
 
+    # Capture the current state and require screenshot evidence for active UI targets.
     async def observe(self,*,previous_screenshot=None):
         raw=await self.driver.observe()
         screenshot=None;image=None
@@ -39,6 +44,7 @@ class AgentObserver:
             text=raw.get('text','')[:12000],elements=[ObservedElement(**item) for item in raw.get('elements',[])[:200]],
             screenshot=screenshot,image_bytes=image,fingerprint=raw['fingerprint'],last_output=output,startup=startup)
 
+    # Recheck current state and resolve the model decision to an executable step.
     async def resolve_action(self,decision,observation):
         if decision.observation_id!=observation.id or decision.driver!=self.kind or observation.driver!=self.kind:
             raise DriverBlockedError('decision does not match the current observation')
@@ -85,6 +91,7 @@ class AgentObserver:
         return StepSpec(order=1,intent=decision.brief_reason,driver=self.kind,operation=decision.operation,parameters=params)
 
 
+# Select the observer implementation for a driver kind.
 def observer_for(driver_kind,driver,directory,run_id):
     from autorush.agent.web_observer import WebObserver
     from autorush.agent.android_observer import AndroidObserver

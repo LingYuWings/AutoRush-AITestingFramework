@@ -16,14 +16,17 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
+# Return the current UTC time for pairing timestamps.
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+# Hash a pairing code or device token for storage and lookup.
 def secret_hash(secret: str) -> str:
     return hashlib.sha256(secret.encode("utf-8")).hexdigest()
 
 
+# Validate the settings for a new device pairing.
 class PairingCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     connection: Literal["usb", "wss", "lan"]
@@ -32,6 +35,7 @@ class PairingCreate(BaseModel):
     allowed_packages: list[str] = Field(min_length=1, max_length=10)
     expires_in: int = Field(default=180, ge=30, le=300, strict=True)
 
+    # Check package names and remove duplicates while preserving order.
     @field_validator("allowed_packages")
     @classmethod
     def validate_packages(cls, packages: list[str]) -> list[str]:
@@ -43,6 +47,7 @@ class PairingCreate(BaseModel):
         return list(dict.fromkeys(packages))
 
 
+# Validate a phone's pairing code and device identity details.
 class PairingClaim(BaseModel):
     model_config = ConfigDict(extra="forbid")
     pairing_code: str = Field(min_length=1, max_length=256)
@@ -52,6 +57,7 @@ class PairingClaim(BaseModel):
     sdk_int: int = Field(ge=1, le=100, strict=True)
 
 
+# Validate the secure WebSocket URL used for pairing.
 def validate_wss_url(value: str | None) -> str:
     if not value or any(character.isspace() or ord(character) < 32 for character in value):
         raise ValueError("a WSS server URL is required")
@@ -68,7 +74,9 @@ def validate_wss_url(value: str | None) -> str:
     return value
 
 
+# Persist pairing requests and device authorization in SQLite.
 class PairingStore:
+    # Create the pairing database and its required tables.
     def __init__(self, path: Path) -> None:
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -94,11 +102,13 @@ class PairingStore:
                 );
             """)
 
+    # Open a SQLite connection that returns named columns.
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path, timeout=10)
         connection.row_factory = sqlite3.Row
         return connection
 
+    # Build the pairing status and mark expired pending requests.
     @staticmethod
     def _record(row: sqlite3.Row) -> dict:
         status = row["status"]
@@ -107,6 +117,7 @@ class PairingStore:
         return {"id": row["id"], "expires_at": row["expires_at"], "server_url": row["server_url"],
                 "allowed_packages": json.loads(row["allowed_packages"]), "status": status, "device_id": row["device_id"]}
 
+    # Create a time-limited code and the corresponding QR payload.
     def create(self, server_url: str, packages: list[str], lifetime: int, tls_sha256: str | None = None) -> dict:
         pairing_id, code = str(uuid4()), secrets.token_urlsafe(32)
         expires_at = (utc_now() + timedelta(seconds=lifetime)).isoformat()
@@ -123,17 +134,20 @@ class PairingStore:
         return {"id": pairing_id, "expires_at": expires_at, "server_url": server_url, "allowed_packages": packages,
                 "status": "pending", "device_id": None, "qr_payload": payload}
 
+    # Look up a pairing and report its current status.
     def get(self, pairing_id: UUID) -> dict | None:
         with self._connect() as connection:
             row = connection.execute("SELECT * FROM device_pairings WHERE id = ?", (str(pairing_id),)).fetchone()
         return self._record(row) if row else None
 
+    # Cancel a pending pairing and return its current state.
     def cancel(self, pairing_id: UUID) -> dict | None:
         with self._connect() as connection:
             connection.execute("UPDATE device_pairings SET status = 'cancelled' WHERE id = ? AND status = 'pending' AND expires_at > ?",
                                (str(pairing_id), utc_now().isoformat()))
         return self.get(pairing_id)
 
+    # Exchange a valid pairing code for a device token.
     def claim(self, payload: PairingClaim) -> dict | None:
         device_id = str(payload.device_id)
         token = secrets.token_urlsafe(32)
@@ -153,25 +167,30 @@ class PairingStore:
         return {"device_id": device_id, "server_url": row["server_url"], "device_token": token,
                 "allowed_packages": json.loads(row["allowed_packages"])}
 
+    # Resolve an unrevoked device token to its device ID.
     def authenticate(self, token: str) -> UUID | None:
         with self._connect() as connection:
             row = connection.execute("SELECT device_id FROM paired_devices WHERE token_hash = ? AND revoked = 0",
                                      (secret_hash(token),)).fetchone()
         return UUID(row["device_id"]) if row else None
 
+    # Check whether a device ID exists in the pairing database.
     def has_device(self, device_id: UUID) -> bool:
         with self._connect() as connection:
             return connection.execute("SELECT 1 FROM paired_devices WHERE device_id = ?", (str(device_id),)).fetchone() is not None
 
+    # Check whether a device has an unrevoked pairing.
     def is_active_device(self, device_id: UUID) -> bool:
         with self._connect() as connection:
             return connection.execute('SELECT 1 FROM paired_devices WHERE device_id = ? AND revoked = 0', (str(device_id),)).fetchone() is not None
 
+    # List paired devices with their revocation status.
     def list_devices(self) -> list[dict]:
         with self._connect() as connection:
             rows = connection.execute("SELECT device_id, manufacturer, model, sdk_int, paired_at, revoked FROM paired_devices ORDER BY paired_at DESC").fetchall()
         return [{**dict(row), "revoked": bool(row["revoked"])} for row in rows]
 
+    # Revoke the stored authorization for a device.
     def revoke(self, device_id: UUID) -> bool:
         with self._connect() as connection:
             result = connection.execute("UPDATE paired_devices SET revoked = 1 WHERE device_id = ?", (str(device_id),))

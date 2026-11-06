@@ -13,6 +13,7 @@ from autorush.llm.models import ProviderConfigRecord
 from autorush.llm.protocols import SUPPORTED_PROTOCOLS, build_model_request, is_loopback_url, parse_model_response
 
 
+# Carry the parsed model response and metadata about the request attempts.
 @dataclass(frozen=True)
 class ModelJsonResponse:
     value: dict[str, Any]
@@ -24,11 +25,14 @@ class ModelJsonResponse:
     attempt_stats: list[dict] = field(default_factory=list)
 
 
+# Report a model request or response failure.
 class ModelClientError(RuntimeError):
     pass
 
 
+# Send structured requests using the configured model provider protocol.
 class ModelClient:
+    # Validate the provider endpoint and configure the HTTP client.
     def __init__(self, config: ProviderConfigRecord, allowed_hosts: set[str], *, transport=None, timeout=90):
         parsed = urlsplit(config.base_url)
         if parsed.scheme not in {'http', 'https'} or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
@@ -57,6 +61,7 @@ class ModelClient:
         self._client = httpx.AsyncClient(headers=headers, timeout=httpx.Timeout(timeout, connect=min(timeout,10)),
                                          follow_redirects=False, trust_env=False, transport=transport)
 
+    # Request a JSON object, retrying invalid responses when allowed.
     async def generate_json(self, system_prompt, user_prompt, *, images=None, schema=None, on_attempt=None):
         try:
             endpoint, payload, headers = build_model_request(self._config, system_prompt, user_prompt, images or [], schema)
@@ -102,18 +107,22 @@ class ModelClient:
                 stats.append({'error':last_error,'latency_ms':round((time.monotonic()-attempt_start)*1000)})
         raise ModelClientError(last_error)
 
+    # Close the underlying HTTP client.
     async def close(self):
         await self._client.aclose()
 
 
+# Retain the client entry point used by existing case compilation callers.
 class OpenAICompatibleClient(ModelClient):
     """Compatibility entry point for existing case compilation callers."""
 
 
+# Extract the text from a provider's response body.
 def _response_text(body, protocol):
     return parse_model_response(body, protocol)[0]
 
 
+# Remove a surrounding Markdown code fence before parsing JSON.
 def _strip_code_fence(value):
     stripped=value.strip()
     if stripped.startswith('```') and stripped.endswith('```'):

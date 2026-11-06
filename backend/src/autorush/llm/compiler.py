@@ -27,6 +27,7 @@ Assertions may use status_code, json_field_equals, body_contains, url_equals, ur
 If details are missing, use conservative placeholders and include a warning string instead of inventing credentials or external hosts."""
 
 
+# Compile natural-language input into a validated draft test case.
 async def compile_case(
     request: CaseCompileRequest,
     config: ProviderConfigRecord,
@@ -67,6 +68,7 @@ async def compile_case(
     )
 
 
+# Check that the draft preserves the original case and step requirements.
 def _validate_draft_matches_request(request: CaseCompileRequest, draft: CaseCreate) -> None:
     if draft.title != request.title or draft.description != request.description:
         raise ModelClientError("model changed the case title or description")
@@ -94,6 +96,7 @@ def _validate_draft_matches_request(request: CaseCompileRequest, draft: CaseCrea
                 raise ModelClientError(f"model selected an incompatible assertion for {label} item {index}")
 
 
+# Validate compiled action parameters for the requested driver and operation.
 def _validate_operation_parameters(driver: str, operation: str, parameters: dict[str, object], label: str, index: int) -> None:
     prefix = f"{label} item {index}"
     if driver == "api":
@@ -126,6 +129,7 @@ def _validate_operation_parameters(driver: str, operation: str, parameters: dict
         raise ModelClientError(f"model omitted the Web fill value for {prefix}")
 
 
+# Allow only a safe local path for a compiled navigation step.
 def _validate_local_path(value: object, label: str) -> None:
     if not isinstance(value, str) or not value.startswith("/") or value.startswith("//"):
         raise ModelClientError(f"model emitted an invalid local path for {label}")

@@ -20,6 +20,7 @@ internal object ScreenStreamer {
     private var lastDetail = ""
     private var previewPending = false
 
+    // Reset the previous stream and bind viewing to the newly accepted socket.
     fun bind(context: Context, socket: WebSocket) {
         disconnect()
         this.context = context.applicationContext
@@ -27,8 +28,10 @@ internal object ScreenStreamer {
         session.bind()
     }
 
+    // Disconnect only if the closing socket still owns the current stream.
     fun detach(socket: WebSocket) { if (this.socket === socket) disconnect() }
 
+    // Clear the stream, cancel pending preview work, and end any projection.
     private fun disconnect() {
         val previous = session.active
         if (previous != null) status(previous, "stopped", "设备连接已结束")
@@ -39,6 +42,7 @@ internal object ScreenStreamer {
         ScreenCaptureService.instance?.stopSharing("设备连接已结束")
     }
 
+    // Replace the current stream, set its frame rate, and report whether capture is ready.
     fun start(context: Context, socket: WebSocket, params: JSONObject): JSONObject {
         check(this.socket === socket) { "画面连接尚未就绪" }
         val id = params.getString("stream_id")
@@ -74,6 +78,7 @@ internal object ScreenStreamer {
         return JSONObject().put("stream_id", id).put("mode", mode).put("state", state)
     }
 
+    // Stop the requested stream if it is active and report whether it was stopped.
     fun stop(params: JSONObject): JSONObject {
         val id = params.getString("stream_id")
         ScreenFrames.validateId(id)
@@ -88,33 +93,42 @@ internal object ScreenStreamer {
         return JSONObject().put("stream_id", id).put("state", "stopped").put("stopped", active != null)
     }
 
+    // Stop the phone's stream and invalidate any pending system consent.
     fun stopByUser() {
         session.active?.let { stop(JSONObject().put("stream_id", it.id)) }
         session.invalidateAuthorization()
         ScreenCaptureService.instance?.stopSharing("手机已停止共享")
     }
 
+    // Check whether the connected session and local screenshot setting allow a consent prompt.
     fun canAuthorize() = socket != null && context?.let(PortalConfig::screenshotAllowed) == true
     val authorizationEpoch get() = session.authorizationEpoch
+    // Reject a consent result if the session or permission changed while the prompt was open.
     fun isAuthorizationCurrent(epoch: Long) = canAuthorize() && epoch == authorizationEpoch
+    // Keep the smooth stream waiting for permission if system consent does not complete.
     fun consentDeclined() {
         session.active?.takeIf { it.mode == "smooth" }?.let { status(it, "permission_required", "系统录屏授权未完成") }
     }
+    // Let the smooth stream know projection is ready but eligible pixels are still pending.
     fun projectionAvailable() {
         session.active?.takeIf { it.mode == "smooth" }?.let { status(it, "blocked", "等待允许的测试应用画面") }
     }
+    // End the active smooth stream when projection stops.
     fun projectionStopped(detail: String) {
         val active = session.active?.takeIf { it.mode == "smooth" } ?: return
         session.stop(active.id)
         emitStatus(active.id, "stopped", detail)
     }
+    // Report a projection failure to the active smooth stream.
     fun projectionError(detail: String) {
         session.active?.takeIf { it.mode == "smooth" }?.let { status(it, "error", detail) }
     }
+    // Tell the active smooth stream that projection cannot currently send frames.
     fun projectionBlocked(detail: String) {
         session.active?.takeIf { it.mode == "smooth" }?.let { status(it, "blocked", detail) }
     }
 
+    // Recheck the current app after a policy change and stop projection if permission is revoked.
     fun policyChanged() {
         val active = session.active ?: return
         val allowed = runCatching { PortalAccessibilityService.instance?.currentCapturePackage() ?: error("无障碍服务未启用") }
@@ -125,14 +139,17 @@ internal object ScreenStreamer {
         }
     }
 
+    // Return the active smooth stream only when the frame rate and socket backlog allow capture.
     fun smoothTicket(): ScreenSession.Active? {
         val active = session.active?.takeIf { it.mode == "smooth" } ?: return null
         val queued = socket?.queueSize() ?: return null
         if (!pacer.acquire(SystemClock.elapsedRealtime(), queued)) return null
         return active
     }
+    // Check that a capture callback still belongs to the connected stream.
     fun isCurrent(active: ScreenSession.Active) = socket != null && session.isCurrent(active)
 
+    // Recheck the capture boundary, then send a sequenced frame if the socket has room.
     fun send(active: ScreenSession.Active, image: CapturedScreen, epochNs: Long) {
         if (!isCurrent(active)) return
         try {
@@ -150,6 +167,7 @@ internal object ScreenStreamer {
         } catch (error: Exception) { status(active, "blocked", error.message ?: "画面已阻止") }
     }
 
+    // Schedule periodic preview screenshots while this stream remains current.
     private fun preview(active: ScreenSession.Active) {
         if (!isCurrent(active)) return
         val service = PortalAccessibilityService.instance
@@ -167,7 +185,9 @@ internal object ScreenStreamer {
         main.postDelayed({ preview(active) }, 500)
     }
 
+    // Report that a frame could not be captured or sent.
     fun blocked(active: ScreenSession.Active, detail: String) { status(active, "blocked", detail) }
+    // Send a status update only for the current stream and only when its state or detail changes.
     private fun status(active: ScreenSession.Active, state: String, detail: String) {
         if (!session.isCurrent(active)) return
         if (lastState == state && lastDetail == detail) return
@@ -175,6 +195,7 @@ internal object ScreenStreamer {
         lastDetail = detail
         emitStatus(active.id, state, detail)
     }
+    // Update the phone display and send the stream status over the socket.
     private fun emitStatus(id: String, state: String, detail: String) {
         PortalState.screenStatus = when (state) {
             "streaming" -> "共享中"

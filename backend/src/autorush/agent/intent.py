@@ -6,6 +6,7 @@ a general natural-language authorization classifier.
 import re
 
 
+# Extract the local path from a standalone web navigation instruction.
 def navigation_path(step):
     """Only an entire standalone Open instruction; composite intents are untouched."""
     if step.driver!='web':return None
@@ -14,6 +15,7 @@ def navigation_path(step):
     return None
 
 
+# Explain when a proposed action exceeds the scope of the step intent.
 def action_scope_violation(step,decision):
     path=navigation_path(step)
     if path is not None and (decision.operation!='web.open' or decision.parameters.get('path')!=path):
@@ -24,6 +26,7 @@ def action_scope_violation(step,decision):
     return None
 
 
+# Return the read-only operations for inspections that require an unchanged target.
 def read_only_operations(step):
     if step.driver not in {'web', 'desktop'}:
         return None

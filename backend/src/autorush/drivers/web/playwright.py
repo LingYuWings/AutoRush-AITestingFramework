@@ -17,7 +17,9 @@ from autorush.drivers.web.network import BrowserNetworkGate
 from autorush.drivers.web.validation import validate_web_step
 
 
+# Run browser test actions within the configured web host allowlist.
 class PlaywrightWebDriver:
+    # Validate the base origin and configure the page and screenshot settings.
     def __init__(
         self,
         base_url: str,
@@ -43,6 +45,7 @@ class PlaywrightWebDriver:
         if capture_screenshots and (evidence_directory is None or run_id is None):
             raise ValueError('screenshot storage is not configured')
 
+    # Launch Playwright with an isolated browser context and guarded network access.
     @classmethod
     async def create(cls, base_url: str, allowed_hosts: set[str], *, headless: bool = True,
                      viewport: dict | None = None, capture_screenshots: bool = False,
@@ -65,6 +68,7 @@ class PlaywrightWebDriver:
         context = None
         network_gate = BrowserNetworkGate(allowed_hosts)
 
+        # Close the browser context, browser, Playwright runtime, and network proxy.
         async def closer() -> None:
             try:
                 if context is not None:
@@ -89,6 +93,7 @@ class PlaywrightWebDriver:
             context = await browser.new_context(viewport=viewport or {'width': 1280, 'height': 800}, service_workers='block')
             allowed = {host.lower() for host in allowed_hosts}
 
+            # Allow route requests only for approved HTTP or HTTPS hosts.
             async def guard(route: Any) -> None:
                 target = urlsplit(route.request.url)
                 if target.scheme in {"http", "https"} and target.hostname and target.hostname.lower() in allowed:
@@ -110,6 +115,7 @@ class PlaywrightWebDriver:
                 exc.add_note(f"browser cleanup also failed: {type(cleanup).__name__}")
             raise
 
+    # Validate and perform a supported browser step.
     async def execute(self, step: StepSpec) -> ActionResult:
         validate_web_step(step)
         if step.driver != "web":
@@ -153,10 +159,12 @@ class PlaywrightWebDriver:
             summary="inspect element",
         )
 
+    # Collect the current page state for the agent.
     async def observe(self):
         from autorush.agent.web_observer import collect_web_state
         return await collect_web_state(self)
 
+    # Build a Playwright locator from the step's selector.
     def _locator(self, parameters: dict[str, Any]) -> Any:
         target = parameters.get("target")
         if not isinstance(target, dict):
@@ -181,15 +189,18 @@ class PlaywrightWebDriver:
             return self._page.get_by_test_id(value)
         return self._page.locator(value)
 
+    # Check that the active page is still on an approved HTTP or HTTPS host.
     def _assert_page_allowed(self) -> None:
         parsed = urlsplit(self._page.url)
         if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.hostname.lower() not in self._allowed_hosts:
             raise PermissionError("browser navigated outside AUTORUSH_ALLOWED_WEB_HOSTS")
 
+    # Close browser resources through one shared cleanup task.
     async def close(self) -> None:
         if self._closing is None: self._closing = asyncio.create_task(self._closer())
         await asyncio.shield(self._closing)
 
+    # Capture page evidence with password field regions obscured.
     async def capture_evidence(self) -> dict:
         if not self._capture: return {}
         self._assert_page_allowed()
@@ -199,6 +210,7 @@ class PlaywrightWebDriver:
         from autorush.evidence.images import encode_jpeg, record_local_image
         # Playwright mask injects a visible X-PW-GLASS overlay in headed browsers.
         # Redact the in-memory bitmap instead; never mutate the tested page for evidence.
+        # Locate password field bounds across the page's frames for screenshot redaction.
         async def password_boxes():
             boxes=[]
             for frame in self._page.frames:
@@ -226,5 +238,6 @@ class PlaywrightWebDriver:
             driver='web', target={'url': self._page.url[:2000]}, width=width, height=height, captured_at=int(time.time()*1000))}
 
 
+# Provide an awaitable cleanup placeholder for configuration validation.
 async def _noop() -> None:
     return None

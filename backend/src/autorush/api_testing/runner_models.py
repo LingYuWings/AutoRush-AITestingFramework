@@ -4,11 +4,13 @@ from pydantic import Field, model_validator
 from autorush.api_testing.models import ApiModel
 
 
+# Carry the format and content of a dataset supplied to the runner.
 class DatasetInput(ApiModel):
     format: Literal['csv', 'json']
     content: str = Field(max_length=1048576)
 
 
+# Specify the requests, environment, and options for an API run.
 class RunCommand(ApiModel):
     collection_id: str
     folder_id: str | None = None
@@ -22,6 +24,7 @@ class RunCommand(ApiModel):
     stop_on_failure: bool = True
     idempotency_key: str = Field(min_length=8, max_length=100)
 
+    # Reject duplicate request IDs in the selection.
     @model_validator(mode='after')
     def distinct_requests(self):
         if self.request_ids and len(set(self.request_ids)) != len(self.request_ids):

@@ -13,9 +13,11 @@ BOOL_CONTROLS = {'passed', 'startup', 'history_truncated'}
 OPAQUE = {'parameters', 'body', 'json', 'last_output', 'target', 'elements', 'expected', 'extracted'}
 
 
+# Mask application secrets while keeping validated execution metadata usable by the console.
 def redact_execution_payload(data, secrets, debug_run_id=None):
     sanitized = redact(data, secrets)
 
+    # Restore typed control fields and rewrite screenshot URLs for debug runs.
     def restore(original, public):
         if isinstance(original, list) and isinstance(public, list):
             for source, destination in zip(original, public): restore(source, destination)

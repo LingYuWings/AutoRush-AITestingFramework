@@ -8,19 +8,23 @@ from autorush.drivers.base import DriverBlockedError
 ALLOWED={'web':{'text_contains','url_contains','url_equals'},'android':{'text_contains','package_equals'},
     'api':{'status_code','body_contains','json_field_equals'},'desktop':set()}
 
+# Hold the verification criteria derived from the user's expected result.
 class GoalCriteria(BaseModel):
     model_config=ConfigDict(extra='forbid')
     expected_result:str
     assertions:list[AssertionSpec]=Field(default_factory=list,max_length=10)
     semantic_required:bool=Field(strict=True)
+    # Require a deterministic assertion or semantic verification.
     @model_validator(mode='after')
     def nonempty(self):
         if not self.assertions and not self.semantic_required:raise ValueError('expectation requires at least one check')
         return self
 
+# Collect model request and retry metadata.
 def stats(response):
     return {'request_id':response.request_id,'usage':response.usage,'latency_ms':response.latency_ms,'attempts':response.attempts}
 
+# Derive verification criteria before the model sees the observed state.
 async def prepare_expectation(client,step,budget,*,on_rejected=None):
     if step.driver=='desktop':return GoalCriteria(expected_result=step.expected_result,semantic_required=True),None
     base=GoalCriteria.model_json_schema()
@@ -78,6 +82,7 @@ async def prepare_expectation(client,step,budget,*,on_rejected=None):
         if rejected:metadata['rejected_drafts']=rejected
         return criteria,metadata
 
+# Run deterministic checks and ask the model to verify the full goal when needed.
 async def check_expectation(criteria,observation,client,budget,*,vision_verified):
     output={'text':observation.text,**observation.last_output,'url':observation.target.get('url'),'package':observation.target.get('package')}
     checks=[evaluate_assertion(check,output) for check in criteria.assertions]

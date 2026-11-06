@@ -14,6 +14,7 @@ from fastapi import HTTPException, WebSocket, WebSocketDisconnect
 from autorush.devices.hub import DeviceSession
 
 
+# Validate the frame metadata and JPEG while retaining the original frame bytes.
 def parse_frame(data: bytes) -> dict:
     if not 12 <= len(data) <= 602_056 or data[:4] != b'ARF1':
         raise ValueError('invalid screen frame envelope')
@@ -38,6 +39,7 @@ def parse_frame(data: bytes) -> dict:
     return {'type': 'frame', **header, 'data': data}
 
 
+# Track one viewer's stream identity, session, and latest event queue.
 @dataclass
 class ScreenView:
     session: DeviceSession
@@ -47,10 +49,13 @@ class ScreenView:
     sequence: int = 0
 
 
+# Route Portal screen updates to the active viewer for each device.
 class ScreenHub:
+    # Initialize the registry of active screen viewers.
     def __init__(self):
         self.views: dict[UUID, ScreenView] = {}
 
+    # Reserve a screen viewer slot for a connected device.
     def attach(self, session: DeviceSession, mode: str) -> ScreenView:
         if session.device_id in self.views:
             raise RuntimeError('device already has a screen viewer')
@@ -58,18 +63,21 @@ class ScreenHub:
         self.views[session.device_id] = view
         return view
 
+    # Remove the matching viewer and drain queued events.
     def detach(self, view: ScreenView):
         if self.views.get(view.session.device_id) is view:
             del self.views[view.session.device_id]
         while not view.queue.empty():
             view.queue.get_nowait()
 
+    # Replace any queued event with the newest one.
     @staticmethod
     def _latest(view: ScreenView, event: dict):
         if view.queue.full():
             view.queue.get_nowait()
         view.queue.put_nowait(event)
 
+    # Forward a newer frame only when it matches the active device and stream.
     def frame(self, session: DeviceSession, data: bytes):
         parsed = parse_frame(data)
         view = self.views.get(session.device_id)
@@ -79,6 +87,7 @@ class ScreenHub:
         view.sequence = parsed['sequence']
         self._latest(view, parsed)
 
+    # Forward recognized status updates for the active stream.
     def status(self, session: DeviceSession, message: dict):
         view = self.views.get(session.device_id)
         if view is None or view.session is not session or message.get('stream_id') != str(view.stream_id):
@@ -88,12 +97,14 @@ class ScreenHub:
             return
         self._latest(view, {'type': 'screen.status', 'state': state, 'detail': str(message.get('detail', ''))[:200]})
 
+    # Notify the viewer when its device session disconnects.
     def disconnected(self, session: DeviceSession):
         view = self.views.get(session.device_id)
         if view and view.session is session:
             self._latest(view, {'type': 'screen.status', 'state': 'offline', 'detail': '手机已断开连接'})
 
 
+# Authorize a Portal screen viewer and relay stream events over its socket.
 async def serve_viewer(websocket: WebSocket, device_id: UUID, hub, screens: ScreenHub, require_operator, allowed_origins):
     if websocket.headers.get('origin') not in allowed_origins:
         await websocket.close(code=1008)

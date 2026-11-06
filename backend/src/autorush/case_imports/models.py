@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, computed_field
 Platform = Literal['web', 'android', 'desktop', 'api']
 
 
+# Selects the source case headings or topic depth and the fallback platform.
 class ImportOptions(BaseModel):
     model_config = ConfigDict(extra='forbid')
     default_platform: Platform | None = None
@@ -15,6 +16,7 @@ class ImportOptions(BaseModel):
     sheet_ids: list[str] | None = Field(default=None, max_length=100)
 
 
+# Sets upload and parser limits for bounded document processing.
 @dataclass(frozen=True)
 class ImportLimits:
     max_file_bytes: int = 10 * 1024 * 1024
@@ -25,12 +27,15 @@ class ImportLimits:
     max_depth: int = 64
 
 
+# Carries a stable parser failure code and a user-facing message.
 class ImportParseError(ValueError):
+    # Preserve the diagnostic code alongside the exception message.
     def __init__(self, code: str, message: str):
         super().__init__(message)
         self.code = code
 
 
+# Identifies the source location of an imported case or diagnostic.
 class ImportSource(BaseModel):
     line_start: int | None = None
     line_end: int | None = None
@@ -40,6 +45,7 @@ class ImportSource(BaseModel):
     topic_ids: list[str] = Field(default_factory=list)
 
 
+# Describes an import warning or error in a reviewable form.
 class ImportDiagnostic(BaseModel):
     code: str
     message: str
@@ -48,18 +54,21 @@ class ImportDiagnostic(BaseModel):
     source: ImportSource | None = None
 
 
+# Holds a draft case, its origin and its validation issues.
 class ImportCandidate(BaseModel):
     candidate_id: str
     source: ImportSource
     draft: dict[str, Any]
     diagnostics: list[ImportDiagnostic] = Field(default_factory=list)
 
+    # Allow commit only when the candidate has no blocking diagnostic.
     @computed_field
     @property
     def valid(self) -> bool:
         return not any(item.severity == 'error' for item in self.diagnostics)
 
 
+# Collects parsed candidates and source file metadata.
 class ImportPreview(BaseModel):
     filename: str
     file_sha256: str

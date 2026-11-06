@@ -4,11 +4,13 @@ import {runnerApi,runActive} from './runner-client'
 import type {ApiRun,Page,RunStep} from './runner-client'
 
 const labels:Record<string,string>={queued:'排队中',running:'运行中',cancelling:'正在停止',completed:'已完成',cancelled:'已取消',interrupted:'已中断',passed:'通过',failed:'失败',error:'错误',blocked:'阻塞',skipped:'跳过'}
+// Show a collection run's progress and let users inspect its steps.
 export default function RunDetail({id,onLatest,onRun,onChange,visible=true}:{id:string;onLatest:(run:ApiRun)=>void;onRun:(id:string)=>void;onChange?:(run:ApiRun)=>void;visible?:boolean}){
   const [run,setRun]=useState<ApiRun|null>(null),[steps,setSteps]=useState<Page<RunStep>|null>(null),[offset,setOffset]=useState(0)
   const [open,setOpen]=useState<number|null>(null),[detail,setDetail]=useState<RunStep|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false)
   const [pollError,setPollError]=useState(''),[pollPaused,setPollPaused]=useState(false),[pollEpoch,setPollEpoch]=useState(0)
   const onChangeRef=useRef(onChange);onChangeRef.current=onChange
+  // Restart the status polling effect after a load failure.
   const retryPolling=()=>setPollEpoch(epoch=>epoch+1)
   useEffect(()=>{setOffset(0);setOpen(null);setDetail(null);setRun(null);setSteps(null);setError('')},[id])
   useEffect(()=>{
@@ -16,6 +18,7 @@ export default function RunDetail({id,onLatest,onRun,onChange,visible=true}:{id:
     const abort=new AbortController()
     let timer:ReturnType<typeof setTimeout>|undefined,lastCount=-1,failures=0
     setPollError('');setPollPaused(false)
+    // Poll visible run status, reload steps as they complete, and back off after failures.
     async function update(){
       if(abort.signal.aborted)return
       if(document.hidden){timer=setTimeout(()=>void update(),2000);return}
@@ -41,6 +44,7 @@ export default function RunDetail({id,onLatest,onRun,onChange,visible=true}:{id:
     void update();return()=>{abort.abort();if(timer)clearTimeout(timer)}
   },[id,offset,visible,pollEpoch])
   useEffect(()=>{const abort=new AbortController();setDetail(null);if(open!==null&&visible)void runnerApi.detail(id,open,abort.signal).then(value=>{if(!abort.signal.aborted)setDetail(value)}).catch(cause=>{if(!abort.signal.aborted)setError(String(cause))});return()=>abort.abort()},[id,open,visible])
+  // Prevent overlapping run actions and expose any failure.
   const action=async(callback:()=>Promise<void>)=>{if(busy)return;setBusy(true);setError('');try{await callback()}catch(cause){setError(String(cause))}finally{setBusy(false)}}
   const pollFeedback=pollError&&<p role="alert" className="api-error">{pollError}{' '}{pollPaused
     ?<button type="button" className="text-button" onClick={retryPolling}>重新读取状态</button>

@@ -9,10 +9,12 @@ from pathlib import Path
 from uuid import UUID
 
 
+# Report an ADB discovery or command failure.
 class AdbError(ValueError):
     pass
 
 
+# Find the bundled ADB executable or the one on the system path.
 def adb_executable() -> str:
     root = Path(__file__).resolve().parents[4]
     bundled = root / "artifacts" / "tools" / "android-sdk" / "platform-tools" / "adb.exe"
@@ -24,6 +26,7 @@ def adb_executable() -> str:
     return executable
 
 
+# Run a bounded ADB command and report command failures.
 def _run(arguments: list[str]) -> str:
     try:
         result = subprocess.run([adb_executable(), *arguments], capture_output=True, text=True,
@@ -38,6 +41,7 @@ def _run(arguments: list[str]) -> str:
     return result.stdout
 
 
+# Parse connected devices and their states from the ADB listing.
 def list_devices() -> list[dict[str, str]]:
     devices = []
     for line in _run(["devices", "-l"]).splitlines():
@@ -52,12 +56,14 @@ def list_devices() -> list[dict[str, str]]:
     return devices
 
 
+# Forward the selected authorized device's local port back to this host.
 def reverse(serial: str | None, port: int) -> None:
     if serial is None or not any(device["serial"] == serial and device["state"] == "device" for device in list_devices()):
         raise AdbError("select an authorized USB device")
     _run(["-s", serial, "reverse", f"tcp:{port}", f"tcp:{port}"])
 
 
+# Read Portal's device UUID through its shell-only identity provider.
 def portal_device_id(serial: str) -> UUID:
     """Read only Portal's shell-only identity provider; never read preferences."""
     if not re.fullmatch(r'[A-Za-z0-9._:-]{1,128}', serial):

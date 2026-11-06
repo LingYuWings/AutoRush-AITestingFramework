@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 SUPPORTED_PROTOCOLS = {'openai_chat', 'openai_responses', 'anthropic_messages'}
 
 
+# Check whether a model URL uses localhost or a loopback IP address.
 def is_loopback_url(url):
     host = urlsplit(url).hostname or ''
     if host == 'localhost': return True
@@ -15,6 +16,7 @@ def is_loopback_url(url):
     except ValueError: return False
 
 
+# Build the request or catalog endpoint for the selected provider protocol.
 def model_endpoint(base_url, protocol, *, catalog=False):
     base = base_url.rstrip('/')
     for suffix in ('/chat/completions', '/responses', '/messages', '/models'):
@@ -27,6 +29,7 @@ def model_endpoint(base_url, protocol, *, catalog=False):
                    else '/responses' if protocol == 'openai_responses' else '/chat/completions')
 
 
+# Translate the prompt, schema, and images into the provider's request format.
 def build_model_request(config, system, user, images, schema):
     if len(images) > 2 or any(not isinstance(image, bytes) or len(image) > 1_000_000
                               or not image.startswith(b'\xff\xd8') for image in images):
@@ -58,6 +61,7 @@ def build_model_request(config, system, user, images, schema):
     return model_endpoint(config.base_url, config.protocol), payload, headers
 
 
+# Extract text from a string or a provider's content blocks.
 def text_content(content):
     if isinstance(content, str): return content
     if isinstance(content, list):
@@ -67,6 +71,7 @@ def text_content(content):
     raise ValueError('model response did not contain text')
 
 
+# Normalize provider response text and usage while checking completion status.
 def parse_model_response(body, protocol):
     if not isinstance(body, dict): raise ValueError('model response must be an object')
     if protocol == 'anthropic_messages':

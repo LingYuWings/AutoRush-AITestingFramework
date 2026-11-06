@@ -12,7 +12,9 @@ from autorush.domain.models import DesktopTarget, StepSpec
 from autorush.drivers.base import DriverBlockedError
 
 
+# Hold the Windows session mutex that guards desktop automation.
 class SessionLease:
+    # Acquire the named mutex for the current Windows session.
     def __init__(self):
         if sys.platform!='win32': raise DriverBlockedError('desktop requires Windows')
         self.k=c.WinDLL('kernel32',use_last_error=True)
@@ -24,10 +26,12 @@ class SessionLease:
         if not self.handle: raise DriverBlockedError('cannot acquire desktop lease')
         if c.get_last_error()==183:
             self.close();raise DriverBlockedError('another desktop worker owns this Windows session')
+    # Release the Windows session mutex handle.
     def close(self):
         if self.handle: self.k.CloseHandle(self.handle);self.handle=None
 
 
+# Read bounded commands from standard input and write desktop responses.
 def main():
     driver=None;lease=None
     try:

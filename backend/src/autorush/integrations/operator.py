@@ -12,7 +12,9 @@ from autorush.domain.models import CaseCreate
 from autorush.drivers.android.portal import validate_android_step
 
 
+# Bridge MCP tools to the local platform API under a test-package allowlist.
 class LocalOperator:
+    # Configure the loopback API client and allowed packages for MCP tools.
     def __init__(self, base_url: str = "http://127.0.0.1:8000", *,
                  allowed_packages: frozenset[str] = frozenset({"com.autorush.fixture"}),
                  console_origin: str = "http://127.0.0.1:5173", transport=None):
@@ -29,6 +31,7 @@ class LocalOperator:
         self._client = httpx.AsyncClient(base_url=base_url, transport=transport, trust_env=False,
                                         follow_redirects=False, timeout=120)
 
+    # Send a platform request with local operator authorization where needed.
     async def _request(self, method: str, path: str, payload=None):
         if self._token is None:
             response = await self._client.get("/api/v1/devices/operator-session", headers={"Origin": self.console_origin})
@@ -43,17 +46,21 @@ class LocalOperator:
             raise RuntimeError(f"AutoRush API returned HTTP {response.status_code}")
         return response
 
+    # Reject package names outside the MCP operator's configured test scope.
     def _package(self, package: str):
         if package not in self.allowed_packages:
             raise ValueError("Android package is outside the configured MCP test scope")
 
+    # List Portal sessions visible to the platform API.
     async def devices(self) -> dict:
         return (await self._request("GET", "/api/v1/devices")).json()
 
+    # Retrieve display and authorization metadata for the selected device.
     async def device_info(self, device_id: str) -> dict:
         return (await self._request("POST", f"/api/v1/devices/{UUID(device_id)}/commands",
                                     {"method": "device.info", "params": {}})).json()
 
+    # Create an approved fixture case and a plan with per-step evidence enabled.
     async def prepare_android_plan(self, title: str, device_id: str, package: str, steps: list[dict], postconditions: list[dict]) -> dict:
         self._package(package)
         device = UUID(device_id)
@@ -69,6 +76,7 @@ class LocalOperator:
             "android_device_id": str(device), "android_package": package, "capture_screenshots": True,
         })).json()
 
+    # Check the plan's package scope before readying and running it.
     async def execute_plan(self, plan_id: str) -> dict:
         plan_id = str(UUID(plan_id))
         plan = (await self._request("GET", f"/api/v1/plans/{plan_id}")).json()
@@ -85,6 +93,7 @@ class LocalOperator:
         await self._request("POST", f"/api/v1/plans/{plan_id}/ready")
         return (await self._request("POST", f"/api/v1/plans/{plan_id}/runs")).json()
 
+    # Return a scoped run result without local export paths.
     async def report(self, run_id: str) -> dict:
         result = (await self._request("GET", f"/api/v1/runs/{UUID(run_id)}")).json()
         plan = (await self._request("GET", f"/api/v1/plans/{UUID(result['plan_id'])}")).json()
@@ -94,6 +103,7 @@ class LocalOperator:
         result.pop("report_paths", None)
         return result
 
+    # Retrieve and verify one step's JPEG from the authorized run.
     async def screenshot(self, run_id: str, case_index: int, step_index: int) -> bytes:
         run_id = str(UUID(run_id))
         result = await self.report(run_id)
@@ -113,6 +123,7 @@ class LocalOperator:
             raise ValueError("screenshot evidence checksum, format or size mismatch")
         return jpeg
 
+    # Release the operator's HTTP connection pool.
     async def close(self):
         self._token = None
         await self._client.aclose()

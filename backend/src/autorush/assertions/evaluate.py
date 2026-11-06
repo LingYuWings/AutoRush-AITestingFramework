@@ -7,6 +7,7 @@ from typing import Any
 from autorush.domain.models import AssertionSpec
 
 
+# Evaluate one configured check against the driver's returned output.
 def evaluate_assertion(spec: AssertionSpec, output: dict[str, Any]) -> tuple[bool, str]:
     if spec.kind == "status_code":
         actual = output["status_code"]

@@ -13,22 +13,29 @@ from autorush.llm.client import ModelClientError
 from autorush.runner.engine import Runner
 
 
+# Track model attempts against both step and case limits.
 class Budget:
+    # Start a step counter while sharing the enclosing case counter.
     def __init__(self,options,case_used): self.options=options;self.case_used=case_used;self.step_used=0
+    # Return the tighter of the remaining step and case limits.
     @property
     def remaining(self): return min(self.options.max_rounds_per_step-self.step_used,self.options.max_rounds_per_case-self.case_used[0])
+    # Charge one attempt against both limits and stop if exhausted.
     def consume(self):
         if self.remaining<=0: raise DriverBlockedError('model decision budget exhausted')
         self.step_used+=1;self.case_used[0]+=1
 
 
+# Call an optional progress hook and await it when needed.
 async def notify(callback,*args):
     if callback:
         result=callback(*args)
         if inspect.isawaitable(result): await result
 
 
+# Execute cases that combine natural-language and structured steps.
 class AgentRunner:
+    # Set up execution, observation, and progress dependencies.
     def __init__(self,drivers,client,options,*,observer_factory=observer_for,directory=None,run_id=None,
                  checkpoint=None,emit=None,vision_verified=False,cancelled=lambda:False):
         self.drivers,self.client,self.options=drivers,client,options
@@ -37,14 +44,17 @@ class AgentRunner:
         self.vision_verified,self.cancelled=vision_verified,cancelled
         self.executor=Runner(drivers);self.results=[];self.active=None;self.case_used=[0]
 
+    # Stop processing when the execution has been canceled.
     def ensure_running(self):
         if self.cancelled(): raise asyncio.CancelledError()
 
+    # Checkpoint completed steps and current step progress.
     async def save(self,case,pending=None):
         progress={'case_id':str(case.id),'steps':[s.model_dump(mode='json') for s in self.results],
                   'active_step':self.active,'pending_action':pending,'rounds_used':self.case_used[0]}
         await notify(self.checkpoint,json.loads(json.dumps(progress,ensure_ascii=False)))
 
+    # Run the case and summarize the outcomes of its steps.
     async def run_case(self,case):
         self.executor.begin_case()
         self.results=[];self.active=None;self.case_used=[0]
@@ -80,6 +90,7 @@ class AgentRunner:
                      if any(result.status==status for result in self.results)),ResultStatus.PASSED)
         return CaseResult(case_id=case.id,title=case.title,status=status,steps=self.results)
 
+    # Run one step, including the observation and decision loop for natural steps.
     async def run_step(self,case,step):
         from autorush.api_testing.nodes import resolve_ui_step
         from autorush.api_testing.variables import ApiBlocked
@@ -94,6 +105,7 @@ class AgentRunner:
             return StepResult(order=step.order, intent=step.intent, status=ResultStatus.BLOCKED, detail=str(exc))
         traces=[];history=[];feedback='';repeats=0;last_signature=None;failed_verifications=0
         self.active={'order':step.order,'intent':step.intent,'expected_result':step.expected_result,'traces':traces}
+        # Build the step result with evidence and agent round metadata.
         def finish(status,detail,*,evidence=None,assertions=None,verification_kind=None):
             agent={**self.active,'verification_kind':verification_kind,'rounds_used':budget.step_used}
             return StepResult(order=step.order,intent=step.intent,status=status,detail=detail,
@@ -101,6 +113,7 @@ class AgentRunner:
         budget=Budget(self.options,self.case_used)
         if step.driver not in self.drivers: return finish(ResultStatus.BLOCKED,'driver is not registered')
         driver=self.drivers[step.driver]
+        # Record rejected goal criteria in the current step checkpoint.
         async def rejected_preparation(metadata):
             self.active['goal_preparation']=metadata
             await self.save(case)

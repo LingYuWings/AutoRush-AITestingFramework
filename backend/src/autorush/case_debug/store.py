@@ -4,7 +4,9 @@ from autorush.api_testing.store import ApiStore
 from autorush.case_debug.models import DebugRecord, debug_summary
 
 
+# Persist debug executions independently of formal plans and reports.
 class DebugStore:
+    # Create debug tables and backfill summaries for existing executions.
     def __init__(self, store):
         self.formal = store
         self.vault = ApiStore(store.path)
@@ -24,11 +26,13 @@ class DebugStore:
                 'LEFT JOIN case_debug_summaries s ON r.id=s.id WHERE s.id IS NULL ORDER BY r.rowid'):
                 self._save_summary(connection, DebugRecord.model_validate(self.vault.decode(payload)))
 
+    # Open a connection to the shared database.
     @contextmanager
     def _connect(self):
         with closing(self.vault.connect()) as connection, connection:
             yield connection
 
+    # Update the lightweight history row in the same transaction as its full record.
     def _save_summary(self, connection, record):
         value = debug_summary(record)
         connection.execute('INSERT INTO case_debug_summaries(id,state,source_case_id,session_id,summary) '
@@ -36,15 +40,18 @@ class DebugStore:
             'source_case_id=excluded.source_case_id,session_id=excluded.session_id,summary=excluded.summary',
             (value['id'],value['state'],value['source_case_id'],value['session_id'],self.vault.encode(value)))
 
+    # Resolve model configuration through the formal store.
     def get_provider_config(self, ident):
         return self.formal.get_provider_config(ident)
 
+    # Insert the full debug record and its summary atomically.
     def save_agent_execution(self, record):
         with self._connect() as connection:
             connection.execute('INSERT INTO case_debug_runs(id,idempotency_key,payload) VALUES(?,?,?)',
                 (str(record.id), str(record.idempotency_key), self.vault.encode(record.model_dump(mode='json'))))
             self._save_summary(connection, record)
 
+    # Checkpoint the debug state and refresh its summary together.
     def update_agent_execution(self, record):
         with self._connect() as connection:
             cursor = connection.execute('UPDATE case_debug_runs SET payload=? WHERE id=?',
@@ -52,16 +59,19 @@ class DebugStore:
             if cursor.rowcount != 1: raise ValueError('debug run not found')
             self._save_summary(connection, record)
 
+    # Load a debug record for polling or cancellation.
     def get_agent_execution(self, ident):
         with self._connect() as connection:
             row = connection.execute('SELECT payload FROM case_debug_runs WHERE id=?', (str(ident),)).fetchone()
         return DebugRecord.model_validate(self.vault.decode(row[0])) if row else None
 
+    # Recover the prior debug record for a retried request key.
     def find_agent_execution(self, key):
         with self._connect() as connection:
             row = connection.execute('SELECT payload FROM case_debug_runs WHERE idempotency_key=?', (str(key),)).fetchone()
         return DebugRecord.model_validate(self.vault.decode(row[0])) if row else None
 
+    # Check whether a debug execution is still in progress.
     def has_active(self):
         with self._connect() as connection:
             return connection.execute("SELECT 1 FROM case_debug_summaries WHERE state IN ('running','stopping') LIMIT 1").fetchone() is not None
@@ -73,6 +83,7 @@ class DebugStore:
                 "JOIN case_debug_runs r ON r.id=s.id WHERE s.state IN ('running','stopping') ORDER BY s.rowid DESC").fetchall()
         return [DebugRecord.model_validate(self.vault.decode(row[0])) for row in rows]
 
+    # Read compact debug history for the current case or editor.
     def list_recent_summaries(self, *, source_case_id=None, session_id=None, active_only=False):
         conditions, values = [], []
         if source_case_id is not None:

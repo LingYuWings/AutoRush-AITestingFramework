@@ -20,10 +20,12 @@ MAX_REQUEST = 1048576
 FORBIDDEN_HEADERS = {'host', 'content-length', 'transfer-encoding', 'connection', 'proxy-authorization', 'upgrade'}
 
 
+# Signal that the response cannot be treated as supported JSON.
 class InvalidResponseJson(ValueError):
     pass
 
 
+# Limit retained response text while preserving the original data for checks.
 def bounded_evidence(value, limit=65536):
     """Keep summaries bounded; checks and extraction still use the full response."""
     stored = deepcopy(value)
@@ -38,6 +40,7 @@ def bounded_evidence(value, limit=65536):
     return stored
 
 
+# Carry the public evidence, assertion input, and checks from an HTTP exchange.
 @dataclass
 class ApiExecution:
     public: dict
@@ -45,6 +48,7 @@ class ApiExecution:
     checks: list[tuple[bool, str]]
 
 
+# Validate the URL and enforce the configured host allowlist.
 def validate_url(url, allowed_hosts):
     if not isinstance(url, str): raise ApiBlocked('HTTP URL must be text')
     try:
@@ -61,6 +65,7 @@ def validate_url(url, allowed_hosts):
     return parsed
 
 
+# Evaluate an API assertion against the response and return its result.
 def evaluate_check(spec, output):
     kind, path, expected = spec.kind, spec.path, spec.expected
     try:
@@ -82,6 +87,7 @@ def evaluate_check(spec, output):
     return actual == expected, f'{kind}: expected {expected!r}, got {actual!r}'
 
 
+# Decode an upload and enforce the request size limit.
 def decode_file(encoded):
     try: value = base64.b64decode(encoded, validate=True)
     except (ValueError, TypeError): raise ApiBlocked('invalid base64 upload') from None
@@ -89,6 +95,7 @@ def decode_file(encoded):
     return value
 
 
+# Return validated JSON or leave a non-JSON response as text.
 def response_body(text):
     try:
         value = json.loads(text)
@@ -97,6 +104,7 @@ def response_body(text):
     except (ValueError, RecursionError) as exc:
         raise InvalidResponseJson from exc
 
+    # Check nested JSON values for invalid numbers, text, or excessive depth.
     def validate(item, depth=0):
         if depth > 128:
             raise InvalidResponseJson
@@ -119,6 +127,7 @@ def response_body(text):
     return value
 
 
+# Find a named cookie and use the request URL to resolve conflicting matches.
 def extract_cookie(cookies, name, url):
     try:
         return cookies[name]
@@ -133,7 +142,9 @@ def extract_cookie(cookies, name, url):
         raise KeyError(name) from None
 
 
+# Execute HTTP requests with scoped variables, cookies, and evidence.
 class ApiEngine:
+    # Set up request policy and initialize per-run variables and cookies.
     def __init__(self, allowed_hosts, *, variables=None, secret_values=(), transport=None):
         self.allowed_hosts = set(allowed_hosts)
         self.initial_variables = dict(variables or {})
@@ -142,10 +153,12 @@ class ApiEngine:
         self.transport = transport
         self.cookies = httpx.Cookies()
 
+    # Restore the initial variables and clear cookies for a fresh run.
     def reset(self):
         self.variables = dict(self.initial_variables)
         self.cookies = httpx.Cookies()
 
+    # Resolve request inputs, send the request, and collect checks and evidence.
     async def execute(self, spec: ApiRequest, *, inherited_variables=None) -> ApiExecution:
         started = time.perf_counter()
         request_evidence = {'method': spec.method, 'url': spec.url}

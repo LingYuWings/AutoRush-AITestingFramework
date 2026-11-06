@@ -2,6 +2,7 @@ import type {AgentExecution} from '../../shared/api'
 import AgentTrace from './AgentTrace'
 import {executionSummary} from './agent-summary'
 import {StatusBadge} from '../../components/ui'
+// Summarize an agent run's progress and available controls.
 export default function AgentProgress({execution,onCancel,busy}:{execution:AgentExecution;onCancel:()=>void;busy:boolean}) {
   const active=['running','stopping'].includes(execution.state)
   const summary=executionSummary(execution)

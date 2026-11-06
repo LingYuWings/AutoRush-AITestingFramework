@@ -21,9 +21,11 @@ export function openDeviceScreen(options: {
   let source: DeviceScreenUpdate['source'] = null
   let preview: ReturnType<typeof openScreen> | null = null
   let video: ReturnType<typeof openAdbH264> | null = null
+  // Forward session updates with the active source and display metrics.
   const emit = (update: ScreenUpdate, width = 0, height = 0, fps = 0) => {
     if (!closed) options.onChange({ ...update, source, width, height, fps })
   }
+  // Open the Portal screenshot stream if the phone is reachable.
   const startPreview = (reason = '') => {
     if (closed) return
     source = 'wss'
@@ -32,7 +34,7 @@ export function openDeviceScreen(options: {
       return
     }
     try {
-      preview = openScreen({ url: options.url, token: options.token, mode: 'preview', onChange: update => {
+      preview = openScreen({ url: options.url, token: options.token, mode: 'preview', /* Forward the screenshot state and include the ADB fallback reason if present. */ onChange: update => {
         emit({ ...update, detail: reason ? `${reason}；已回退 WSS 截图预览：${update.detail}` : update.detail }, update.frame?.metadata.width, update.frame?.metadata.height)
       } })
     } catch (error) {
@@ -46,7 +48,9 @@ export function openDeviceScreen(options: {
     try {
       video = openAdbH264({ url: options.adbUrl, token: options.token, serial: options.serial, deviceId: options.deviceId,
         canvas: options.canvas,
+        // Forward the ADB decoder's status and canvas metrics.
         onChange: update => emit({ ...update, frame: null }, update.width, update.height, update.fps),
+        // Switch from ADB to Portal preview at most once.
         onFallback: failure => {
           if (closed || fallback) return
           fallback = true
@@ -56,17 +60,21 @@ export function openDeviceScreen(options: {
     } catch (error) { startPreview(error instanceof Error ? error.message : 'ADB 投屏不可用') }
   }
   return {
+    // Stop any active stream and publish a final idle display state.
     stop: (detail = '已停止查看', state = 'stopped') => {
       if (closed) return
       closed = true
       video?.stop(); preview?.stop()
       options.onChange({ state, detail, active: false, frame: null, source: null, width: 0, height: 0, fps: 0 })
     },
+    // Stop WSS preview if its Portal disconnects.
     portalChanged: (connected: boolean) => {
       online = connected
       if (!online && source === 'wss') preview?.stop('Portal 已离线', 'offline')
     },
+    // Forward a rendered preview image to its acknowledgment handler.
     loaded: (url: string) => preview?.loaded(url),
+    // Forward a failed preview image to its error handler.
     failed: (url: string) => preview?.failed(url),
   }
 }

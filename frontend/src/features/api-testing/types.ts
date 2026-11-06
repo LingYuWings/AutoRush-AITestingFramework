@@ -24,12 +24,17 @@ export type ApiExecution = {
 }
 export type CollectionResult = {status:ApiExecution['status']; results:ApiExecution[]; detail?:string}
 export type ImportResult = {collections:CollectionRecord[]; requests:ApiRequestRecord[]; environments:CollectionRecord[];folders?:FolderRecord[]; warnings:string[]}
+// Supply the defaults for an unsaved GET request.
 export const newRequest=():ApiRequest=>({name:'未命名请求',collection_id:null,method:'GET',url:'',query:[],headers:[],
   auth:{type:'none',username:'',password:'',token:'',key:'X-API-Key',value:'',location:'header'},
   body:{mode:'none',text:'',content_type:'text/plain',fields:[],filename:'upload.bin',data_base64:''},
   variables:[],assertions:[],extractions:[],timeout_ms:10000,follow_redirects:false,proxy:'direct',compatibility_warnings:[]})
+// Create an enabled, empty key-value field.
 export const newPair=():Pair=>({key:'',value:'',enabled:true})
+// Create a text body field with defaults available if it becomes a file field.
 export const newBodyField=():BodyField=>({key:'',value:'',type:'text',filename:'upload.bin',content_type:'application/octet-stream',data_base64:'',enabled:true})
+// Copy editable fields without the server's version and identity metadata.
 export function configuration<T extends object>(record:T):T {const copy={...record} as T&Partial<{id:string;version:number;created_at:string;updated_at:string}>; delete copy.id;delete copy.version;delete copy.created_at;delete copy.updated_at;return copy}
 
+// Build the parent path while guarding against cycles in folder data.
 export function folderPath(folder:FolderRecord,folders:FolderRecord[],seen=new Set<string>()):string {if(seen.has(folder.id))return folder.name;seen.add(folder.id);const parent=folders.find(item=>item.id===folder.parent_id);return (parent?folderPath(parent,folders,seen)+' / ':'')+folder.name}

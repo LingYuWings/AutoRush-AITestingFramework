@@ -17,6 +17,7 @@ from .models import ImportParseError, ImportSource
 XML_NS = 'urn:xmind:xmap:xmlns:content:2.0'
 
 
+# Represents a topic with its text and child topics across archive versions.
 @dataclass
 class Node:
     id: str
@@ -26,6 +27,7 @@ class Node:
     children: list['Node'] = field(default_factory=list)
 
 
+# Read the XMind document entries under archive size and entry limits.
 def read_archive(content, limits):
     result = {}
     total = 0
@@ -64,21 +66,25 @@ def read_archive(content, limits):
     return result
 
 
+# Normalize current JSON or legacy XML sheets into topic trees.
 def load_sheets(content, limits, issues):
     files = read_archive(content, limits)
     count = 0
 
+    # Enforce topic count and depth across the document.
     def count_node(depth):
         nonlocal count
         count += 1
         if count > limits.max_nodes or depth > limits.max_depth:
             raise ImportParseError('tree_limit', 'XMind 节点数量或嵌套深度超过限制。')
 
+    # Require supported text content in the current topic structure.
     def required_text(value):
         if not isinstance(value, str):
             raise ValueError('expected text')
         return value
 
+    # Convert a JSON topic and its attached descendants into normalized nodes.
     def json_node(value, depth, fallback):
         count_node(depth)
         if not isinstance(value, dict):
@@ -104,6 +110,7 @@ def load_sheets(content, limits, issues):
                     attached_nodes.append(parsed_child)
         return Node(required_text(value.get('id', fallback)), required_text(value.get('title', '')), note, labels, attached_nodes)
 
+    # Convert a legacy XML topic and its descendants into normalized nodes.
     def xml_node(value, depth, fallback):
         count_node(depth)
         attached = value.find(f'{{{XML_NS}}}children')
@@ -156,6 +163,7 @@ def load_sheets(content, limits, issues):
         raise ImportParseError('invalid_xmind', 'XMind 内容损坏或结构不受支持。') from None
 
 
+# Locate case topics in parsed sheets and build reviewable candidates.
 def parse_xmind(content, options, limits, digest):
     global_issues = []
     sheets, format_name = load_sheets(content, limits, global_issues)
@@ -181,6 +189,7 @@ def parse_xmind(content, options, limits, digest):
     return candidates, global_issues, format_name
 
 
+# Map one case topic's fields and steps into the shared import shape.
 def map_case(node, title, source, identity, options):
     issues = []
     chosen = None
@@ -190,10 +199,12 @@ def map_case(node, title, source, identity, options):
     rows, post_rows, requests, post_requests = [], [], {}, {}
     sections = set()
 
+    # Report unexpected content at its source location for manual review.
     def unmapped_extra(value, location, *, allow_note=False, allow_children=False):
         if ((value.note and not allow_note) or (value.children and not allow_children) or value.labels):
             issues.append(diagnostic('unmapped_topic_content', '该字段的备注、标签或子主题未映射，请移至说明或显式步骤中。', source=location))
 
+    # Flatten descriptive topic text while retaining its hierarchy.
     def description_lines(value, indent=0):
         result = ['  ' * indent + value.title] if value.title else []
         if value.note:

@@ -12,7 +12,9 @@ from uuid import uuid4
 from cryptography.fernet import Fernet
 
 
+# Store API configurations and request history in an encrypted vault.
 class ApiStore:
+    # Load or create the vault key and initialize the database.
     def __init__(self, path: Path):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -34,27 +36,33 @@ class ApiStore:
                     id TEXT PRIMARY KEY, created_at TEXT NOT NULL, payload TEXT NOT NULL);
             ''')
 
+    # Open a SQLite connection with a lock timeout.
     def connect(self):
         return sqlite3.connect(self.path, timeout=10)
 
+    # Encrypt a JSON value for storage.
     def encode(self, value):
         return self.cipher.encrypt(json.dumps(value, ensure_ascii=False).encode()).decode()
 
+    # Decrypt and parse a stored JSON value.
     def decode(self, value):
         return json.loads(self.cipher.decrypt(value.encode()))
 
+    # Load a record using an existing transaction when provided.
     def get(self, kind, record_id, *, connection=None):
         with (nullcontext(connection) if connection is not None else self.connect()) as connection:
             row = connection.execute('SELECT payload FROM api_testing_records WHERE kind=? AND id=?',
                 (kind, str(record_id))).fetchone()
         return self.decode(row[0]) if row else None
 
+    # List saved records of the requested kind.
     def list(self, kind):
         with self.connect() as connection:
             rows = connection.execute('SELECT payload FROM api_testing_records WHERE kind=? ORDER BY rowid',
                 (kind,)).fetchall()
         return [self.decode(row[0]) for row in rows]
 
+    # Create a versioned record with timestamps.
     def create(self, kind, value, *, connection=None):
         now = datetime.now(timezone.utc).isoformat()
         record = {**value, 'id': str(uuid4()), 'version': 1, 'created_at': now, 'updated_at': now}
@@ -63,6 +71,7 @@ class ApiStore:
                 (kind, record['id'], 1, self.encode(record)))
         return record
 
+    # Update a record and advance its version.
     def update(self, kind, record_id, value, expected_version):
         with self.connect() as connection:
             connection.execute('BEGIN IMMEDIATE')
@@ -79,11 +88,13 @@ class ApiStore:
                 (record['version'], self.encode(record), kind, str(record_id)))
         return record
 
+    # Delete the selected configuration and report whether it existed.
     def delete(self, kind, record_id):
         with self.connect() as connection:
             cursor = connection.execute('DELETE FROM api_testing_records WHERE kind=? AND id=?', (kind, str(record_id)))
         return cursor.rowcount > 0
 
+    # Save execution evidence and optional private replay inputs.
     def save_history(self, value, replay=None):
         record = {**value, 'id': str(uuid4()), 'created_at': datetime.now(timezone.utc).isoformat()}
         if replay is not None: record['_replay'] = replay
@@ -94,6 +105,7 @@ class ApiStore:
                 '(SELECT id FROM api_testing_history ORDER BY rowid DESC LIMIT 200)')
         return record
 
+    # List recent execution summaries without full evidence or replay inputs.
     def history(self, record_id=None):
         with self.connect() as connection:
             if record_id:
@@ -105,6 +117,7 @@ class ApiStore:
         records = [self.decode(row[0]) for row in rows]
         return [{key: value for key, value in record.items() if key not in {'response', 'request', 'extracted', '_replay'}} for record in records]
 
+    # Load the private replay inputs for a history entry.
     def history_replay(self, record_id):
         with self.connect() as connection:
             row = connection.execute('SELECT payload FROM api_testing_history WHERE id=?', (str(record_id),)).fetchone()

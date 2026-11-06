@@ -11,11 +11,14 @@ from autorush.drivers.desktop.contracts import validate_desktop_step
 from autorush.evidence.images import record_local_image
 
 
+# Drive a Windows target through a separate desktop worker process.
 class DesktopProcessDriver:
+    # Store the worker process, bound window, and evidence settings.
     def __init__(self,process,target,evidence_directory,run_id,*,capture_screenshots=True):
         self.process=process;self.target=target;self.directory=evidence_directory;self.run_id=run_id
         self.capture=capture_screenshots;self._lock=asyncio.Lock();self._id=0;self._closed=False
 
+    # Start a desktop worker and initialize it for the selected window.
     @classmethod
     async def create(cls,target,*,capture_screenshots,evidence_directory,run_id,start_delay_seconds=3):
         env=dict(os.environ)
@@ -38,12 +41,14 @@ class DesktopProcessDriver:
             await asyncio.shield(driver._terminate())
             raise
 
+    # Send a serialized worker command with size and time limits.
     async def _request(self,kind,payload,*,timeout=20):
         async with self._lock:
             if self._closed: raise DriverBlockedError('desktop worker is closed')
             self._id+=1
             data=json.dumps({'id':self._id,'type':kind,'payload':payload},separators=(',',':')).encode()+b'\n'
             if len(data)>65536: raise ValueError('desktop request exceeds limit')
+            # Write the command and read one bounded response from the worker.
             async def exchange():
                 self.process.stdin.write(data);await self.process.stdin.drain()
                 line=await self.process.stdout.readline()
@@ -61,14 +66,17 @@ class DesktopProcessDriver:
                 if isinstance(exc,asyncio.CancelledError): raise
                 raise DriverBlockedError('desktop worker timed out or disconnected; stopped') from exc
 
+    # Validate a desktop step and dispatch it to the worker.
     async def execute(self,step):
         validate_desktop_step(step)
         result=await self._request('execute',step.model_dump(mode='json'))
         return ActionResult(**result)
 
+    # Read the worker's current desktop observation.
     async def observe(self):
         return await self._request('observe',{},timeout=5)
 
+    # Request a screenshot from the worker and save it as evidence.
     async def capture_evidence(self):
         if not self.capture: return {}
         result=await self._request('capture',{},timeout=5)
@@ -76,6 +84,7 @@ class DesktopProcessDriver:
         return {'screenshot':record_local_image(data,report_dir=self.directory,run_id=self.run_id,driver='desktop',
             target=self.target.model_dump(),width=result['width'],height=result['height'],captured_at=result['captured_at'])}
 
+    # Close the worker's input and terminate the process if needed.
     async def _terminate(self):
         if self._closed: return
         self._closed=True
@@ -89,6 +98,7 @@ class DesktopProcessDriver:
             if self.process.returncode is None:
                 self.process.kill();await asyncio.wait_for(self.process.wait(),2)
 
+    # Ask the worker to close and ensure its process is cleaned up.
     async def close(self):
         if self._closed: return
         try: await self._request('close',{},timeout=2)

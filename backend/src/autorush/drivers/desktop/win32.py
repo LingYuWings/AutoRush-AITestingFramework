@@ -7,18 +7,24 @@ from autorush.domain.models import DesktopTarget
 from autorush.drivers.base import DriverBlockedError
 
 
+# Match the Win32 keyboard input structure.
 class KeyboardInput(c.Structure):
     _fields_=[('wVk',w.WORD),('wScan',w.WORD),('dwFlags',w.DWORD),('time',w.DWORD),('dwExtraInfo',w.WPARAM)]
+# Match the Win32 mouse input structure.
 class MouseInput(c.Structure):
     _fields_=[('dx',w.LONG),('dy',w.LONG),('mouseData',w.DWORD),('dwFlags',w.DWORD),('time',w.DWORD),('dwExtraInfo',w.WPARAM)]
+# Hold the keyboard or mouse payload of a native input event.
 class InputData(c.Union):
     _fields_=[('ki',KeyboardInput),('mi',MouseInput)]
+# Match the Win32 input event passed to SendInput.
 class Input(c.Structure):
     _anonymous_=('data',)
     _fields_=[('type',w.DWORD),('data',InputData)]
 
 
+# Wrap the Win32 calls used to inspect and interact with desktop windows.
 class WindowsApi:
+    # Load the Windows libraries and configure the function signatures.
     def __init__(self):
         if sys.platform != 'win32': raise DriverBlockedError('desktop automation requires Windows')
         self.u=c.WinDLL('user32',use_last_error=True)
@@ -41,6 +47,7 @@ class WindowsApi:
             self.u.SetThreadDpiAwarenessContext(c.c_void_p(-4))
         except AttributeError: self.u.SetProcessDPIAware()
 
+    # Identify a window by its handle, process, and screen details.
     def identity(self, hwnd):
         if not self.u.IsWindow(hwnd): raise DriverBlockedError('target window no longer exists')
         pid=w.DWORD();self.u.GetWindowThreadProcessId(hwnd,c.byref(pid))
@@ -56,6 +63,7 @@ class WindowsApi:
         return DesktopTarget(hwnd=hwnd,pid=pid.value,process_started_at=str((times[0].dwHighDateTime<<32)|times[0].dwLowDateTime),
             title=title.value,screen_width=self.u.GetSystemMetrics(0),screen_height=self.u.GetSystemMetrics(1))
 
+    # Describe the target's geometry and whether it can be used.
     def describe(self, hwnd):
         target=self.identity(hwnd)
         rect=w.RECT();point=w.POINT(0,0)
@@ -77,13 +85,16 @@ class WindowsApi:
         return {'target':target,'rect':area,'foreground':self.u.GetForegroundWindow(),
                 'usable':bool(self.u.IsWindowVisible(hwnd) and not self.u.IsIconic(hwnd)), 'occluded':occluded,'occluder':occluder,'occluder_class':occluder_class}
 
+    # Find the top-level window at a screen coordinate.
     def root_at(self,x,y): return self.u.GetAncestor(self.u.WindowFromPoint(w.POINT(x,y)),2)
 
+    # Send a supported key combination through Win32.
     def hotkey(self,keys):
         from autorush.drivers.desktop.contracts import HOTKEYS
         if tuple(keys) not in HOTKEYS: raise ValueError('unsupported native hotkey')
         codes={'ctrl':17,'shift':16,'a':65,'tab':9,'enter':13,'esc':27,'backspace':8,'delete':46,
                'home':36,'end':35,'left':37,'right':39,'up':38,'down':40}
+        # Build a native key press or release event.
         def event(key,up):
             extended=1 if key in {'delete','home','end','left','right','up','down'} else 0
             return Input(type=1,data=InputData(ki=KeyboardInput(wVk=codes[key],dwFlags=extended|(2 if up else 0))))
@@ -95,9 +106,11 @@ class WindowsApi:
             self.u.SendInput(len(keys),release,c.sizeof(Input))
             raise DriverBlockedError('Windows refused the complete keyboard batch')
 
+    # Enumerate usable desktop windows.
     def windows(self):
         result=[]
         callback_type=c.WINFUNCTYPE(w.BOOL,w.HWND,w.LPARAM)
+        # Collect visible, non-minimized windows during enumeration.
         def visit(hwnd,_):
             if self.u.IsWindowVisible(hwnd) and not self.u.IsIconic(hwnd):
                 try:
@@ -111,10 +124,13 @@ class WindowsApi:
         return result[:200]
 
 
+# Keep desktop actions bound to the selected window identity and geometry.
 class WindowGuard:
+    # Store the selected target and initialize access to the Windows API.
     def __init__(self,target:DesktopTarget,*,api=None):
         self.target=target;self.api=api or WindowsApi()
 
+    # Recheck the window's identity, client bounds, and foreground state.
     def check(self,*,foreground=True):
         info=self.api.describe(self.target.hwnd)
         if info['target'] != self.target: raise DriverBlockedError('desktop target identity or screen resolution changed')
@@ -127,6 +143,7 @@ class WindowGuard:
             raise DriverBlockedError(f"target window is covered (HWND {info.get('occluder')}, class {info.get('occluder_class')})")
         return x,y,width,height
 
+    # Convert window coordinates to a screen point and reject covered points.
     def screen_point(self,x,y):
         left,top,width,height=self.check()
         if type(x) is not int or type(y) is not int or not 0<=x<width or not 0<=y<height:
@@ -138,4 +155,5 @@ class WindowGuard:
         return point
 
 
+# List the available desktop window targets.
 def list_windows(): return WindowsApi().windows()

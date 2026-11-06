@@ -4,6 +4,7 @@ import AgentTrace from '../runs/AgentTrace'
 import {ApiEvidence} from '../api-testing/ResponsePanel'
 import type {DebugRun} from './client'
 
+// Display completed or in-progress debug steps with their evidence.
 export default function CaseDebugResults({run}:{run:DebugRun}){
   const active=run.progress.active
   const steps=run.result?.steps??[...(run.progress.completed_cases?.flatMap(c=>c.steps)??[]),...(active?.steps??[])]

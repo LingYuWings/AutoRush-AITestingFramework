@@ -12,17 +12,20 @@ from autorush.api_testing.variables import PLACEHOLDER, SENSITIVE, redact, secre
 SCHEMA = 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json'
 
 
+# Convert Postman variables to the API collection format.
 def variables(items):
     return [{'key': str(item['key']), 'value': item.get('value', ''),
         'enabled': item.get('enabled', not item.get('disabled', False)),
         'secret': item.get('type') == 'secret' or bool(SENSITIVE.search(str(item['key'])))} for item in items if item.get('key')]
 
 
+# Convert Postman header or query entries to editable key-value pairs.
 def pairs(items):
     return [{'key': str(item.get('key', '')), 'value': str(item.get('value', '')),
              'enabled': not item.get('disabled', False)} for item in items]
 
 
+# Translate supported Postman authentication into the API request format.
 def from_auth(auth):
     kind = auth.get('type', 'noauth')
     if kind == 'noauth': return {'type': 'none'}
@@ -34,10 +37,12 @@ def from_auth(auth):
             'location': values.get('in', 'header')}
 
 
+# Import a Postman collection with requests, folders, and warnings.
 def import_postman(content, *, preserve_tree=False):
     if not isinstance(content, dict) or not str(content.get('info', {}).get('schema', '')).endswith('/v2.1.0/collection.json'):
         raise ValueError('only Postman Collection v2.1 JSON is supported')
     requests, warnings, folders = [], [], []
+    # Walk Postman items while carrying inherited authorization and folder context.
     def visit(items, inherited_auth, inherited_scripts=False, prefix='', parent_id=None, depth=0):
         if depth > 8: raise ValueError('folder depth cannot exceed 8')
         for position, item in enumerate(items):
@@ -102,6 +107,7 @@ def import_postman(content, *, preserve_tree=False):
     return (*result, folders) if preserve_tree else result
 
 
+# Parse supported cURL flags into an API request without running the command.
 def import_curl(command):
     tokens = shlex.split(command.replace('\\\r\n', '').replace('\\\n', '').replace('^\r\n', ''))
     if not tokens or tokens.pop(0).lower() not in {'curl', 'curl.exe'}: raise ValueError('expected a cURL command')
@@ -152,6 +158,7 @@ def import_curl(command):
     return ApiRequest.model_validate(spec).model_dump()
 
 
+# Copy a request and scrub credentials before export.
 def export_safe(spec):
     value = deepcopy(spec)
     secrets = set()
@@ -181,6 +188,7 @@ def export_safe(spec):
     return value
 
 
+# Build a Postman collection from saved API requests and folders.
 def export_postman(collection, requests, folders=None):
     items = []
     for record in requests:
@@ -205,6 +213,7 @@ def export_postman(collection, requests, folders=None):
         items.append({'name': spec['name'], 'request': request})
     if folders is not None:
         request_items = [(record, item) for record, item in zip(requests, items)]
+        # Rebuild ordered Postman items under the given folder.
         def children(parent_id):
             entries = [(record, item) for record, item in request_items if record.get('folder_id') == parent_id]
             entries.extend((folder, {'name': folder['name'], 'item': children(folder['id'])})
@@ -217,6 +226,7 @@ def export_postman(collection, requests, folders=None):
             for item in collection.get('variables', [])]}
 
 
+# Render a scrubbed request as a cURL command.
 def export_curl(request):
     spec = export_safe(request)
     parts = urlsplit(spec['url'])

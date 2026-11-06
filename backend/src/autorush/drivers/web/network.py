@@ -5,6 +5,7 @@ import asyncio
 from ipaddress import ip_address
 
 
+# Copy data in one direction between proxy connections.
 async def _relay(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
     while data := await reader.read(65536):
         writer.write(data)
@@ -12,18 +13,22 @@ async def _relay(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> 
     writer.write_eof()
 
 
+# Enforce the browser session's host allowlist at the SOCKS connection boundary.
 class BrowserNetworkGate:
+    # Normalize the allowed hosts and initialize connection tracking.
     def __init__(self, allowed_hosts: set[str]) -> None:
         self._allowed = {host.lower() for host in allowed_hosts}
         self._connections: dict[asyncio.Task[None], asyncio.StreamWriter] = {}
         self._server: asyncio.Server | None = None
 
+    # Start the loopback SOCKS listener and return browser proxy settings.
     async def start(self) -> dict[str, str]:
         self._server = await asyncio.start_server(self._accept, "127.0.0.1", 0)
         port = self._server.sockets[0].getsockname()[1]
         # Chromium otherwise bypasses a configured proxy for loopback hosts.
         return {"server": f"socks5://127.0.0.1:{port}", "bypass": "<-loopback>"}
 
+    # Accept a proxy connection within the active connection limit.
     def _accept(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         if self._server is None or len(self._connections) >= 256:
             writer.close()
@@ -32,6 +37,7 @@ class BrowserNetworkGate:
         self._connections[task] = writer
         task.add_done_callback(self._connections.pop)
 
+    # Validate the SOCKS request and relay traffic only to an allowed host.
     async def _serve(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         upstream_writer = None
         try:
@@ -89,6 +95,7 @@ class BrowserNetworkGate:
                 return_exceptions=True,
             )
 
+    # Stop accepting proxy connections and close active streams.
     async def close(self) -> None:
         server, self._server = self._server, None
         if server is None:

@@ -3,12 +3,16 @@ package com.autorush.portal
 import kotlin.math.ceil
 import kotlin.math.floor
 
+// A rectangle in screen or image coordinates, depending on the capture stage.
 internal data class CaptureBounds(val left: Int, val top: Int, val right: Int, val bottom: Int) {
     val width get() = right - left
     val height get() = bottom - top
+    // Test whether the rectangles overlap by a positive area.
     fun intersects(other: CaptureBounds) = left < other.right && right > other.left && top < other.bottom && bottom > other.top
 }
+// An accessibility window with its package, stacking layer, and screen bounds.
 internal data class CaptureWindow(val id: Int, val layer: Int, val pkg: String?, val bounds: CaptureBounds, val type: Int = 1)
+// Find the part of an app window that can be captured safely.
 internal object CaptureSurface {
     /** Exclude narrow edge system strips from pixels, then check the complete remaining surface. */
     fun isolatedBounds(target: CaptureWindow, windows: List<CaptureWindow>): CaptureBounds? {
@@ -36,6 +40,7 @@ internal object CaptureSurface {
         if (remaining.width <= 0 || remaining.height <= 0 || foreign.any { it.bounds.intersects(remaining) }) return null
         return remaining
     }
+    // Check whether the target has any isolated bounds suitable for capture.
     fun isIsolated(target: CaptureWindow, windows: List<CaptureWindow>) = isolatedBounds(target, windows) != null
 
     /** Round inward: pixels outside the app window must never enter a projection frame. */

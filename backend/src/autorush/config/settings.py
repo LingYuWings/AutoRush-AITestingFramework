@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+# Holds runtime paths, host allowlists, ports and local feature switches.
 @dataclass(frozen=True)
 class Settings:
     database_path: Path
@@ -21,6 +22,7 @@ class Settings:
     local_device_port: int = 8443
     desktop_enabled: bool = False
 
+    # Read process configuration with workspace-relative defaults for local storage.
     @classmethod
     def from_env(cls) -> "Settings":
         workspace = Path.cwd()

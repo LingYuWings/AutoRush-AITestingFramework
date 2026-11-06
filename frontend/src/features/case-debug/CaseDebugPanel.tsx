@@ -8,6 +8,7 @@ import {debugTargets,initialDebugForm,validateDebugCase,type DebugForm} from './
 import CaseDebugResults from './CaseDebugResults'
 import './case-debug.css'
 
+// Configure and monitor a debug run for the selected case snapshot.
 export default function CaseDebugPanel({open,selection,plans,onClose}:{open:boolean;selection:DebugSelection|null;plans:PlanRecord[];onClose:()=>void}){
   const [form,setForm]=useState(initialDebugForm),[error,setError]=useState(''),[busy,setBusy]=useState(false)
   const [run,setRun]=useState<DebugRun|null>(null),[history,setHistory]=useState<DebugSummary[]>([])
@@ -21,10 +22,12 @@ export default function CaseDebugPanel({open,selection,plans,onClose}:{open:bool
   const generation=useRef(0)
   const viewGeneration=useRef(0)
   const scopeRef=useRef({selection,onlyCurrent});scopeRef.current={selection,onlyCurrent}
+  // Change one debug input without resetting the rest of the form.
   const update=<K extends keyof DebugForm>(key:K,value:DebugForm[K])=>setForm(old=>({...old,[key]:value}))
   let draft:DebugCase|undefined;try{draft=selection?.read?.()}catch{/* Validation is shown when Run is clicked. */}
   const drivers=new Set(draft?[...draft.steps,...draft.postconditions].map(s=>s.driver):[])
   const active=Boolean(activeRun&&['running','stopping'].includes(activeRun.state))
+  // Reload debug history for the current case or session and ignore stale results.
   const refreshHistory=async()=>{
     const token=generation.current
     const {selection:source,onlyCurrent:scoped}=scopeRef.current
@@ -53,6 +56,7 @@ export default function CaseDebugPanel({open,selection,plans,onClose}:{open:bool
     const timer=window.setTimeout(()=>{void debugClient.get(activeRun.id).then(value=>{if(!disposed){pollFailures.current=0;setError('');setActiveRun(current=>current?.id===value.id?value:current);setRun(current=>current?.id===value.id?value:current);if(!['running','stopping'].includes(value.state))void refreshHistory().catch(cause=>setError(String(cause)))}}).catch(cause=>{if(!disposed){pollFailures.current++;setError('调试状态暂不可用，正在重试：'+String(cause));setPollTick(value=>value+1)}})},Math.min(4000,1000*2**Math.min(pollFailures.current,2)))
     return()=>{disposed=true;window.clearTimeout(timer)}
   },[activeRun,active,pollTick])
+  // Validate the case and runtime targets before starting a debug run.
   const start=async()=>{
     if(!selection?.read||busy||active)return
     setBusy(true);setError('');++viewGeneration.current
@@ -67,16 +71,19 @@ export default function CaseDebugPanel({open,selection,plans,onClose}:{open:bool
       await refreshHistory()
     }catch(cause){setError(cause instanceof Error?cause.message:String(cause))}finally{setBusy(false)}
   }
+  // Cancel the active debug run and reconcile its returned state.
   const stop=async()=>{
     if(!activeRun||!active||busy)return
     setBusy(true);setError('')
     try{const value=await debugClient.cancel(activeRun.id);setActiveRun(current=>current?.id===value.id?value:current);setRun(current=>current?.id===value.id?value:current)}
     catch(cause){setError(String(cause))}finally{setBusy(false)}
   }
+  // Obtain local authorization and refresh available desktop targets.
   const loadWindows=async()=>{
     setLoadingWindows(true);setError('');update('desktopTarget',null)
     try{await debugClient.authorize();const capability=await api.automationCapabilities();if(!capability.desktop.available)throw new Error(capability.desktop.reason??'桌面执行不可用');setWindows((await api.desktopWindows()).windows)}catch(cause){setWindows([]);setError(String(cause))}finally{setLoadingWindows(false)}
   }
+  // Prefill debug inputs from a saved test plan.
   const copyPlan=(id:string)=>{
     const plan=plans.find(p=>p.id===id);if(!plan)return
     setForm({...initialDebugForm(),apiBase:plan.api_base_url??'',apiEnvironmentId:plan.api_environment_id??'',webBase:plan.web_base_url??'',deviceId:plan.android_device_id??'',androidPackage:plan.android_package??'',webHeadless:plan.web_headless,viewportWidth:String(plan.web_viewport?.width??1280),viewportHeight:String(plan.web_viewport?.height??800),desktopDelay:String(plan.desktop_start_delay_seconds??3),providerId:plan.agent_options?.provider_config_id??'',rounds:plan.agent_options?.max_rounds_per_step??8,caseRounds:plan.agent_options?.max_rounds_per_case??40,modelTimeout:plan.agent_options?.model_timeout_seconds??90,caseTimeout:plan.agent_options?.case_timeout_seconds??180})

@@ -1,5 +1,6 @@
 import type {CatalogState} from './model-catalog'
 
+// Select a discovered model and surface catalog loading and verification state.
 export default function ModelCatalogPicker({state,busy,error,onSelect,onFetch}:{
   state:CatalogState;busy:boolean;error:string;onSelect:(value:string)=>void;onFetch:()=>void
 }) {

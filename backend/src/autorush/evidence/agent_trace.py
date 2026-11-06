@@ -1,4 +1,5 @@
 """Enumerate only defined evidence locations; never arbitrary user dictionaries."""
+# Yield screenshot metadata from a step and its nested agent trace.
 def iter_step_screenshots(evidence):
     if not isinstance(evidence,dict): return
     if isinstance(evidence.get('screenshot'),dict): yield evidence['screenshot']
@@ -13,6 +14,7 @@ def iter_step_screenshots(evidence):
             nested=result.get('evidence',{})
             if isinstance(nested,dict) and isinstance(nested.get('screenshot'),dict): yield nested['screenshot']
 
+# Walk every case and step to locate a run's screenshot evidence.
 def iter_run_screenshots(run):
     for case in run.cases:
         for step in case.steps: yield from iter_step_screenshots(step.evidence)

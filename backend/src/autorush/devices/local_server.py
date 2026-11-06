@@ -15,6 +15,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
 
+# List the host's private IPv4 addresses for LAN pairing.
 def local_addresses() -> list[str]:
     try:
         addresses = {item[4][0] for item in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)}
@@ -24,6 +25,7 @@ def local_addresses() -> list[str]:
     return sorted(value for value in addresses if any(ipaddress.ip_address(value) in subnet for subnet in ranges))
 
 
+# Load or generate a certificate for the host and return its fingerprint.
 def certificate(directory: Path, host: str) -> tuple[Path, Path, str]:
     directory.mkdir(parents=True, exist_ok=True)
     cert_path, key_path = directory / f'{host}.pem', directory / f'{host}.key'
@@ -48,10 +50,13 @@ def certificate(directory: Path, host: str) -> tuple[Path, Path, str]:
     return cert_path, key_path, cert.fingerprint(hashes.SHA256()).hex()
 
 
+# Restrict the LAN listener to pairing, health, and device socket endpoints.
 class DeviceEndpointsOnly:
+    # Store the application that handles allowed requests.
     def __init__(self, app):
         self.app = app
 
+    # Forward permitted requests and reject all other paths.
     async def __call__(self, scope, receive, send):
         allowed = (scope['type'] == 'websocket' and scope['path'] == '/api/v1/devices/ws'
                    or scope['type'] == 'http' and (scope['method'], scope['path']) in {
@@ -65,14 +70,18 @@ class DeviceEndpointsOnly:
             await send({'type': 'http.response.body', 'body': b'Not found'})
 
 
+# Run the embedded Uvicorn server under the parent application's lifecycle.
 class _Server(uvicorn.Server):
+    # Leave signal handling with the parent API process.
     @contextmanager
     def capture_signals(self):
         # The parent API process owns signals and lifecycle.
         yield
 
 
+# Manage the on-demand LAN listener for Portal devices.
 class LocalDeviceServer:
+    # Initialize the listener settings and lifecycle lock.
     def __init__(self, app, directory: Path, port: int = 8443):
         self.app, self.directory, self.port = app, directory, port
         self.server = None
@@ -80,11 +89,13 @@ class LocalDeviceServer:
         self.info = {}
         self.lock = asyncio.Lock()
 
+    # Report available addresses and the running listener's connection details.
     def status(self) -> dict:
         running = self.task is not None and not self.task.done() and self.server.started
         return {'running': bool(running), 'addresses': local_addresses(), 'port': self.port,
                 **(self.info if running else {})}
 
+    # Start a TLS listener on a selected private address.
     async def start(self, host: str | None = None) -> dict:
         async with self.lock:
             addresses = local_addresses()
@@ -123,6 +134,7 @@ class LocalDeviceServer:
                 sock.close()
                 raise ValueError('Local WSS server could not start; check the selected address and port') from exc
 
+    # Shut down the listener and clear its connection details.
     async def stop(self) -> dict:
         async with self.lock:
             if self.task is not None and not self.task.done():

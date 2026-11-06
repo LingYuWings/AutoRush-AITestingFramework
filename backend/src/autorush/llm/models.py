@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from autorush.domain.models import CaseCreate
 
 
+# List the credential types accepted by provider configuration.
 class CredentialType(StrEnum):
     API_KEY = "api_key"
     TOKEN_PLAN = "token_plan"
@@ -19,6 +20,7 @@ class CredentialType(StrEnum):
     LOCAL = "local"
 
 
+# List the capabilities that a model configuration can declare.
 class ModelCapability(StrEnum):
     TEXT_ONLY = "text_only"
     STRUCTURED_OUTPUT = "structured_output"
@@ -26,6 +28,7 @@ class ModelCapability(StrEnum):
     VISION = "vision"
 
 
+# Describe the regions, protocols, and options supported by a provider preset.
 class ProviderPreset(BaseModel):
     id: str
     display_name: str
@@ -38,6 +41,7 @@ class ProviderPreset(BaseModel):
     compliance_note: str
 
 
+# Validate the inputs used to create a model provider configuration.
 class ProviderConfigCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     provider_id: str = Field(min_length=1, max_length=60)
@@ -49,6 +53,7 @@ class ProviderConfigCreate(BaseModel):
     model_id: str = Field(min_length=1, max_length=200)
     capabilities: set[ModelCapability] = Field(min_length=1)
 
+    # Require a well-formed environment variable reference when a secret is supplied.
     @field_validator("secret_ref")
     @classmethod
     def validate_secret_reference(cls, value: str | None) -> str | None:
@@ -61,6 +66,7 @@ class ProviderConfigCreate(BaseModel):
             raise ValueError("secret_ref environment variable must contain uppercase letters, digits or underscores")
         return value
 
+    # Require a secret reference for remote providers and forbid one for local providers.
     @model_validator(mode="after")
     def secret_required_for_remote_provider(self) -> "ProviderConfigCreate":
         if self.credential_type != CredentialType.LOCAL and not self.secret_ref:
@@ -70,6 +76,7 @@ class ProviderConfigCreate(BaseModel):
         return self
 
 
+# Store provider configuration together with its verification status.
 class ProviderConfigRecord(ProviderConfigCreate):
     id: UUID = Field(default_factory=uuid4)
     status: str = "unverified"
@@ -77,6 +84,7 @@ class ProviderConfigRecord(ProviderConfigCreate):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+# Describe provider configuration and credential availability checks.
 class ProviderPreflight(BaseModel):
     config_id: UUID
     configuration_valid: bool
@@ -85,6 +93,7 @@ class ProviderPreflight(BaseModel):
     messages: list[str]
 
 
+# Report the result of a structured response connection test.
 class ProviderConnectionTest(BaseModel):
     config_id: UUID
     connected: bool
@@ -94,6 +103,7 @@ class ProviderConnectionTest(BaseModel):
     message: str
 
 
+# Describe the provider configuration to use for a model catalog request.
 class ModelCatalogRequest(BaseModel):
     provider_id: str = Field(min_length=1,max_length=60)
     region: str = Field(min_length=1,max_length=60)
@@ -103,6 +113,7 @@ class ModelCatalogRequest(BaseModel):
     secret_ref: str | None = None
 
 
+# Describe a discovered local runtime and the models it exposes.
 class LocalRuntime(BaseModel):
     id: str
     name: str
@@ -111,12 +122,14 @@ class LocalRuntime(BaseModel):
     latency_ms: int
 
 
+# Summarize local runtime discovery results and timing.
 class LocalDiscoveryResult(BaseModel):
     runtimes: list[LocalRuntime]
     scanned: int
     duration_ms: int
 
 
+# Report whether a provider passed its image capability test.
 class ProviderVisionTest(BaseModel):
     config_id: UUID
     verified: bool
@@ -125,12 +138,14 @@ class ProviderVisionTest(BaseModel):
     message: str
 
 
+# Describe a natural-language step to compile for a web or API test.
 class NaturalStepInput(BaseModel):
     intent: str = Field(min_length=1, max_length=1000)
     driver: Literal["api", "web"]
     always_run: bool = False
 
 
+# Collect the case details and natural-language steps to compile.
 class CaseCompileRequest(BaseModel):
     provider_config_id: UUID
     title: str = Field(min_length=1, max_length=200)
@@ -139,6 +154,7 @@ class CaseCompileRequest(BaseModel):
     postconditions: list[NaturalStepInput] = Field(default_factory=list, max_length=20)
 
 
+# Return a compiled case draft and the associated model request metadata.
 class CaseCompileResult(BaseModel):
     draft: CaseCreate
     provider_id: str

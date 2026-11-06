@@ -5,6 +5,7 @@ export type DebugSelection={read?:()=>DebugCase;source?:CaseRecord;saved?:boolea
 export type DebugSummary={id:string;state:'running'|'stopping'|'finished'|'interrupted';title:string;source_case_id:string|null;source_version:number|null;session_id:string|null;unsaved:boolean;execution_mode:string;platform:string;created_at:string;status:ResultStatus|null}
 export type DebugRun=DebugSummary&{termination_reason:string|null;result:{title:string;status:ResultStatus;steps:StepResult[]}|null;progress:{completed_cases?:{status:ResultStatus;steps:StepResult[]}[];active?:{steps?:StepResult[];active_step?:{order:number;intent:string;expected_result:string;traces:unknown[]};pending_action?:unknown}}}
 let authorization:Promise<void>|null=null
+// Reuse a pending authorization or obtain a fresh local operator token.
 async function authorize(force=false):Promise<void>{
   if(authorization)return authorization
   if(!force&&api.getOperatorToken())return
@@ -15,6 +16,7 @@ async function authorize(force=false):Promise<void>{
   }).finally(()=>{authorization=null})
   return authorization
 }
+// Retry a debug request once when local authorization may need renewal.
 async function authorized<T>(operation:()=>Promise<T>):Promise<T>{
   const sentToken=api.getOperatorToken()
   try{return await operation()}catch(cause){
@@ -25,9 +27,14 @@ async function authorized<T>(operation:()=>Promise<T>):Promise<T>{
 }
 export const debugClient={
   authorize,
+  // Fetch debug summaries scoped to the source case or editor session.
   list:(source?:string,session?:string)=>authorized(()=>request<DebugSummary[]>('/api/v1/case-debug-runs'+(source?'?source_case_id='+encodeURIComponent(source):session?'?session_id='+encodeURIComponent(session):''))),
+  // Find debug runs that are still in progress.
   active:()=>authorized(()=>request<DebugSummary[]>('/api/v1/case-debug-runs?active_only=true')),
+  // Fetch one debug run with its current progress and result.
   get:(id:string)=>authorized(()=>request<DebugRun>('/api/v1/case-debug-runs/'+encodeURIComponent(id))),
+  // Submit a debug case snapshot and its execution targets.
   start:(value:{idempotency_key:string;source_case_id?:string;source_version?:number;session_id?:string;case?:DebugCase;targets:DebugTargets})=>authorized(()=>request<DebugRun>('/api/v1/case-debug-runs',{method:'POST',body:JSON.stringify(value)})),
+  // Ask the backend to stop the specified debug run.
   cancel:(id:string)=>authorized(()=>request<DebugRun>('/api/v1/case-debug-runs/'+encodeURIComponent(id)+'/cancel',{method:'POST'})),
 }

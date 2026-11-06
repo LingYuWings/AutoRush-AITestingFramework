@@ -5,15 +5,18 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
+# Reject unknown fields in API test configuration.
 class ApiModel(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
 
+# Represent an editable header or query entry.
 class KeyValue(ApiModel):
     key: str = Field(max_length=512)
     value: str = Field(default='', max_length=65536)
     enabled: bool = True
 
+    # Reject carriage returns, line feeds, and NUL characters in an entry.
     @field_validator('key', 'value')
     @classmethod
     def no_newlines(cls, value):
@@ -22,6 +25,7 @@ class KeyValue(ApiModel):
         return value
 
 
+# Represent a named test variable and its enabled and secret flags.
 class Variable(ApiModel):
     key: str = Field(min_length=1, max_length=100, pattern=r'^[A-Za-z_][A-Za-z0-9_.-]*$')
     value: Any = ''
@@ -29,6 +33,7 @@ class Variable(ApiModel):
     secret: bool = False
 
 
+# Describe the authentication settings for an HTTP request.
 class Auth(ApiModel):
     type: Literal['none', 'basic', 'bearer', 'api_key'] = 'none'
     username: str = Field(default='', max_length=4096)
@@ -39,6 +44,7 @@ class Auth(ApiModel):
     location: Literal['header', 'query'] = 'header'
 
 
+# Represent a text or file field in a request body.
 class BodyField(ApiModel):
     key: str = Field(min_length=1, max_length=512)
     value: str = Field(default='', max_length=1048576)
@@ -49,6 +55,7 @@ class BodyField(ApiModel):
     enabled: bool = True
 
 
+# Describe a request body and its encoding mode.
 class RequestBody(ApiModel):
     mode: Literal['none', 'json', 'raw', 'urlencoded', 'formdata', 'binary'] = 'none'
     text: str = Field(default='', max_length=1048576)
@@ -58,12 +65,14 @@ class RequestBody(ApiModel):
     data_base64: str = Field(default='', max_length=1500000)
 
 
+# Define a check against an HTTP response or its timing.
 class ApiAssertion(ApiModel):
     kind: Literal['status_code', 'body_contains', 'json_field_equals', 'json_field_exists',
                   'header_equals', 'response_time_less_than']
     expected: Any = None
     path: str | None = Field(default=None, max_length=512)
 
+    # Require a path or numeric expectation when the assertion type needs one.
     @model_validator(mode='after')
     def path_required(self):
         if self.kind in {'json_field_equals', 'json_field_exists', 'header_equals'} and not self.path:
@@ -73,6 +82,7 @@ class ApiAssertion(ApiModel):
         return self
 
 
+# Describe a response value to save as a runtime variable.
 class Extraction(ApiModel):
     key: str = Field(min_length=1, max_length=100, pattern=r'^[A-Za-z_][A-Za-z0-9_.-]*$')
     source: Literal['json', 'header', 'cookie'] = 'json'
@@ -81,6 +91,7 @@ class Extraction(ApiModel):
     secret: bool = False
 
 
+# Define an HTTP request, its collection location, and its checks.
 class ApiRequest(ApiModel):
     name: str = Field(default='未命名请求', min_length=1, max_length=200)
     collection_id: str | None = None
@@ -101,12 +112,14 @@ class ApiRequest(ApiModel):
     compatibility_warnings: list[str] = Field(default_factory=list, max_length=30)
 
 
+# Group requests and provide variables shared across the collection.
 class Collection(ApiModel):
     name: str = Field(min_length=1, max_length=200)
     description: str = Field(default='', max_length=4000)
     variables: list[Variable] = Field(default_factory=list, max_length=100)
 
 
+# Describe a nested folder within an API collection.
 class Folder(ApiModel):
     name: str = Field(min_length=1, max_length=200)
     collection_id: str
@@ -115,10 +128,12 @@ class Folder(ApiModel):
     position: int = Field(default=0, ge=0, le=1000000)
 
 
+# Store a named set of variables for an execution environment.
 class Environment(Collection):
     pass
 
 
+# Collect a request and its execution overrides.
 class ExecuteRequest(ApiModel):
     request: ApiRequest
     request_id: str | None = None
@@ -126,18 +141,21 @@ class ExecuteRequest(ApiModel):
     variables: dict[str, Any] = Field(default_factory=dict)
 
 
+# Specify environment and failure handling for a collection run.
 class CollectionRun(ApiModel):
     environment_id: str | None = None
     variables: dict[str, Any] = Field(default_factory=dict)
     stop_on_failure: bool = True
 
 
+# Identify a tree item and its version for a reorder.
 class TreeItem(ApiModel):
     kind: Literal['requests', 'folders']
     id: str
     version: int = Field(ge=1)
 
 
+# Specify the desired order of immediate children under a tree parent.
 class TreeReorder(ApiModel):
     collection_id: str
     parent_id: str | None = None
@@ -147,5 +165,6 @@ class TreeReorder(ApiModel):
 RECORD_FIELDS = {'id', 'version', 'created_at', 'updated_at'}
 
 
+# Remove storage metadata before validating a saved configuration.
 def configuration(record: dict) -> dict:
     return {key: value for key, value in record.items() if key not in RECORD_FIELDS}

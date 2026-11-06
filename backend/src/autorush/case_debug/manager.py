@@ -11,15 +11,19 @@ from autorush.case_debug.store import DebugStore
 from autorush.domain.models import CaseRecord, PlanRecord, ResultStatus
 
 
+# Run a case snapshot through the agent machinery using separate debug storage.
 class DebugRunManager(AgentRunManager):
+    # Attach debug storage while retaining the shared execution machinery.
     def __init__(self, settings, store, session_factory, client_factory, broker, device_hub):
         super().__init__(settings, DebugStore(store), session_factory, client_factory, broker)
         self.device_hub = device_hub
 
+    # Suppress formal plan events because debug progress is read from storage.
     async def emit(self, event_type, payload):
         # The debug panel reads durable progress; formal plan events/statistics stay separate.
         return None
 
+    # Validate the source revision, freeze the current draft and schedule it once.
     async def start_debug(self, payload):
         fingerprint = hashlib.sha256(payload.model_dump_json(exclude={'idempotency_key'}).encode()).hexdigest()
         async with self.start_lock:
@@ -53,6 +57,7 @@ class DebugRunManager(AgentRunManager):
             self.store.save_agent_execution(record)
             return self._schedule(record)
 
+    # Persist the case result and terminal state in the debug record.
     async def finish(self, record, results, reason=None, *, interrupted=False):
         record.result = results[0] if results else None
         record.state = 'interrupted' if interrupted else 'finished'
@@ -60,6 +65,7 @@ class DebugRunManager(AgentRunManager):
         self.store.update_agent_execution(record)
         await self.emit('finished', {'run_id': str(record.id)})
 
+    # Build a console view while redacting secrets from progress and evidence.
     def public(self, record, *, summary=False):
         data = debug_summary(record)
         if summary: return data

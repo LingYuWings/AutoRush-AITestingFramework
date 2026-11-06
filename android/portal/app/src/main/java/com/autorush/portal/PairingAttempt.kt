@@ -6,6 +6,7 @@ internal class PairingAttempt {
     var active = false
         private set
 
+    // Start a claim if one is idle and return its generation number.
     fun begin(): Long? {
         if (active) return null
         active = true
@@ -13,11 +14,13 @@ internal class PairingAttempt {
         return generation
     }
 
+    // Accept a result only while its generation is still active.
     fun complete(attempt: Long): Boolean {
         if (!active || attempt != generation) return false
         active = false
         return true
     }
 
+    // Invalidate any pending result so a cancelled claim cannot update the activity.
     fun cancel() { active = false }
 }

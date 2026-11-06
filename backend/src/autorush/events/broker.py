@@ -12,6 +12,7 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, Field
 
 
+# Defines the typed envelope sent to execution event subscribers.
 class PlatformEvent(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     type: Literal["stream.ready", "run.started", "case.completed", "report.ready", "agent.action.completed", "agent.run.failed"]
@@ -22,12 +23,14 @@ class PlatformEvent(BaseModel):
 class EventBroker:
     """Fan events out without allowing one slow client to block a test run."""
 
+    # Set the maximum backlog allowed for each subscriber.
     def __init__(self, queue_size: int = 32) -> None:
         if queue_size < 1:
             raise ValueError("queue_size must be positive")
         self._queue_size = queue_size
         self._subscribers: set[asyncio.Queue[PlatformEvent]] = set()
 
+    # Attach a queue for the duration of a subscription.
     @asynccontextmanager
     async def subscribe(self) -> AsyncIterator[asyncio.Queue[PlatformEvent]]:
         queue: asyncio.Queue[PlatformEvent] = asyncio.Queue(maxsize=self._queue_size)
@@ -37,6 +40,7 @@ class EventBroker:
         finally:
             self._subscribers.discard(queue)
 
+    # Fan out the event without making a slow subscriber block execution.
     async def publish(self, event: PlatformEvent) -> None:
         for queue in tuple(self._subscribers):
             if queue.full():

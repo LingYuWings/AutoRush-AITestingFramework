@@ -11,7 +11,9 @@ export type Icon = (props: IconProps) => ReactNode
 
 const TINT = { fill: 'currentColor', fillOpacity: 0.16, stroke: 'none' } as const
 
+// Turn shared SVG artwork into an icon component with consistent defaults.
 function glyph(_name: string, tint: ReactNode, body: ReactNode): Icon {
+  // Render the artwork with caller-supplied sizing and accessibility props.
   const component: Icon = ({ size = 16, className, ...rest }) => (
     <svg
       width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"

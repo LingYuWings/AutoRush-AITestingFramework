@@ -1,4 +1,5 @@
 import type {AgentExecution,ResultStatus} from '../../shared/api'
+// Count completed and active decision rounds and derive the final run status.
 export function executionSummary(execution:Pick<AgentExecution,'state'|'progress'>&Partial<Pick<AgentExecution,'termination_reason'>>):{rounds:number;status:ResultStatus|null} {
   const cases=execution.progress.completed_cases??[]
   const rounds=cases.reduce((total,item)=>total+item.steps.reduce((count,step)=>{

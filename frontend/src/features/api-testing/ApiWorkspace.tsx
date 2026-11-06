@@ -14,16 +14,19 @@ import './api-testing.css'
 
 export type ApiNavigationGuard=((proceed:()=>void)=>void)|null
 type Tab={key:string;request?:ApiRequestRecord;draft?:ApiRequest;initialDirty?:boolean;meta:TabStatus}
+// Allocate a tab with a fresh key and untouched draft metadata.
 const blank=():Tab=>({key:crypto.randomUUID(),meta:{name:'未命名请求',sourceId:null,dirty:false,busy:false}})
 export const apiSections=[['workbench','请求工作台'],['runner','集合 Runner'],['environments','环境管理'],['history','执行历史']] as const
 const sections=apiSections
 
+// Keep request tabs and shared resources available across API workspace sections.
 export default function ApiWorkspace({section,onNavigate,onCaseCreated,onGuardChange}:{section?:string;onNavigate:(section:string)=>void;onCaseCreated:(id:string)=>void|Promise<void>;onGuardChange:(guard:ApiNavigationGuard)=>void}){
   const [tabs,setTabs]=useState<Tab[]>(()=>[blank()]),[active,setActive]=useState(''),[epoch,setEpoch]=useState(0),[preset,setPreset]=useState<RunnerPreset|null>(null)
   const [pending,setPending]=useState<{keys:string[];proceed:()=>void|Promise<void>;saveAsCopy?:boolean}|null>(null),[error,setError]=useState(''),[saving,setSaving]=useState(false)
   const controllers=useRef(new Map<string,WorkbenchController>())
   const resourceCache=useRef<ApiResources|null>(null),resourceFlight=useRef<Promise<ApiResources>|null>(null)
   const [resources,setResources]=useState<ApiResources|null>(null)
+  // Share in-flight resource loads and optionally reuse the cached result.
   const refreshResources=useCallback((force=true):Promise<ApiResources>=>{
     if(!force&&resourceCache.current)return Promise.resolve(resourceCache.current)
     if(resourceFlight.current)return resourceFlight.current
@@ -34,13 +37,18 @@ export default function ApiWorkspace({section,onNavigate,onCaseCreated,onGuardCh
   const page=sections.some(([key])=>key===section)?section!:'workbench'
   const activeKey=tabs.some(tab=>tab.key===active)?active:tabs[0]?.key
   const dirty=tabs.filter(tab=>tab.meta.dirty)
+  // Ask how to handle unsaved tabs before running a navigation or close action.
   const guard=useCallback((proceed:()=>void,keys?:string[])=>{const list=keys??tabs.filter(tab=>tab.meta.dirty).map(tab=>tab.key);if(list.length)setPending({keys:list,proceed});else proceed()},[tabs])
   useEffect(()=>{onGuardChange(dirty.length?proceed=>guard(proceed):null);return()=>onGuardChange(null)},[dirty.length,guard,onGuardChange])
-  useEffect(()=>{const unload=(event:BeforeUnloadEvent)=>{if(dirty.length){event.preventDefault();event.returnValue=''}};window.addEventListener('beforeunload',unload);return()=>window.removeEventListener('beforeunload',unload)},[dirty.length])
+  useEffect(()=>{/* Let the browser warn before closing the page with unsaved tabs. */ const unload=(event:BeforeUnloadEvent)=>{if(dirty.length){event.preventDefault();event.returnValue=''}};window.addEventListener('beforeunload',unload);return()=>window.removeEventListener('beforeunload',unload)},[dirty.length])
+  // Create stable callbacks that connect a request editor to its workspace tab.
   const bindings=(key:string)=>{if(!callbacks.current.has(key))callbacks.current.set(key,{
+    // Update the tab only when the editor's metadata changes.
     status:value=>setTabs(current=>{const old=current.find(tab=>tab.key===key);if(!old||JSON.stringify(old.meta)===JSON.stringify(value))return current;return current.map(tab=>tab.key===key?{...tab,meta:value}:tab)}),
+    // Store the editor controls used to save or cancel work in this tab.
     controller:value=>{controllers.current.set(key,value)}
   });return callbacks.current.get(key)!}
+  // Reuse the tab for an open request or create a new tab for it.
   const open=(request:ApiRequestRecord|null,draft?:ApiRequest)=>{
     const existing=request?tabs.find(tab=>tab.meta.sourceId===request.id):null
     if(existing){setActive(existing.key);onNavigate('workbench');return}
@@ -48,11 +56,14 @@ export default function ApiWorkspace({section,onNavigate,onCaseCreated,onGuardCh
     const tab:Tab=request?{key:crypto.randomUUID(),request,meta:{name:request.name,sourceId:request.id,dirty:false,busy:false}}:draft?{key:crypto.randomUUID(),draft,initialDirty:true,meta:{name:draft.name,sourceId:null,dirty:true,busy:false}}:blank()
     setTabs(current=>[...current,tab]);setActive(tab.key);onNavigate('workbench')
   }
+  // Resolve unsaved edits before disposing of a tab and its active request.
   const close=(tab:Tab)=>guard(()=>{
     controllers.current.get(tab.key)?.abort();controllers.current.delete(tab.key);callbacks.current.delete(tab.key)
     setTabs(current=>{const remaining=current.filter(item=>item.key!==tab.key);return remaining.length?remaining:[blank()]});if(activeKey===tab.key)setActive('')
   },tab.meta.dirty?[tab.key]:[])
+  // Open the runner with parameters from an earlier run.
   const latest=(run:ApiRun)=>{setPreset(presetFromRun(run));onNavigate('runner')}
+  // Resolve the pending action by saving selected tabs or discarding their edits.
   const choose=async(save:boolean)=>{if(!pending)return;setSaving(true);setError('');try{
     if(save)for(const key of pending.keys){const controller=controllers.current.get(key);if(!await (pending.saveAsCopy?controller?.saveCopy():controller?.save())){setError('保存未完成，请取消对话框并检查请求名称、URL 或版本提示。');return}}
     await pending.proceed();setPending(null)

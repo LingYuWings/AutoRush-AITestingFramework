@@ -8,9 +8,11 @@ import type {ApiRun,Dataset,DatasetPreview,RunCommand} from './runner-client'
 import RunDetail from './RunDetail'
 
 export type RunnerPreset=RunScope&Partial<{requestIds:string[];environmentId:string|null;iterations:number;delayMs:number;timeoutSeconds:number;stopOnFailure:boolean}>
+// Reconstruct runner inputs from a saved run's source configuration.
 export function presetFromRun(run:ApiRun):RunnerPreset{return {collectionId:run.source.collection_id,folderId:run.source.folder_id??undefined,requestIds:run.source.request_ids,
   environmentId:run.source.environment_id,iterations:run.source.iterations,delayMs:run.source.delay_ms,timeoutSeconds:run.source.timeout_seconds,stopOnFailure:run.source.stop_on_failure}}
 
+// Configure an ordered API batch with optional data and run limits.
 export default function RunnerPage({preset,onLatest,active=true,refreshResources}:{preset:RunnerPreset|null;onLatest:(run:ApiRun)=>void;active?:boolean;refreshResources?:(force?:boolean)=>Promise<ApiResources>}){
   const [collections,setCollections]=useState<CollectionRecord[]>([]),[requests,setRequests]=useState<ApiRequestRecord[]>([]),[folders,setFolders]=useState<FolderRecord[]>([]),[environments,setEnvironments]=useState<CollectionRecord[]>([])
   const [cid,setCid]=useState(''),[fid,setFid]=useState(''),[environment,setEnvironment]=useState(''),[selected,setSelected]=useState<string[]>([])
@@ -26,6 +28,7 @@ export default function RunnerPage({preset,onLatest,active=true,refreshResources
   },[preset])
   const available=useMemo(()=>{
     const result:ApiRequestRecord[]=[]
+    // Traverse collection folders in display order to find runnable requests.
     const walk=(parent:string|null)=>{
       const nodes=[...folders.filter(item=>item.collection_id===cid&&item.parent_id===parent).map(record=>({record,folder:true})),...requests.filter(item=>item.collection_id===cid&&(item.folder_id??null)===parent).map(record=>({record,folder:false}))]
       nodes.sort((a,b)=>(a.record.position??0)-(b.record.position??0)||a.record.created_at.localeCompare(b.record.created_at))
@@ -34,9 +37,13 @@ export default function RunnerPage({preset,onLatest,active=true,refreshResources
   },[cid,fid,requests,folders])
   useEffect(()=>{if(!loaded||loadingResources.current)return;const key=JSON.stringify([cid,fid,preset]);if(selectionScope.current===key)return;selectionScope.current=key;setSelected(preset?.collectionId===cid&&(preset.folderId??'')===fid&&preset.requestIds?preset.requestIds:available.map(item=>item.id))},[available,preset,cid,fid,loaded])
   useEffect(()=>{nonce.current=null},[cid,fid,environment,selected,iterations,delay,timeout,stop,data])
+  // Validate dataset content and set the iteration count from its rows.
   const previewData=async(value:Dataset)=>{setBusy(true);setError('');setPreview(null);try{const result=await runnerApi.preview(value);setPreview(result);setIterations(result.row_count)}catch(cause){setError(String(cause))}finally{setBusy(false)}}
+  // Load a size-limited CSV or JSON dataset for preview.
   const upload=async(file:File|undefined)=>{if(!file)return;if(file.size>1048576){setError('数据文件不能超过 1 MiB');return}try{const value:Dataset={format:file.name.toLowerCase().endsWith('.json')?'json':'csv',content:await file.text()};setData(value);await previewData(value)}catch(cause){setError(String(cause))}}
+  // Swap adjacent requests in the planned execution order.
   const move=(index:number,delta:number)=>setSelected(current=>{const result=[...current];[result[index],result[index+delta]]=[result[index+delta],result[index]];return result})
+  // Submit the run with a stable retry key to avoid duplicate runs.
   const start=async()=>{if(starting.current)return;starting.current=true;setBusy(true);setError('');try{nonce.current??=crypto.randomUUID();const command:RunCommand={collection_id:cid,folder_id:fid||null,environment_id:environment||null,request_ids:selected,iterations,data,delay_ms:delay,timeout_seconds:timeout,stop_on_failure:stop,idempotency_key:nonce.current};const value=await runnerApi.start(command);nonce.current=null;setActiveRun(value);setRunId(value.id);setNotice('运行已在后端启动，切换页面不会停止；需使用取消运行。')}catch(cause){setError(String(cause))}finally{setBusy(false);starting.current=false}}
   const running=runActive(activeRun)
   return <section className="api-page"><header className="api-page-heading"><div><h2>集合 Runner</h2><p className="muted">选择请求顺序与迭代数据，在后台执行并保存结果。</p></div></header>

@@ -1,5 +1,6 @@
 package com.autorush.portal
 
+// Share current connection, observation, and screen status with the activity.
 object PortalState {
     @Volatile var accessibilityConnected: Boolean = false
     @Volatile var serverStatus: String = "未连接"

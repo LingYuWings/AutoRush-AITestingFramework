@@ -4,6 +4,7 @@ from autorush.api_testing.models import ApiRequest, Variable
 from autorush.api_testing.variables import ApiBlocked, substitute
 
 
+# Save a request with its inherited collection variables for repeatable execution.
 def create_snapshot(store, spec, source_id=None, source_version=None, inherited_variables=None, *, connection=None):
     spec = ApiRequest.model_validate(spec)
     collection = store.get('collections', spec.collection_id, connection=connection) if spec.collection_id else None
@@ -13,13 +14,16 @@ def create_snapshot(store, spec, source_id=None, source_version=None, inherited_
         'source_request_id': source_id, 'source_version': source_version}, connection=connection)
 
 
+# Build the step parameters that reference a stored request snapshot.
 def snapshot_parameters(record):
     return {'request_snapshot_id': record['id'], 'request_name': record['request']['name'],
         'request_method': record['request']['method'], 'source_request_id': record.get('source_request_id'),
         'source_version': record.get('source_version')}
 
 
+# Freeze inline API requests in a case into stored snapshots.
 def freeze_case(case, store, *, connection=None):
+    # Freeze an inline API request or validate its existing snapshot reference.
     def freeze(step):
         if step.driver != 'api': return step
         if 'request' in step.parameters:
@@ -33,6 +37,7 @@ def freeze_case(case, store, *, connection=None):
         'postconditions': [freeze(step) for step in case.postconditions]})
 
 
+# Load a step's stored request or validate its inline request.
 def request_snapshot(step, store):
     snapshot_id = step.parameters.get('request_snapshot_id')
     if snapshot_id:
@@ -43,11 +48,13 @@ def request_snapshot(step, store):
     return None, []
 
 
+# Determine whether the step needs a base URL to resolve its request.
 def needs_base_url(step, store):
     spec, _ = request_snapshot(step, store)
     return spec is None or spec.url.startswith('/')
 
 
+# Resolve current API variables in step text and parameters.
 def resolve_ui_step(step, drivers, *, model_context=False):
     variables = getattr(drivers.get('api'), 'runtime_variables', {})
     if not variables and '{{' not in str(step.parameters) + step.intent + (step.expected_result or ''): return step

@@ -6,41 +6,49 @@ import {PairsEditor,VariablesEditor} from './Fields'
 import {X} from '../../components/icons'
 
 const assertionLabels:Record<ApiAssertion['kind'],string>={status_code:'状态码',body_contains:'正文包含',json_field_equals:'JSON 字段相等',json_field_exists:'JSON 字段存在',header_equals:'响应头相等',response_time_less_than:'响应耗时小于（ms）'}
+// Edit an API request specification, including body data and checks.
 export default function RequestEditor({value,onChange,collections=[],folders}:{value:ApiRequest;onChange:(value:ApiRequest)=>void;collections?:CollectionRecord[];folders?:FolderRecord[]}){
   const [tab,setTab]=useState('params'),[error,setError]=useState('')
   const latest=useRef({value,onChange});latest.current={value,onChange}
   const rowKeys=useRef(new WeakMap<BodyField,number>())
   const nextKey=useRef(0)
   const readers=useRef(new Map<number,FileReader>())
+  // Abort all pending file reads before changing the editor context.
   const cancelUploads=()=>{
     const pending=[...readers.current.values()]
     readers.current.clear()
     pending.forEach(reader=>reader.abort())
   }
   useEffect(()=>cancelUploads,[])
+  // Give each body field a stable identity for tracking file reads.
   const rowKey=(item:BodyField)=>{
     let key=rowKeys.current.get(item)
     if(key===undefined){key=nextKey.current++;rowKeys.current.set(item,key)}
     return key
   }
+  // Merge changes into the latest request and clear the folder when the collection changes.
   const update=(patch:Partial<ApiRequest>)=>{
     const {value:current,onChange:commit}=latest.current
     const next={...current,...('collection_id' in patch&&patch.collection_id!==current.collection_id?{folder_id:null,position:0}:{}),...patch}
     latest.current={value:next,onChange:commit}
     commit(next)
   }
+  // Apply body changes and cancel pending uploads if the body mode changes.
   const body=(patch:Partial<ApiRequest['body']>)=>{
     const current=latest.current.value.body
     if(patch.mode&&patch.mode!==current.mode)cancelUploads()
     update({body:{...current,...patch}})
   }
+  // Merge edited fields into the current authentication configuration.
   const auth=(patch:Partial<ApiRequest['auth']>)=>update({auth:{...value.auth,...patch}})
+  // Update one body field while preserving its upload identity.
   const field=(index:number,patch:Partial<BodyField>)=>body({fields:latest.current.value.body.fields.map((item,i)=>{
     if(i!==index)return item
     const next={...item,...patch}
     rowKeys.current.set(next,rowKey(item))
     return next
   })})
+  // Read a size-limited file and apply it only if the matching input is still current.
   function upload(file:File|undefined,index?:number){
     if(!file)return
     if(file.size>1048576){setError('文件不能超过 1 MiB');return}
@@ -93,11 +101,14 @@ export default function RequestEditor({value,onChange,collections=[],folders}:{v
   </div>
 }
 
+// Edit a single assertion while keeping partially typed values visible.
 function AssertionRow({value,onChange,onRemove}:{value:ApiAssertion;onChange:(value:ApiAssertion)=>void;onRemove:()=>void}){
+  // Show string expectations directly and format other values as JSON.
   const stringify=(input:unknown)=>typeof input==='string'?input:JSON.stringify(input)
   const [text,setText]=useState(stringify(value.expected))
   const lastExpected=useRef(value.expected)
   useEffect(()=>{if(!Object.is(lastExpected.current,value.expected)){lastExpected.current=value.expected;setText(stringify(value.expected))}},[value.expected])
+  // Update the typed text and use its parsed JSON value when valid.
   function expected(text:string){setText(text);let result:unknown=text;try{result=JSON.parse(text)}catch{/* Keep partially typed values editable. */}lastExpected.current=result;onChange({...value,expected:result})}
   return <div className="api-assertion"><select aria-label="API 断言类型" value={value.kind} onChange={e=>{const kind=e.target.value as ApiAssertion['kind'];const initial=kind==='status_code'?200:kind==='response_time_less_than'?1000:kind==='json_field_exists'?true:'';setText(stringify(initial));onChange({...value,kind,expected:initial})}}>{Object.entries(assertionLabels).map(([id,label])=><option key={id} value={id}>{label}</option>)}</select>{['json_field_equals','json_field_exists','header_equals'].includes(value.kind)&&<input aria-label="API 断言路径" value={value.path??''} placeholder={value.kind==='header_equals'?'Content-Type':'$.data[0].id'} onChange={e=>onChange({...value,path:e.target.value})}/>}<input aria-label="API 断言预期值" value={text??''} onChange={e=>expected(e.target.value)} placeholder="预期值（JSON 或文本）"/><button type="button" className="icon-button" aria-label="删除 API 断言" onClick={onRemove}><X size={14}/></button></div>
 }

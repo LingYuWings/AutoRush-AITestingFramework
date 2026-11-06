@@ -14,6 +14,7 @@ from autorush.llm.presets import PRESETS_BY_ID
 from autorush.llm.protocols import is_loopback_url
 
 
+# Check provider configuration against preset and endpoint rules.
 def validate_provider_config(payload: ProviderConfigCreate) -> None:
     preset = PRESETS_BY_ID.get(payload.provider_id)
     if preset is None:
@@ -40,6 +41,7 @@ def validate_provider_config(payload: ProviderConfigCreate) -> None:
         raise ValueError("remote provider base_url must use HTTPS")
 
 
+# Check configuration and secret availability locally.
 def preflight_provider(config: ProviderConfigRecord) -> ProviderPreflight:
     validate_provider_config(ProviderConfigCreate(**config.model_dump(exclude={"id", "status", "created_at"})))
     secret_available = config.secret_ref is None or bool(os.getenv(config.secret_ref.removeprefix("env:")))
@@ -50,6 +52,7 @@ def preflight_provider(config: ProviderConfigRecord) -> ProviderPreflight:
     return ProviderPreflight(config_id=config.id, configuration_valid=True, secret_available=secret_available, messages=messages)
 
 
+# Send a test request and confirm the provider returns the expected JSON.
 async def test_provider_connection(
     config: ProviderConfigRecord,
     allowed_hosts: set[str],

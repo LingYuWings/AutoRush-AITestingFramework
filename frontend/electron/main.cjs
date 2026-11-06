@@ -2,6 +2,7 @@ const { app, BrowserWindow, protocol, session, shell } = require('electron')
 const { readFile } = require('node:fs/promises')
 const path = require('node:path')
 
+// Register the scheme before Electron initializes so packaged pages can use fetch and streams.
 protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
 ])
@@ -14,6 +15,7 @@ const mimeTypes = {
 }
 const documentationHosts = new Set(['developers.openai.com', 'help.aliyun.com', 'docs.ollama.com'])
 
+// Serve packaged UI assets through the app origin with a restricted content policy.
 function registerLocalProtocol() {
   protocol.handle('app', async request => {
     const url = new URL(request.url)
@@ -37,6 +39,7 @@ function registerLocalProtocol() {
   })
 }
 
+// Open the desktop console and allow only approved documentation links to leave it.
 function createWindow() {
   const window = new BrowserWindow({
     width: 1380, height: 900, minWidth: 940, minHeight: 650,
@@ -60,6 +63,7 @@ function createWindow() {
   else window.loadURL('http://127.0.0.1:5173')
 }
 
+// Install the packaged protocol and deny renderer permissions before opening a window.
 app.whenReady().then(() => {
   if (app.isPackaged) registerLocalProtocol()
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))

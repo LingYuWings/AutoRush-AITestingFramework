@@ -9,6 +9,7 @@ from uuid import UUID
 from autorush.evidence.screenshot import store_jpeg
 
 
+# Resize and compress an image into the bounded evidence format.
 def encode_jpeg(image) -> tuple[bytes, int, int]:
     image = image.convert('RGB')
     image.thumbnail((1280, 1280))
@@ -22,6 +23,7 @@ def encode_jpeg(image) -> tuple[bytes, int, int]:
     raise ValueError('screenshot exceeds the evidence size limit')
 
 
+# Record already encoded local evidence with its dimensions and metadata.
 def record_local_image(jpeg: bytes, *, report_dir: Path, run_id: UUID, driver: str,
                        target: dict, width: int, height: int, captured_at: int) -> dict:
     if driver not in {'web', 'desktop'} or not isinstance(target, dict) or len(json.dumps(target)) > 4096:

@@ -8,6 +8,7 @@ import type { ScreenMode } from './screen'
 
 const initial: DeviceScreenUpdate = { state: 'stopped', detail: '点击开始查看手机画面', active: false, frame: null, source: null, width: 0, height: 0, fps: 0 }
 
+// Let an operator choose a screen source and manage one explicit viewing session.
 export default function ScreenViewer({ deviceId, online, onClose }: { deviceId: string; online: boolean; onClose: () => void }) {
   const [mode, setMode] = useState<ScreenMode>('smooth')
   const [serial, setSerial] = useState('')
@@ -20,10 +21,12 @@ export default function ScreenViewer({ deviceId, online, onClose }: { deviceId: 
   const session = useRef<ReturnType<typeof openDeviceScreen> | null>(null)
   const mounted = useRef(true)
   const query = useRef(0)
+  // Stop the current stream and clear frame-rate samples.
   const stop = (detail = '已停止查看') => {
     session.current?.stop(detail); session.current = null
     loadedAt.current = []; setPreviewFps(0)
   }
+  // Reload ADB devices while ignoring stale results.
   const refreshAdb = async () => {
     const epoch = ++query.current
     try {
@@ -43,12 +46,14 @@ export default function ScreenViewer({ deviceId, online, onClose }: { deviceId: 
   }, [])
   useEffect(() => { session.current?.portalChanged(online) }, [online])
   useEffect(() => () => { session.current?.stop(); session.current = null }, [deviceId, mode])
+  // Open the selected device's screen session and connect it to the canvas.
   const start = () => {
     stop()
     if (!canvas.current) return
     try {
       session.current = openDeviceScreen({ deviceId, serial, mode, online, canvas: canvas.current,
         url: api.screenUrl(deviceId), adbUrl: api.adbScreenUrl(), token: api.getOperatorToken(),
+        // Apply stream updates only while the viewer is mounted.
         onChange: update => { if (mounted.current) setView(update) },
       })
     } catch (error) { setView({ ...initial, state: 'error', detail: error instanceof Error ? error.message : '画面连接失败' }) }

@@ -7,6 +7,7 @@ from autorush.drivers.desktop.win32 import WindowGuard, list_windows
 from autorush.drivers.base import DriverBlockedError
 
 
+# Require desktop automation, evidence capture and a valid Windows target.
 def check_desktop_target(settings,plan):
     if not settings.desktop_enabled:
         raise HTTPException(409,'desktop requires a trusted agent on the local machine; start with -DesktopAutomation')
@@ -16,12 +17,15 @@ def check_desktop_target(settings,plan):
     except (DriverBlockedError,ValueError) as exc: raise HTTPException(409,str(exc)) from exc
 
 
+# Expose local automation availability and desktop window discovery.
 def create_automation_router(settings,require_operator,trusted_local_request):
     router=APIRouter(prefix='/api/v1/automation')
+    # Restrict automation discovery to the trusted local operator.
     def authorize(request,token):
         require_operator(token)
         if not trusted_local_request(request): raise HTTPException(403,'desktop requires a trusted local browser')
 
+    # Report which drivers the current platform and dependencies can support.
     @router.get('/capabilities')
     async def capabilities(request:Request,x_autorush_operator_token:str|None=Header(default=None)):
         authorize(request,x_autorush_operator_token)
@@ -32,6 +36,7 @@ def create_automation_router(settings,require_operator,trusted_local_request):
                 'reason':None if settings.desktop_enabled and usable else 'Enable -DesktopAutomation on Windows and install backend[desktop]',
                 'primary_monitor_only':True},'dependencies':installed}
 
+    # Enumerate local desktop targets outside the request event loop.
     @router.get('/desktop/windows')
     async def windows(request:Request,x_autorush_operator_token:str|None=Header(default=None)):
         authorize(request,x_autorush_operator_token)

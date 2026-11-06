@@ -14,6 +14,7 @@ from autorush.drivers.base import ActionResult
 from autorush.evidence.redaction import redact_execution_payload
 
 
+# Convert a legacy API step into a validated HTTP request.
 def legacy_request(step, base_url):
     """Shared startup/runtime validation; never surface Pydantic input reprs."""
     path = step.parameters.get('path')
@@ -34,7 +35,9 @@ def legacy_request(step, base_url):
         raise ApiBlocked('invalid API request configuration') from None
 
 
+# Execute API test steps and expose sanitized output to the agent.
 class HttpApiDriver:
+    # Validate the base URL and configure the shared request engine.
     def __init__(self, base_url: str | None, allowed_hosts: set[str], *, transport: httpx.AsyncBaseTransport | None = None,
         store=None, variables=None, secret_values=()):
         if base_url:
@@ -48,18 +51,23 @@ class HttpApiDriver:
         self._engine = ApiEngine(allowed_hosts, variables=variables, secret_values=secret_values, transport=transport)
         self._last_output = {}
 
+    # Expose the current API variables for later steps.
     @property
     def runtime_variables(self): return self._engine.variables
 
+    # Expose a read-only set of secret values for result redaction.
     @property
     def runtime_secrets(self): return frozenset(self._engine.secrets)
 
+    # Reset API variables and cookies at the start of a case.
     def begin_case(self): self._engine.reset()
 
+    # Remove sensitive API data from a step result.
     def sanitize_result(self, result):
         data = redact_execution_payload(result.model_dump(), self._engine.secrets)
         return result.model_validate(data)
 
+    # Resolve and execute a stored or legacy API request.
     async def execute(self, step: StepSpec) -> ActionResult:
         if step.driver != 'api' or step.operation != 'api.request': raise ValueError('HTTP driver only accepts api.request')
         spec, inherited = request_snapshot(step, self._store)
@@ -78,6 +86,7 @@ class HttpApiDriver:
         return ActionResult(output=output, summary=public['detail'], evidence={'api': bounded_evidence(public)},
             checks=execution.checks, status=public['status'] if public['status'] != 'passed' else None)
 
+    # Build a bounded, redacted observation from the last API output.
     async def observe(self):
         from autorush.agent.observers import fingerprint
         output = redact(self._last_output, self._engine.secrets)
@@ -85,5 +94,6 @@ class HttpApiDriver:
         if len(text) > 12000: output = {'status_code': output.get('status_code'), 'body': str(output.get('body'))[:10000], 'truncated': True}
         return {'target': {'base_url': self._base_url}, 'text': text[:12000], 'last_output': output, 'elements': [], 'fingerprint': fingerprint(output)}
 
+    # Satisfy the driver lifecycle contract while exchanges manage their own clients.
     async def close(self):
         pass  # Each HTTP exchange owns and closes its client, including cancellation paths.

@@ -2,6 +2,7 @@ import { useEffect, useRef,useState } from 'react'
 import { api } from '../shared/api'
 import type { ScreenshotEvidence } from '../shared/api'
 
+// Load protected step screenshots on demand and offer an enlarged preview.
 export default function StepScreenshot({ evidence }: { evidence: Record<string, unknown> }) {
   const screenshot = evidence.screenshot as ScreenshotEvidence | undefined
   const path = typeof screenshot?.url === 'string' ? screenshot.url : ''
@@ -29,6 +30,7 @@ export default function StepScreenshot({ evidence }: { evidence: Record<string, 
     if (!path||!shouldLoad) return
     const abort = new AbortController()
     let blobUrl = ''
+    // Cancel the current image request and revoke any URL it created.
     const release = () => {
       abort.abort()
       if (blobUrl) { URL.revokeObjectURL(blobUrl); blobUrl = '' }

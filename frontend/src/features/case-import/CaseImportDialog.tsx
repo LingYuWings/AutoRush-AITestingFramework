@@ -8,10 +8,12 @@ import {applyValidation,changePlatform,editEntry,initialEntries,makeCommit,readD
 import type {ImportCommit,ImportDraft,ImportEntry,ImportOptions,ImportResult,ImportSession,ImportSource} from './types'
 import './case-import.css'
 
+// Format available spreadsheet, topic, and line information for a candidate.
 function sourceLabel(source:ImportSource):string{
   return [source.sheet_title,source.topic_path.join(' / '),source.line_start?`第 ${source.line_start} 行`:''].filter(Boolean).join(' · ')
 }
 
+// Guide users from source upload through review and draft creation.
 export default function CaseImportDialog({onClose,onCreated,onOpenCase}:{onClose:()=>void;onCreated:()=>Promise<void>;onOpenCase:(id:string)=>void}){
   const session=useMemo(importSessionId,[])
   const [file,setFile]=useState<File|null>(null),[options,setOptions]=useState<ImportOptions>({default_platform:null,case_heading_level:2,case_depth:null,sheet_ids:null})
@@ -27,10 +29,12 @@ export default function CaseImportDialog({onClose,onCreated,onOpenCase}:{onClose
     panel.current?.querySelector<HTMLButtonElement>('button')?.focus()
     return()=>{mounted.current=false;controller.current?.abort();previous?.focus()}
   },[])
+  // Replace the current preview and rebuild its editable candidate entries.
   const load=(next:ImportSession)=>{
     setValue(next);setEntries(initialEntries(next.preview?.candidates??[]));setActive(0);setResult(next.result)
     setAllowDuplicate(false);frozen.current=null;setPending(false);rememberedImport(next.import_id)
   }
+  // Run one cancellable import operation at a time.
   const work=async(label:string,task:(signal:AbortSignal)=>Promise<void>)=>{
     if(locked.current)return
     locked.current=true;setBusy(label);setError('')
@@ -38,13 +42,17 @@ export default function CaseImportDialog({onClose,onCreated,onOpenCase}:{onClose
     try{await task(controller.current.signal)}catch(cause){if(mounted.current&&!(cause instanceof Error&&cause.name==='AbortError'))setError(cause instanceof Error?cause.message:'导入操作失败')}
     finally{locked.current=false;if(mounted.current)setBusy('')}
   }
+  // Clear the preview, candidate selection, and prior import outcome.
   const reset=()=>{setValue(null);setEntries([]);setResult(null);setError('');setActive(0)}
+  // Apply import options and invalidate the existing preview.
   const updateOptions=(next:ImportOptions)=>{setOptions(next);reset()}
+  // Apply a structured edit to the selected candidate and mark it for validation.
   const patch=(change:(old:ImportDraft)=>ImportDraft)=>{
     if(!current||!draft)return
     const text=JSON.stringify(change(draft),null,2)
     setEntries(old=>old.map((entry,index)=>index===active?editEntry(entry,text):entry))
   }
+  // Send the selected candidate to the server for validation.
   const check=()=>void work('正在校验',async signal=>{
     if(!current||!value)return
     const payload:ImportCommit={session_id:session,idempotency_key:crypto.randomUUID(),allow_duplicate_file:allowDuplicate,
@@ -52,6 +60,7 @@ export default function CaseImportDialog({onClose,onCreated,onOpenCase}:{onClose
     const checked=await importClient.validate(value.import_id,payload,signal)
     if(mounted.current)setEntries(old=>old.map(entry=>entry.original.candidate_id===current.original.candidate_id?applyValidation(entry,checked.candidates[0]):entry))
   })
+  // Commit the selected candidates using the same payload on a retry.
   const submit=()=>void work('正在创建草稿',async signal=>{
     if(!value)return
     const payload=frozen.current??makeCommit(entries,session,crypto.randomUUID(),allowDuplicate)
@@ -65,6 +74,7 @@ export default function CaseImportDialog({onClose,onCreated,onOpenCase}:{onClose
     setResult(completed);frozen.current=null;setPending(false)
     try{await onCreated()}catch{if(mounted.current)setError('草稿已创建，但列表刷新失败。请刷新页面查看，勿重复导入。')}
   })
+  // Look up a previous import when its submission outcome is uncertain.
   const recover=()=>void work('正在查询结果',async signal=>{
     const id=value?.import_id??rememberedImport()
     if(!id)throw new Error('没有可恢复的导入记录')
@@ -78,11 +88,13 @@ export default function CaseImportDialog({onClose,onCreated,onOpenCase}:{onClose
     }
     else setError('尚未查到提交结果，可使用原内容重试。重试不会重复创建草稿。')
   })
+  // Check for pending work and unvalidated edits before closing the dialog.
   const close=()=>{
     if(busy)return
     if(!result&&entries.some(entry=>entry.dirty)&&!window.confirm('关闭会丢弃本次导入的未校验修改，确认关闭？'))return
     onClose()
   }
+  // Support Escape dismissal and keep keyboard focus inside the dialog.
   const keyDown=(event:React.KeyboardEvent)=>{
     if(event.key==='Escape'){event.preventDefault();close()}
     if(event.key==='Tab'){

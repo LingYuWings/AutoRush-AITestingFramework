@@ -9,6 +9,7 @@ import CaseImportDialog from '../features/case-import/CaseImportDialog'
 type Filter = 'all' | 'draft' | 'approved'
 const platforms = ['all', 'web', 'android', 'desktop', 'api', 'mixed'] as const
 
+// Show an ordered summary of a case's actions or cleanup steps.
 function StepList({ steps, cleanup = false }: { steps: StepSpec[]; cleanup?: boolean }) {
   return <ol className="step-outline">
     {steps.map(step => <li key={`${cleanup}-${step.order}`}>
@@ -26,6 +27,7 @@ function StepList({ steps, cleanup = false }: { steps: StepSpec[]; cleanup?: boo
   </ol>
 }
 
+// Present a saved case's metadata, checks, steps, and available actions.
 function CaseDetail({ item, busy, onEdit, onApprove, onArchive, onRestore, onDebug }: { item: CaseRecord; busy: boolean; onEdit: () => void; onApprove: () => void; onArchive: () => void; onRestore: () => void; onDebug:()=>void }) {
   const assertions = [...item.steps, ...item.postconditions].reduce((sum, step) => sum + step.assertions.length, 0)
   return <article className="case-detail">
@@ -63,6 +65,7 @@ function CaseDetail({ item, busy, onEdit, onApprove, onArchive, onRestore, onDeb
   </article>
 }
 
+// Browse and filter cases while keeping the selected case in the detail pane.
 export default function Cases({ cases, selectedId, editor, onSelect, onApprove, onCreate, onEdit, onArchive, onRestore, onDebug, onDebugHistory, onImported }: {
   cases: CaseRecord[]
   selectedId: string | null
@@ -97,6 +100,7 @@ export default function Cases({ cases, selectedId, editor, onSelect, onApprove, 
     { key: 'draft', label: '草稿', count: scoped.length - approvedCount },
     { key: 'approved', label: '已批准', count: approvedCount },
   ]
+  // Mark one case busy until its requested action finishes.
   const act = async (id: string, fn: (id: string) => Promise<void>) => { setBusy(id); try { await fn(id) } finally { setBusy('') } }
 
   // Keep the selection visible in the list and start the detail pane from the top.
@@ -106,6 +110,7 @@ export default function Cases({ cases, selectedId, editor, onSelect, onApprove, 
   }, [selectedId])
   useEffect(() => { paneRef.current?.scrollTo({ top: 0 }) }, [selectedId, Boolean(editor)])
 
+  // Select the previous or next visible case using the arrow keys.
   const moveSelection = (event: React.KeyboardEvent) => {
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
     event.preventDefault()

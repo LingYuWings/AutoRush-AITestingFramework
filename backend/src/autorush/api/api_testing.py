@@ -12,16 +12,19 @@ from autorush.api_testing.engine import ApiEngine, bounded_evidence
 from autorush.api_testing.variables import ApiBlocked, variable_values
 
 
+# Wire the request workbench, environment and collection endpoints.
 def create_api_testing_router(settings, require_operator, trusted_local_request):
     router = APIRouter(prefix='/api/v1/api-testing', tags=['API testing'])
     store = ApiStore(settings.database_path)
     tree = TreeService(store)
     schemas = {'collections': Collection, 'requests': ApiRequest, 'environments': Environment, 'folders': Folder}
 
+    # Translate collection tree errors for the workbench.
     def tree_action(callback):
         try: return callback()
         except TreeError as exc: raise HTTPException(exc.status, str(exc)) from None
 
+    # Require the local operator before exposing saved requests or secrets.
     def authorize(request, token):
         require_operator(token)
         if not trusted_local_request(request):
@@ -32,6 +35,7 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
     router.api_runner = ApiRunner(store, tree, settings.allowed_api_hosts)
     router.include_router(create_runner_router(router.api_runner, authorize))
 
+    # Validate an API payload and return sanitized validation errors.
     def parse_model(schema, payload):
         try:
             return schema.model_validate(payload)
@@ -40,6 +44,7 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
                         for error in exc.errors(include_input=False)]
             raise HTTPException(422, '; '.join(messages)) from None
 
+    # Normalize and validate the payload for the requested record type.
     def validate(kind, payload):
         if kind not in schemas:
             raise HTTPException(404, 'configuration type not found')
@@ -48,6 +53,7 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
             raise HTTPException(422, 'collection not found')
         return value
 
+    # Merge collection variables, environment values and execution overrides in that order.
     def runtime_variables(spec, environment_id, overrides):
         items = []
         if spec.collection_id:
@@ -61,12 +67,14 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
         values, secrets = variable_values(items)
         return {**values, **overrides}, secrets
 
+    # Persist request history with the data needed for safe replay.
     def save_result(value, request_id=None, replay=None):
         value = {**value, 'request_id': request_id}
         stored = bounded_evidence(value)
         record = store.save_history(stored, replay)
         return {**value, 'id': record['id'], 'created_at': record['created_at']}
 
+    # Cancel workbench execution when its HTTP client disconnects.
     async def until_disconnect(request, operation):
         task = asyncio.create_task(operation)
         try:
@@ -79,6 +87,7 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
 
+    # Parse and summarize Runner input data before starting a run.
     @router.post('/datasets/preview')
     def preview_dataset(request: Request, payload: dict = Body(...), x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
@@ -86,12 +95,14 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
         try: return dataset_preview(payload.get('format'), payload.get('content'))
         except (ValueError, UnicodeError) as exc: raise HTTPException(422, str(exc)) from None
 
+    # Apply a version-checked collection tree edit.
     @router.post('/tree/reorder')
     def reorder_tree(request: Request, payload: dict = Body(...), x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
         command = parse_model(TreeReorder, payload)
         return tree_action(lambda: tree.reorder(command.collection_id, command.parent_id, [item.model_dump() for item in command.items]))
 
+    # Convert an ordered collection into draft case steps.
     @router.post('/collections/{collection_id}/case-draft', status_code=201)
     def collection_case_draft(collection_id: str, request: Request, x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
@@ -111,6 +122,7 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
         return CaseCreate(title=collection['name'], description='API collection snapshot; approve before adding to a test plan',
             platform='api', execution_mode='structured', steps=steps).model_dump(mode='json')
 
+    # Freeze a workbench request for use in a case step.
     @router.post('/snapshots', status_code=201)
     def create_request_snapshot(request: Request, payload: dict = Body(...), x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
@@ -124,6 +136,7 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
         except ValueError: raise HTTPException(422, 'invalid API collection') from None
         return snapshot_parameters(record)
 
+    # Read the public view of a frozen request.
     @router.get('/snapshots/{snapshot_id}')
     def get_request_snapshot(snapshot_id: str, request: Request, x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
@@ -131,10 +144,12 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
         if record is None: raise HTTPException(404, 'request snapshot not found')
         return record
 
+    # Send one workbench request and record the resulting history entry.
     @router.post('/execute')
     async def execute(request: Request, payload: dict = Body(...), x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
         command = parse_model(ExecuteRequest, payload)
+        # Resolve the effective request settings, execute it and persist the result.
         async def perform():
             replay = {'request': command.request.model_dump(), 'variables': {}, 'secret_values': []}
             try:
@@ -148,6 +163,7 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
             return save_result(result, command.request_id, replay)
         return await until_disconnect(request, perform())
 
+    # Execute the requested collection through the workbench.
     @router.post('/collections/{collection_id}/run')
     async def run_collection(collection_id: str, request: Request, payload: dict = Body(default={}),
         x_autorush_operator_token: str | None = Header(default=None)):
@@ -156,6 +172,7 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
         if store.get('collections', collection_id) is None: raise HTTPException(404, 'collection not found')
         requests = tree_action(lambda: tree.ordered_requests(collection_id))
         if not requests or len(requests) > 100: raise HTTPException(422, 'collection requires 1..100 requests')
+        # Resolve collection settings and dispatch its ordered requests.
         async def perform():
             from autorush.api_testing.models import configuration
             try:
@@ -167,6 +184,7 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
                 'rows': [{}], 'seed': values, 'secret_values': list(secrets), 'variables': {}, 'delay_ms': 0,
                 'stop_on_failure': command.stop_on_failure}
             results = []
+            # Save each completed request to history as the collection runs.
             async def completed(public, request_id, replay): results.append(save_result(public, request_id, replay))
             try:
                 async with asyncio.timeout(180):
@@ -180,6 +198,7 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
             return {'status': status, 'results': results}
         return await until_disconnect(request, perform())
 
+    # Translate and persist supported request interchange data.
     @router.post('/import')
     def import_data(request: Request, payload: dict = Body(...), x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
@@ -210,6 +229,7 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
         result = tree_action(lambda: tree.import_collection(validated_collection, validated_specs, folders if kind != 'curl' else []))
         return {**result, 'warnings': warnings}
 
+    # Serialize selected workspace resources in the requested interchange format.
     @router.post('/export')
     def export_data(request: Request, payload: dict = Body(...), x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
@@ -241,6 +261,7 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
         except (ValueError, TypeError, KeyError):
             raise HTTPException(422, 'request cannot be represented by this export format; use Postman collection export for form data and files') from None
 
+    # Describe supported workbench features and the configured host allowlist.
     @router.get('/capabilities')
     def capabilities(request: Request, x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
@@ -249,11 +270,13 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
             'allowed_hosts': sorted(settings.allowed_api_hosts), 'max_response_bytes': 1048576,
             'history_limit': 200, 'javascript_scripts': False}
 
+    # List compact workbench execution history entries.
     @router.get('/history')
     def history(request: Request, x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
         return store.history()
 
+    # Retrieve the full response and assertion results for one history entry.
     @router.get('/history/{history_id}')
     def history_detail(history_id: str, request: Request, x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
@@ -262,6 +285,7 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
             raise HTTPException(404, 'history not found')
         return value
 
+    # Recover the request configuration needed to replay a history entry.
     @router.get('/history/{history_id}/request')
     def history_request(history_id: str, request: Request, x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
@@ -277,6 +301,7 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
             for key, val in replay.get('variables', {}).items()] + value.get('variables', [])
         return {'request': value}
 
+    # List the public records for the requested workspace resource type.
     @router.get('/{kind}')
     def list_records(kind: str, request: Request, x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
@@ -284,6 +309,7 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
             raise HTTPException(404, 'configuration type not found')
         return store.list(kind)
 
+    # Validate and save a new workspace record.
     @router.post('/{kind}', status_code=201)
     def create_record(kind: str, request: Request, payload: dict = Body(...), x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
@@ -291,6 +317,7 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
         if kind in {'folders', 'requests'}: return tree_action(lambda: tree.write(kind, value))
         return store.create(kind, value)
 
+    # Read one workspace record by ID.
     @router.get('/{kind}/{record_id}')
     def get_record(kind: str, record_id: str, request: Request, x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
@@ -299,6 +326,7 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
             raise HTTPException(404, 'configuration not found')
         return value
 
+    # Save an edit only if the expected workspace version still matches.
     @router.put('/{kind}/{record_id}')
     def update_record(kind: str, record_id: str, request: Request, payload: dict = Body(...),
         expected_version: int = Query(ge=1), x_autorush_operator_token: str | None = Header(default=None)):
@@ -312,6 +340,7 @@ def create_api_testing_router(settings, require_operator, trusted_local_request)
         except ValueError as exc:
             raise HTTPException(409, str(exc)) from None
 
+    # Delete a workspace record through its resource-specific rules.
     @router.delete('/{kind}/{record_id}')
     def delete_record(kind: str, record_id: str, request: Request, x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)

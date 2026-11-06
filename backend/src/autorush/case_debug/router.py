@@ -8,40 +8,48 @@ from autorush.evidence.agent_trace import iter_step_screenshots
 from autorush.evidence.screenshot import evidence_path
 
 
+# Expose isolated case debugging, history and evidence.
 def create_debug_router(manager, settings, require_operator, trusted_local_request):
     router = APIRouter(prefix='/api/v1/case-debug-runs')
+    # Require the trusted local operator for debugging.
     def authorize(request, token):
         require_operator(token)
         if not trusted_local_request(request): raise HTTPException(403, 'debug requires a trusted local operator')
 
+    # Validate and schedule a saved or unsaved case snapshot.
     @router.post('', status_code=202)
     async def start(payload: DebugStart, request: Request, x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
         try: return manager.public(await manager.start_debug(payload))
         except (ValueError, PermissionError): raise HTTPException(422, 'invalid debug content, target, environment or model configuration') from None
 
+    # List debug summaries for the requested source or editor session.
     @router.get('')
     async def recent(request: Request, source_case_id: UUID | None = None, session_id: UUID | None = None, active_only: bool = False,
                      x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
         return manager.store.list_recent_summaries(source_case_id=source_case_id,session_id=session_id,active_only=active_only)
 
+    # Resolve a debug execution or return an HTTP 404.
     def find(ident):
         record = manager.get(ident)
         if record is None: raise HTTPException(404, 'debug run not found')
         return record
 
+    # Return the sanitized current state and result for a debug run.
     @router.get('/{ident}')
     async def detail(ident: UUID, request: Request, x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
         return manager.public(find(ident))
 
+    # Ask the shared execution machinery to stop a debug run.
     @router.post('/{ident}/cancel')
     async def cancel(ident: UUID, request: Request, x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
         find(ident)
         return manager.public(await manager.cancel(ident))
 
+    # Verify evidence ownership and integrity before serving a debug JPEG.
     @router.get('/{ident}/evidence/{filename}')
     async def screenshot(ident: UUID, filename: str, request: Request, x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)

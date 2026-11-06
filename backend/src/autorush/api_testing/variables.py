@@ -10,10 +10,12 @@ PLACEHOLDER = re.compile(r'\{\{\s*([A-Za-z_][A-Za-z0-9_.-]*)\s*\}\}')
 SENSITIVE = re.compile(r'authorization|cookie|password|passwd|secret|token|api[-_]?key|credential', re.I)
 
 
+# Signal that invalid API inputs prevent the request from running.
 class ApiBlocked(ValueError):
     pass
 
 
+# Resolve enabled variables and collect their secret values for redaction.
 def variable_values(items):
     values, secrets = {}, set()
     for item in items:
@@ -33,6 +35,7 @@ def variable_values(items):
     return values, secrets
 
 
+# Expand placeholders recursively and preserve the type of whole-value substitutions.
 def substitute(value, variables, depth=0):
     if depth > 15:
         raise ApiBlocked('cyclic or excessively nested variables')
@@ -42,6 +45,7 @@ def substitute(value, variables, depth=0):
         return {key: substitute(item, variables, depth) for key, item in value.items()}
     if not isinstance(value, str):
         return value
+    # Look up the matched variable and resolve any nested references.
     def lookup(match):
         key = match.group(1)
         if key not in variables:
@@ -50,12 +54,14 @@ def substitute(value, variables, depth=0):
     match = PLACEHOLDER.fullmatch(value)
     if match:
         return lookup(match)
+    # Convert a resolved value to text for an embedded placeholder.
     def replacement(match):
         resolved = lookup(match)
         return json.dumps(resolved, ensure_ascii=False) if isinstance(resolved, (dict, list, bool)) or resolved is None else str(resolved)
     return PLACEHOLDER.sub(replacement, value)
 
 
+# Look up a value by its supported dotted or indexed JSON path.
 def json_field(value, path):
     if path in {'$', ''}:
         return value
@@ -72,15 +78,18 @@ def json_field(value, path):
     return value
 
 
+# Collect credential values so their copies can be redacted elsewhere.
 def secret_strings(value):
     """Collect named credentials so echoes outside named fields stay redacted."""
     found = set()
+    # Gather scalar values under a sensitive key.
     def leaves(item):
         if isinstance(item, dict):
             for child in item.values(): leaves(child)
         elif isinstance(item, (list, tuple)):
             for child in item: leaves(child)
         elif item is not None and str(item): found.add(str(item))
+    # Search nested data for keys that can hold credentials.
     def visit(item):
         if isinstance(item, dict):
             for key, child in item.items():
@@ -94,6 +103,7 @@ def secret_strings(value):
     return found
 
 
+# Mask sensitive fields and known secret values throughout the data.
 def redact(value, secrets=()):
     if isinstance(value, dict):
         return {key: '[redacted]' if SENSITIVE.search(str(key)) else redact(item, secrets) for key, item in value.items()}
@@ -126,6 +136,7 @@ def redact(value, secrets=()):
     return value
 
 
+# Redact execution payloads while preserving transport and assertion metadata.
 def redact_execution(value, secrets=()):
     """Mask payloads while retaining transport/control metadata and check booleans."""
     result = redact(value, secrets)

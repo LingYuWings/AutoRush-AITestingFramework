@@ -14,6 +14,7 @@ import {validateDebugCase} from '../case-debug/form'
 import './case-editor.css'
 const EMPTY_PROVIDERS: ProviderConfig[] = []
 
+// Edit a case in natural-language or structured mode and prepare it for save or debug.
 export default function CaseEditor({ onCancel, onSave, onDebug, providers = EMPTY_PROVIDERS, onCompile = api.compileCase, initial, initialPlatform='web' }: {
   onCancel: () => void
   onSave: (payload: Pick<CaseRecord, 'title' | 'description' | 'execution_mode' | 'platform' | 'steps' | 'postconditions'>) => Promise<void>
@@ -24,8 +25,11 @@ export default function CaseEditor({ onCancel, onSave, onDebug, providers = EMPT
   onCompile?: (payload: CaseCompilePayload) => Promise<CaseCompileResult | null>
 }) {
   const [platform,setPlatform]=useState<DriverKind|'mixed'>(initial?platformOf(initial):initialPlatform)
+  // Start a natural-language step, defaulting to Web for a legacy mixed case.
   const freshNatural=()=>({...newNaturalStep(),driver:platform==='mixed'?'web' as const:platform})
+  // Start a structured step with driver defaults and an embedded request for API cases.
   const freshStructured=()=>({...switchDriver(newStep(),platform==='mixed'?'web':platform),...(platform==='api'?{intent:'API 请求',apiParameters:{request:newRequest()}}:{})})
+  // Rebuild a natural-language form row from a saved step.
   const editNatural=(step:CaseRecord['steps'][number]):NaturalStep=>({id:crypto.randomUUID(),intent:step.intent,expected_result:step.expected_result??'',driver:step.driver,always_run:step.always_run,...(step.driver==='api'&&step.operation==='api.request'?{apiParameters:step.parameters}:{})})
   const [title,setTitle]=useState(initial?.title??'')
   const [description,setDescription]=useState(initial?.description??'')
@@ -50,14 +54,18 @@ export default function CaseEditor({ onCancel, onSave, onDebug, providers = EMPT
   const latestCompileInput=useRef(compileInput)
   latestCompileInput.current=compileInput
   const debugSession=useRef(crypto.randomUUID())
+  // Compile the current form into a case payload with the selected platform.
   const buildPayload=():DebugCase=>{
     const payload=mode==='agent'?buildNaturalCase({title,description,steps:naturalSteps,postconditions:naturalCleanup}):{execution_mode:'structured' as const,title:title.trim(),description:description.trim(),steps:steps.map(compileStep),postconditions:cleanup.map(compileStep)}
     return {...payload,platform:platform==='mixed'?null:platform}
   }
   const payloadReader=useRef(buildPayload);payloadReader.current=buildPayload
+  // Validate the current draft before opening the debug panel.
   const debug=()=>{setEditorError(null);try{validateDebugCase(payloadReader.current());onDebug?.(()=>payloadReader.current(),debugSession.current)}catch(cause){setEditorError(cause instanceof Error?cause.message:String(cause))}}
   const debugButton=onDebug&&<button type="button" className="secondary-button" disabled={saving} onClick={debug}>调试当前内容</button>
+  // Replace one edited row by its stable ID.
   const replace = (items: EditableStep[], setter: (items: EditableStep[]) => void, value: EditableStep) => setter(items.map(item => item.id === value.id ? value : item))
+  // Validate and persist the draft, requesting local authorization for embedded API steps.
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     setSaving(true)
@@ -66,6 +74,7 @@ export default function CaseEditor({ onCancel, onSave, onDebug, providers = EMPT
     catch (error) { setEditorError(error instanceof Error ? error.message : '保存失败') }
     finally { setSaving(false) }
   }
+  // Compile natural-language input with the selected model and reject stale results.
   const compile = async () => {
     if (!selectedProviderId) return
     const submitted=latestCompileInput.current
@@ -90,16 +99,21 @@ export default function CaseEditor({ onCancel, onSave, onDebug, providers = EMPT
       setCompileWarnings([error instanceof Error ? error.message : '模型编译失败'])
     } finally { setCompiling(false) }
   }
+  // Move a step while keeping the order of the other rows.
   const move=<T,>(items:T[],from:number,to:number)=>{const copy=[...items];const [item]=copy.splice(from,1);copy.splice(to,0,item);return copy}
+  // Build a natural-language row for a new embedded API request.
   const apiNatural=():NaturalStep=>({...newNaturalStep(),driver:'api',intent:'API 请求',apiParameters:{request:newRequest()}})
+  // Build a structured row for a new embedded API request.
   const apiStructured=():EditableStep=>({...switchDriver(newStep(),'api'),intent:'API 请求',apiParameters:{request:newRequest()}})
+  // Render natural-language and embedded API rows with their list controls.
   const renderNatural=(list:NaturalStep[],setter:(value:NaturalStep[])=>void,cleanup=false)=>list.map((step,index)=>step.apiParameters?<ApiNodeCard key={step.id} index={index} intent={step.intent} parameters={step.apiParameters} cleanup={cleanup} alwaysRun={step.always_run} onIntent={intent=>setter(list.map(s=>s.id===step.id?{...s,intent}:s))} onChange={apiParameters=>setter(list.map(s=>s.id===step.id?{...s,apiParameters}:s))} onRemove={()=>setter(list.filter(s=>s.id!==step.id))} onAlwaysRun={always_run=>setter(list.map(s=>s.id===step.id?{...s,always_run}:s))} onMoveUp={index?()=>setter(move(list,index,index-1)):undefined} onMoveDown={index<list.length-1?()=>setter(move(list,index,index+1)):undefined}/>:<NaturalStepCard key={step.id} step={step} index={index} cleanup={cleanup} lockDriver={platform!=='mixed'} onChange={value=>setter(list.map(s=>s.id===value.id?value:s))} onRemove={()=>setter(list.filter(s=>s.id!==step.id))}/>)
+  // Render operation forms and embedded API rows with their list controls.
   const renderStructured=(list:EditableStep[],setter:(value:EditableStep[])=>void,cleanup=false)=>list.map((step,index)=>step.apiParameters?<ApiNodeCard key={step.id} index={index} intent={step.intent} parameters={step.apiParameters} cleanup={cleanup} alwaysRun={step.alwaysRun} onIntent={intent=>replace(list,setter,{...step,intent})} onChange={apiParameters=>replace(list,setter,{...step,apiParameters})} onRemove={()=>setter(list.filter(s=>s.id!==step.id))} onAlwaysRun={alwaysRun=>replace(list,setter,{...step,alwaysRun})} onMoveUp={index?()=>setter(move(list,index,index-1)):undefined} onMoveDown={index<list.length-1?()=>setter(move(list,index,index+1)):undefined}/>:<StepCard key={step.id} step={step} index={index} cleanup={cleanup} lockDriver={platform!=='mixed'} onChange={value=>replace(list,setter,value)} onRemove={()=>setter(list.filter(s=>s.id!==step.id))}/>)
   return <form className="editor-panel" onSubmit={submit}>
     <div className="editor-top"><div><h2>{initial?'编辑用例':'新建用例'}</h2><p className="muted">用自然语言描述步骤和预期，或选择高级结构化动作。保存草稿并批准后编入计划。</p></div><button type="button" className="icon-button" onClick={onCancel} aria-label="关闭"><X size={20} /></button></div>
     <div className="field-grid"><label className="field"><span>用例标题</span><input value={title} onChange={event => setTitle(event.target.value)} placeholder="例如：管理后台健康检查" maxLength={200} required /></label><label className="field"><span>描述（可选）</span><input value={description} onChange={event => setDescription(event.target.value)} placeholder="本用例验证的业务场景" /></label></div>
     {initial?.status==='approved'&&<p className="quiet-note">已批准 v{initial.version} 保留，保存将生成 v{initial.version+1} 新草稿；已有计划继续使用原版本。</p>}
-    <label className="field"><span>执行端</span><select value={platform} onChange={e=>{const value=e.target.value as DriverKind|'mixed';setPlatform(value);if(value!=='mixed'){if(value==='api')setMode('structured');setNaturalSteps(old=>old.map(step=>step.apiParameters?step:{...step,driver:value}));setNaturalCleanup(old=>old.map(step=>step.apiParameters?step:{...step,driver:value}));const convert=(step:EditableStep)=>step.apiParameters?step:value==='api'?{...switchDriver(step,value),intent:step.intent||'API 请求',apiParameters:{request:newRequest()}}:switchDriver(step,value);setSteps(old=>old.map(convert));setCleanup(old=>old.map(convert))}}}><option value="web">Web · Playwright</option><option value="android">Android · Portal</option><option value="desktop">Desktop · PyAutoGUI</option><option value="api">API · HTTP</option>{initial&&platformOf(initial)==='mixed'&&<option value="mixed">历史混合（兼容原用例）</option>}</select></label>
+    <label className="field"><span>执行端</span><select value={platform} onChange={e=>{const value=e.target.value as DriverKind|'mixed';setPlatform(value);if(value!=='mixed'){if(value==='api')setMode('structured');setNaturalSteps(old=>old.map(step=>step.apiParameters?step:{...step,driver:value}));setNaturalCleanup(old=>old.map(step=>step.apiParameters?step:{...step,driver:value}));/* Apply a platform change while keeping existing embedded API requests. */ const convert=(step:EditableStep)=>step.apiParameters?step:value==='api'?{...switchDriver(step,value),intent:step.intent||'API 请求',apiParameters:{request:newRequest()}}:switchDriver(step,value);setSteps(old=>old.map(convert));setCleanup(old=>old.map(convert))}}}><option value="web">Web · Playwright</option><option value="android">Android · Portal</option><option value="desktop">Desktop · PyAutoGUI</option><option value="api">API · HTTP</option>{initial&&platformOf(initial)==='mixed'&&<option value="mixed">历史混合（兼容原用例）</option>}</select></label>
     <label className="field"><span>执行方式</span><select value={mode} onChange={e=>{setMode(e.target.value as 'agent'|'structured');setCompileWarnings([]);setEditorError(null)}}><option value="agent">自然语言 · 模型观察并执行</option><option value="structured">高级 · 结构化动作</option></select></label>
     {mode==='agent'?<>
       <p className="quiet-note">填写操作意图和明确的预期结果。模型会读取实时页面或截图，每次选择一个动作，并核验预期；执行模型在测试计划或调试面板中选择。</p>

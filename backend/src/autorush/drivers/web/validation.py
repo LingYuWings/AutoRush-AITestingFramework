@@ -3,6 +3,7 @@ from urllib.parse import urlsplit
 from autorush.domain.models import StepSpec
 
 
+# Check that a web step uses a supported operation and valid parameters.
 def validate_web_step(step: StepSpec) -> None:
     op, p = step.operation, step.parameters
     fields = {'web.open': {'path'}, 'web.click': {'target'}, 'web.fill': {'target', 'value'},

@@ -26,6 +26,7 @@ import java.text.DateFormat
 import java.util.Date
 import java.util.concurrent.Executors
 
+// Show the phone's pairing, access settings, and connection status.
 class MainActivity : Activity() {
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var status: TextView
@@ -39,12 +40,14 @@ class MainActivity : Activity() {
     private val pairingExecutor = Executors.newSingleThreadExecutor()
     private val pairingAttempt = PairingAttempt()
     private val refresh = object : Runnable {
+        // Refresh status once per second while the activity is visible.
         override fun run() {
             updateStatus()
             handler.postDelayed(this, 1000)
         }
     }
 
+    // Build the pairing and permission controls from the phone's saved settings.
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val background = Color.rgb(246, 249, 252)
@@ -156,6 +159,7 @@ class MainActivity : Activity() {
         }
     }
 
+    // Create a status card with the shared background and padding.
     private fun card(color: Int, size: Float) = TextView(this).apply {
         textSize = size
         setTextColor(color)
@@ -163,6 +167,7 @@ class MainActivity : Activity() {
         setBackgroundColor(Color.WHITE)
     }
 
+    // Create a heading for a group of settings.
     private fun sectionLabel(label: String) = TextView(this).apply {
         text = label
         textSize = 13f
@@ -170,6 +175,7 @@ class MainActivity : Activity() {
         setPadding(0, dp(23), 0, dp(8))
     }
 
+    // Style a full-width action button and attach its click handler.
     private fun button(label: String, color: Int, action: () -> Unit) = Button(this).apply {
         text = label
         isAllCaps = false
@@ -180,6 +186,7 @@ class MainActivity : Activity() {
         layoutParams = LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(10) }
     }
 
+    // Save the edited allowlist unless a pairing claim is in progress.
     private fun savePackages(): Boolean {
         if (pairingAttempt.active) {
             Toast.makeText(this, "正在配对，可通过断开连接取消", Toast.LENGTH_SHORT).show()
@@ -195,6 +202,7 @@ class MainActivity : Activity() {
         }
     }
 
+    // Open the scanner in QR-only mode when no claim is in progress.
     private fun scanPairing() {
         if (pairingAttempt.active) return
         IntentIntegrator(this)
@@ -206,6 +214,7 @@ class MainActivity : Activity() {
             .initiateScan()
     }
 
+    // Pass a completed QR scan to the pairing confirmation dialog.
     @Suppress("OVERRIDE_DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
@@ -214,6 +223,7 @@ class MainActivity : Activity() {
         confirmPairing(contents)
     }
 
+    // Validate the QR and show the server and app scope before the user confirms.
     private fun confirmPairing(contents: String) {
         if (pairingAttempt.active) return
         val pairing = try { PairingQr.parse(contents) } catch (error: IllegalArgumentException) {
@@ -228,6 +238,7 @@ class MainActivity : Activity() {
             .show()
     }
 
+    // Claim the code off the UI thread, then save and connect if the attempt is still current.
     private fun claimPairing(pairing: PairingQr) {
         val attempt = pairingAttempt.begin() ?: return
         setPairingBusy(true)
@@ -263,12 +274,14 @@ class MainActivity : Activity() {
         }
     }
 
+    // Disable the scanner and editable settings while a claim is in progress.
     private fun setPairingBusy(busy: Boolean) {
         scanButton.isEnabled = !busy
         scanButton.text = if (busy) "正在配对…" else "扫描二维码快速配对"
         listOf(server, packages, token, screenshot).forEach { it.isEnabled = !busy }
     }
 
+    // Save manual pairing or reuse credentials for the saved server, then start the connection.
     private fun connect() {
         if (!savePackages()) return
         try {
@@ -290,6 +303,7 @@ class MainActivity : Activity() {
         }
     }
 
+    // Cancel any pending claim and tell the connection service to stop.
     private fun disconnect() {
         pairingAttempt.cancel()
         pairingClient.cancel()
@@ -297,24 +311,29 @@ class MainActivity : Activity() {
         startService(Intent(this, PortalConnectionService::class.java).setAction(PortalConnectionService.ACTION_STOP))
     }
 
+    // Show service, screen-sharing, and recent accessibility observation status.
     private fun updateStatus() {
         status.text = "无障碍：${if (PortalState.accessibilityConnected) "已启用" else "未启用"}\n服务器：${PortalState.serverStatus}\n画面：${PortalState.screenStatus}${if (PortalState.projectionAuthorized) "（系统录屏已授权）" else ""}"
         observation.text = if (PortalState.lastObservedAt == 0L) "尚无允许应用的界面事件"
         else "应用：${PortalState.lastPackage}\n节点数：${PortalState.visibleNodeCount}\n时间：${DateFormat.getDateTimeInstance().format(Date(PortalState.lastObservedAt))}"
     }
 
+    // Convert density-independent layout sizes to pixels.
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
+    // Resume periodic status updates when the activity becomes visible.
     override fun onResume() {
         super.onResume()
         handler.post(refresh)
     }
 
+    // Pause periodic status updates while the activity is in the background.
     override fun onPause() {
         handler.removeCallbacks(refresh)
         super.onPause()
     }
 
+    // Cancel pairing work and clear pending callbacks as the activity closes.
     override fun onDestroy() {
         pairingAttempt.cancel()
         pairingClient.close()

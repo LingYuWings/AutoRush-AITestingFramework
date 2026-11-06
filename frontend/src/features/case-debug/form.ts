@@ -1,7 +1,9 @@
 import type {DebugCase,DebugTargets} from './client'
 import type {DesktopTarget} from '../../shared/api'
 export type DebugForm={apiBase:string;apiEnvironmentId:string;webBase:string;deviceId:string;androidPackage:string;webHeadless:boolean;viewportWidth:string;viewportHeight:string;desktopTarget:DesktopTarget|null;desktopDelay:string;providerId:string;rounds:number;caseRounds:number;modelTimeout:number;caseTimeout:number}
+// Supply viewport, timing, and model limits for a fresh debug form.
 export const initialDebugForm=():DebugForm=>({apiBase:'',apiEnvironmentId:'',webBase:'',deviceId:'',androidPackage:'',webHeadless:false,viewportWidth:'1280',viewportHeight:'800',desktopTarget:null,desktopDelay:'3',providerId:'',rounds:8,caseRounds:40,modelTimeout:90,caseTimeout:180})
+// Normalize a case snapshot and require intent and expectations where needed.
 export function validateDebugCase(value:DebugCase):DebugCase {
   const snapshot=structuredClone(value)
   snapshot.title=snapshot.title.trim()
@@ -17,6 +19,7 @@ export function validateDebugCase(value:DebugCase):DebugCase {
   }
   return snapshot
 }
+// Build validated target settings only for drivers present in the case.
 export function debugTargets(form:DebugForm,value:DebugCase):DebugTargets {
   const drivers=new Set([...value.steps,...value.postconditions].map(s=>s.driver))
   const result:DebugTargets={}

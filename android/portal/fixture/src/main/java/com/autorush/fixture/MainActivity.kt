@@ -12,6 +12,7 @@ import android.widget.TextView
 
 /** A local-only, disposable fixture: no network, storage or account permissions. */
 class MainActivity : Activity() {
+    // Build controls for testing text entry, password masking, scrolling, and navigation.
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val root = LinearLayout(this).apply {
@@ -58,10 +59,13 @@ class MainActivity : Activity() {
         setContentView(root)
     }
 
+    // Convert density-independent layout sizes to pixels.
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 }
 
+// Provide a second screen to exercise navigation in the fixture.
 class DetailsActivity : Activity() {
+    // Show the details title so a test can verify the navigation result.
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(TextView(this).apply { id = R.id.details_title; text = "Details"; textSize = 26f; setPadding(40, 100, 40, 40) })

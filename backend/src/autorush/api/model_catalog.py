@@ -9,17 +9,21 @@ from autorush.llm.models import ModelCatalogRequest,ProviderConfigCreate,Provide
 from autorush.llm.service import validate_provider_config
 
 
+# Expose model discovery, catalog lookup and vision verification.
 def create_model_catalog_router(settings,store,require_operator,trusted_local_request):
     router=APIRouter(prefix='/api/v1/providers')
+    # Restrict model discovery and probes to the trusted local operator.
     def authorize(request,token):
         require_operator(token)
         if not trusted_local_request(request): raise HTTPException(403,'model discovery requires a trusted local browser')
 
+    # Check supported local model servers for available endpoints.
     @router.get('/local-models')
     async def discover(request:Request,x_autorush_operator_token:str|None=Header(default=None)):
         authorize(request,x_autorush_operator_token)
         return await discover_local_models()
 
+    # Fetch models using the submitted endpoint configuration.
     @router.post('/model-catalog')
     async def catalog(payload:ModelCatalogRequest,request:Request,x_autorush_operator_token:str|None=Header(default=None)):
         authorize(request,x_autorush_operator_token)
@@ -29,6 +33,7 @@ def create_model_catalog_router(settings,store,require_operator,trusted_local_re
             return {'models':await fetch_model_catalog(ProviderConfigRecord(**config.model_dump()),set(settings.allowed_llm_hosts))}
         except (ValueError,ModelClientError) as exc: raise HTTPException(422,str(exc)) from exc
 
+    # Verify a saved configuration can consume image input.
     @router.post('/configs/{config_id}/vision-test',response_model=ProviderVisionTest)
     async def vision(config_id:UUID,request:Request,x_autorush_operator_token:str|None=Header(default=None)):
         authorize(request,x_autorush_operator_token)

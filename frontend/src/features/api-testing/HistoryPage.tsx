@@ -6,11 +6,13 @@ import type {ApiExecution,ApiRequest} from './types'
 import ResponsePanel from './ResponsePanel'
 import RunDetail from './RunDetail'
 
+// Browse prior requests and collection runs with search and status filters.
 export default function HistoryPage({onRestore,onLatest,active=true}:{onRestore:(value:ApiRequest)=>void;onLatest:(run:ApiRun)=>void;active?:boolean}){
   const [mode,setMode]=useState('runs'),[search,setSearch]=useState(''),[status,setStatus]=useState(''),[offset,setOffset]=useState(0)
   const [runs,setRuns]=useState<Page<ApiRun>|null>(null),[history,setHistory]=useState<ApiExecution[]>([]),[selected,setSelected]=useState<string|null>(null)
   const [response,setResponse]=useState<ApiExecution|null>(null),[error,setError]=useState('')
   useEffect(()=>{if(!active)return;let live=true;const timer=setTimeout(()=>{void Promise.all([runnerApi.list(search,status,offset),apiTesting.history()]).then(([r,h])=>{if(live){setRuns(r);setHistory(h)}}).catch(cause=>{if(live)setError(String(cause))})},200);return()=>{live=false;clearTimeout(timer)}},[search,status,offset,mode,active])
+  // Load full response details for the chosen history item.
   const openResponse=async(id:string)=>{setError('');try{setResponse(await apiTesting.historyDetail(id))}catch(cause){setError(String(cause))}}
   return <section className="api-page"><header className="api-page-heading"><h2>执行历史</h2><p className="muted">仅加载摘要；展开记录后读取脱敏证据。</p></header>{error&&<p role="alert" className="api-error">{error}</p>}
     <div className="api-tabs" role="tablist" aria-label="执行历史分类">{[['runs','集合运行'],['requests','单请求']].map(([key,label])=><button type="button" key={key} role="tab" aria-selected={mode===key} onClick={()=>{setMode(key);setSelected(null);setResponse(null)}}>{label}</button>)}</div>

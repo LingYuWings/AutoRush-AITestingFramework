@@ -30,14 +30,17 @@ class PortalConnectionService : Service() {
     private val busy = AtomicBoolean(false)
     private val reconnect = Runnable { connect() }
 
+    // Expose no binder because callers control the service through start intents.
     override fun onBind(intent: Intent?): IBinder? = null
 
+    // Register the notification channel used by the foreground connection.
     override fun onCreate() {
         super.onCreate()
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(CHANNEL_ID, "AutoRush 设备连接", NotificationManager.IMPORTANCE_LOW))
     }
 
+    // Handle explicit connect and stop intents without requesting an automatic service restart.
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
             shutdown()
@@ -55,6 +58,7 @@ class PortalConnectionService : Service() {
         return START_NOT_STICKY
     }
 
+    // Open an authenticated WebSocket after checking the saved pairing and app scope.
     private fun connect() {
         if (stopped) return
         val url = try { PortalConfig.validateServerUrl(PortalConfig.serverUrl(this)) } catch (_: Exception) { "" }
@@ -67,6 +71,7 @@ class PortalConnectionService : Service() {
         updateNotification("连接中")
         val request = Request.Builder().url(url).header("Authorization", "Bearer $token").build()
         val listener = object : WebSocketListener() {
+            // Send the device identity and protocol version when the current socket opens.
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 main.post {
                     if (stopped || socket !== webSocket) return@post
@@ -78,6 +83,7 @@ class PortalConnectionService : Service() {
                 }
             }
 
+            // Process the handshake or an authenticated command on the main thread.
             override fun onMessage(webSocket: WebSocket, text: String) {
                 if (text.length > 16_384) {
                     webSocket.close(1009, "message too large")
@@ -98,14 +104,17 @@ class PortalConnectionService : Service() {
                 }
             }
 
+            // Acknowledge the server's WebSocket close request.
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
                 webSocket.close(code, null)
             }
 
+            // Treat policy and token-rejection close codes as terminal for the current socket.
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 main.post { if (socket === webSocket) disconnected(code in listOf(1008, 4001)) }
             }
 
+            // Handle transport failures and treat HTTP authorization failures as terminal.
             override fun onFailure(webSocket: WebSocket, error: Throwable, response: Response?) {
                 main.post {
                     if (socket === webSocket) disconnected(response?.code in listOf(401, 403))
@@ -116,6 +125,7 @@ class PortalConnectionService : Service() {
         socket = configured.newWebSocket(request, listener)
     }
 
+    // Route viewing controls separately and serialize accessibility commands with a timeout.
     private fun dispatch(webSocket: WebSocket, message: JSONObject) {
         val id = message.optString("id")
         if (id.length !in 1..100 || !id.all { it.isLetterOrDigit() || it in "-_" }) return
@@ -152,6 +162,7 @@ class PortalConnectionService : Service() {
         service.execute(method, params, finish)
     }
 
+    // Send the command result only over the socket that received the request.
     private fun reply(webSocket: WebSocket, id: String, result: Result<JSONObject>) {
         if (socket !== webSocket || stopped) return
         val body = JSONObject().put("type", "response").put("id", id)
@@ -162,6 +173,7 @@ class PortalConnectionService : Service() {
         webSocket.send(body.toString())
     }
 
+    // End viewing and retry with bounded backoff unless the server rejected the pairing.
     private fun disconnected(terminal: Boolean) {
         socket?.let(ScreenStreamer::detach)
         socket = null
@@ -183,6 +195,7 @@ class PortalConnectionService : Service() {
         main.postDelayed(reconnect, delay)
     }
 
+    // Build the ongoing connection notification with a disconnect action.
     private fun notification(content: String): Notification {
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
@@ -199,10 +212,12 @@ class PortalConnectionService : Service() {
             .build()
     }
 
+    // Replace the foreground notification with the latest connection status.
     private fun updateNotification(content: String) {
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(content))
     }
 
+    // Stop reconnecting, close the socket, and remove the foreground service.
     private fun shutdown(finalStatus: String = "未连接") {
         stopped = true
         accepted = false
@@ -215,6 +230,7 @@ class PortalConnectionService : Service() {
         stopSelf()
     }
 
+    // Cancel pending callbacks and release the WebSocket client's resources.
     override fun onDestroy() {
         stopped = true
         main.removeCallbacksAndMessages(null)
@@ -224,6 +240,7 @@ class PortalConnectionService : Service() {
         super.onDestroy()
     }
 
+    // Close the connection when Android's foreground service time limit is reached.
     override fun onTimeout(startId: Int, fgsType: Int) {
         shutdown("已达到系统后台运行时限")
     }

@@ -14,17 +14,21 @@ from .service import ImportCommit, ImportService, owner_key
 from .store import ImportStoreError
 
 
+# Expose template, preview, validation and commit endpoints.
 def create_import_router(settings, require_operator, trusted_local_request):
     router = APIRouter(prefix='/api/v1/case-imports')
     service = ImportService(settings.database_path)
 
+    # Require a trusted local operator for every import operation.
     def authorize(request, token):
         require_operator(token)
         if not trusted_local_request(request):
             raise HTTPException(403, '导入需要本机控制台授权。')
 
+    # Wrap a request so streaming input is counted against a size limit.
     def limited(request, maximum):
         total = 0
+        # Reject a request body as soon as it crosses the upload limit.
         async def receive():
             nonlocal total
             message = await request.receive()
@@ -34,6 +38,7 @@ def create_import_router(settings, require_operator, trusted_local_request):
             return message
         return Request(request.scope, receive=receive)
 
+    # Decode bounded JSON for validation and commit requests.
     async def body(request):
         try:
             value = await limited(request, 20 * 1024 * 1024).body()
@@ -41,12 +46,14 @@ def create_import_router(settings, require_operator, trusted_local_request):
         except (ValueError, UnicodeError, RecursionError, ValidationError):
             raise HTTPException(422, '导入提交参数无效，请检查选择项和会话。') from None
 
+    # Run blocking import work off the event loop and map import errors.
     async def execute(operation, *args):
         try:
             return await run_in_threadpool(operation, *args)
         except ImportStoreError as error:
             raise HTTPException(error.status, str(error)) from None
 
+    # Return the packaged Markdown template for download.
     @router.get('/template')
     def template(request: Request, x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
@@ -55,6 +62,7 @@ def create_import_router(settings, require_operator, trusted_local_request):
         content = files('autorush.case_imports').joinpath('template.markdown').read_bytes()
         return Response(content, media_type='text/markdown', headers={'Content-Disposition':'attachment; filename="autorush-cases.md"'})
 
+    # Read a bounded upload and create a browser-scoped import preview.
     @router.post('/preview')
     async def preview(request: Request, x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
@@ -75,17 +83,20 @@ def create_import_router(settings, require_operator, trusted_local_request):
         except (ValueError, UnicodeError, ValidationError, RecursionError):
             raise HTTPException(422, '文件、导入选项或会话无效。') from None
 
+    # Recover a browser-scoped preview or a completed import receipt.
     @router.get('/{ident}')
     async def get(ident: UUID, session_id: UUID, request: Request, x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
         return await execute(service.get, str(ident), owner_key(session_id))
 
+    # Revalidate the edited candidates without creating cases.
     @router.post('/{ident}/validate')
     async def validate(ident: UUID, request: Request, x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
         payload = await body(request)
         return await execute(service.validate, str(ident), owner_key(payload.session_id), payload)
 
+    # Create the selected drafts atomically or return an existing receipt.
     @router.post('/{ident}/commit')
     async def commit(ident: UUID, request: Request, x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)

@@ -6,22 +6,28 @@ import type {ApiRequestRecord,CollectionRecord,Folder,FolderRecord} from './type
 
 export type RunScope={collectionId:string;folderId?:string}
 type Entry={kind:'folders';record:FolderRecord}|{kind:'requests';record:ApiRequestRecord}
+// Browse and manage saved requests and nested folders by collection.
 export default function CollectionTree({collections,folders,requests,collectionId,filter,selectedId,onOpen,onRefresh,onRun}:{
   collections:CollectionRecord[];folders:FolderRecord[];requests:ApiRequestRecord[];collectionId:string;filter:string;selectedId?:string;
   onOpen:(record:ApiRequestRecord)=>void;onRefresh:()=>Promise<void>;onRun:(scope:RunScope)=>void
 }){
   const [editing,setEditing]=useState<{record:FolderRecord|null;collectionId:string;parentId:string|null}|null>(null)
   const [error,setError]=useState(''),[busy,setBusy]=useState(false)
+  // Refresh the collection tree after a mutation and display failures.
   const act=async(action:()=>Promise<unknown>)=>{setBusy(true);setError('');try{await action();await onRefresh()}catch(cause){setError(cause instanceof Error?cause.message:String(cause))}finally{setBusy(false)}}
+  // Combine child folders and requests in their shared sort order.
   const entries=(cid:string|null,parent:string|null):Entry[]=>[
     ...folders.filter(item=>item.collection_id===cid&&item.parent_id===parent).map(record=>({kind:'folders' as const,record})),
     ...requests.filter(item=>item.collection_id===cid&&(item.folder_id??null)===parent).map(record=>({kind:'requests' as const,record}))
   ].sort((a,b)=>(a.record.position??0)-(b.record.position??0)||a.record.created_at.localeCompare(b.record.created_at))
+  // Match the search text against a folder name or request fields.
   const matches=(entry:Entry):boolean=>[entry.record.name,entry.kind==='requests'?entry.record.url:'',entry.kind==='requests'?entry.record.method:''].join(' ').toLowerCase().includes(filter.toLowerCase())||entry.kind==='folders'&&entries(entry.record.collection_id,entry.record.id).some(matches)
+  // Swap adjacent entries and persist their updated positions.
   const move=(items:Entry[],index:number,delta:number,cid:string,parent:string|null)=>void act(async()=>{
     const sorted=[...items];[sorted[index],sorted[index+delta]]=[sorted[index+delta],sorted[index]]
     await apiTesting.reorder({collection_id:cid,parent_id:parent,items:sorted.map(item=>({kind:item.kind,id:item.record.id,version:item.record.version}))})
   })
+  // Render a folder level recursively with its matching requests and actions.
   function branch(cid:string|null,parent:string|null){
     const items=entries(cid,parent)
     return <ul className="api-tree-list">{items.filter(matches).map(entry=>{
@@ -42,6 +48,7 @@ export default function CollectionTree({collections,folders,requests,collectionI
   </section>
 }
 
+// Edit a folder's details and save it under the selected collection.
 function FolderEditor({initial,collectionId,parentId,folders,busy,onSave,onCancel,onDelete}:{initial:FolderRecord|null;collectionId:string;parentId:string|null;folders:FolderRecord[];busy:boolean;onSave:(value:Folder)=>Promise<void>;onCancel:()=>void;onDelete?:()=>Promise<void>}){
   const [draft,setDraft]=useState<Folder>(initial?configuration(initial):{name:'',collection_id:collectionId,parent_id:parentId,description:'',position:0})
   return <section className="api-folder-editor" aria-label="文件夹编辑"><h3>{initial?'编辑':'新建'}文件夹</h3><label className="field"><span>文件夹名称</span><input value={draft.name} onChange={event=>setDraft({...draft,name:event.target.value})}/></label><label className="field"><span>父文件夹</span><select value={draft.parent_id??''} onChange={event=>setDraft({...draft,parent_id:event.target.value||null})}><option value="">集合根目录</option>{folders.filter(item=>item.collection_id===collectionId&&item.id!==initial?.id).map(item=><option key={item.id} value={item.id}>{folderPath(item,folders)} · {item.id.slice(0,6)}</option>)}</select></label><label className="field"><span>文件夹描述</span><textarea value={draft.description} onChange={event=>setDraft({...draft,description:event.target.value})}/></label><div className="api-toolbar"><button type="button" className="primary-button" disabled={busy||!draft.name.trim()} onClick={()=>void onSave(draft)}>保存文件夹</button><button type="button" className="secondary-button" disabled={busy} onClick={onCancel}>关闭</button>{onDelete&&<button type="button" className="text-button danger" disabled={busy} onClick={()=>{if(window.confirm('删除此空文件夹？'))void onDelete()}}>删除文件夹</button>}</div></section>

@@ -4,11 +4,14 @@ import {apiTesting,downloadText} from './client'
 import {configuration} from './types'
 import type {Collection,CollectionRecord} from './types'
 
+// List and manage reusable API environments and their variables.
 export default function EnvironmentPage({onChange,active=true}:{onChange:()=>void;active?:boolean}){
   const [items,setItems]=useState<CollectionRecord[]>([]),[search,setSearch]=useState(''),[error,setError]=useState('')
   const [editing,setEditing]=useState<{record:CollectionRecord|null;value?:Collection;key:string}|null>(null)
+  // Reload the saved API environments.
   const refresh=async()=>setItems(await apiTesting.environments())
   useEffect(()=>{if(!active)return;void refresh().catch(cause=>setError(String(cause)))},[active])
+  // Clear the previous error and surface failures from an environment action.
   const action=async(callback:()=>Promise<void>)=>{setError('');try{await callback()}catch(cause){setError(String(cause))}}
   return <section className="api-page"><header className="api-page-heading"><div><h2>环境管理</h2><p className="muted">集中维护变量。运行时冻结环境，提取值不会覆盖保存内容。</p></div><button type="button" className="primary-button" onClick={()=>setEditing({record:null,key:crypto.randomUUID()})}>新建环境</button></header>
     {error&&<p role="alert" className="api-error">{error}</p>}<input aria-label="搜索环境" placeholder="搜索环境名称" value={search} onChange={event=>setSearch(event.target.value)}/>
