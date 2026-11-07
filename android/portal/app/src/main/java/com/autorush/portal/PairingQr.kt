@@ -14,18 +14,21 @@ class PairingQr private constructor(
     val allowedPackages: List<String>,
     val tlsSha256: String?,
 ) {
+    // Build the HTTP(S) claim endpoint on the scanned WebSocket host and port.
     fun claimUrl(): String {
         val server = URI(serverUrl)
         return URI(if (server.scheme == "wss") "https" else "http", null, server.host,
             server.port, "/api/v1/devices/pairings/claim", null, null).toString()
     }
 
+    // Show the server in diagnostics while keeping the pairing code private.
     override fun toString() = "AutoRush pairing for $serverUrl"
 
     companion object {
         private val fields = setOf("type", "version", "server_url", "pairing_code", "expires_at", "allowed_packages")
         private val packagePattern = Regex("(?:[A-Za-z_][A-Za-z0-9_]*\\.)+[A-Za-z_][A-Za-z0-9_]*")
 
+        // Validate the QR schema, server address, optional pin, code, and allowlist.
         fun parse(raw: String): PairingQr {
             try {
                 require(raw.toByteArray(Charsets.UTF_8).size <= 1800)
@@ -53,6 +56,7 @@ class PairingQr private constructor(
             }
         }
 
+        // Read package names from a JSON array and validate the resulting list.
         internal fun parsePackages(raw: Any): List<String> {
             val array = raw as? JSONArray ?: throw IllegalArgumentException()
             val packages = (0 until array.length()).map { array.get(it) as? String ?: throw IllegalArgumentException() }
@@ -60,6 +64,7 @@ class PairingQr private constructor(
             return packages
         }
 
+        // Require unique Android package names and exclude Portal itself.
         internal fun validatePackages(packages: List<String>) {
             require(packages.size in 1..10 && packages.distinct().size == packages.size)
             require(packages.all { it.length <= 200 && packagePattern.matches(it) && it != "com.autorush.portal" })

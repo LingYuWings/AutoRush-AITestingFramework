@@ -9,9 +9,12 @@ from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
 
 
+# Serve deterministic HTTP scenarios against disposable in-memory state.
 class Handler(BaseHTTPRequestHandler):
+    # Keep individual fixture requests out of the demo service output.
     def log_message(self, *_): pass
 
+    # Send a length-delimited fixture response and respect HEAD semantics.
     def reply(self, status, value=None, content_type='application/json', headers=None):
         body = value if isinstance(value, bytes) else json.dumps(value, ensure_ascii=False).encode()
         if status in {204, 304}: body = b''
@@ -24,6 +27,7 @@ class Handler(BaseHTTPRequestHandler):
             try: self.wfile.write(body)
             except (BrokenPipeError, ConnectionResetError): pass
 
+    # Dispatch the fixture routes after bounding and decoding the request body.
     def handle_request(self):
         path = urlsplit(self.path).path
         query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
@@ -85,6 +89,7 @@ class Handler(BaseHTTPRequestHandler):
     do_GET = do_POST = do_PUT = do_PATCH = do_DELETE = do_OPTIONS = do_HEAD = handle_request
 
 
+# Bind a fresh fixture instance to loopback with isolated tokens and orders.
 def create_server(port=8765):
     server = ThreadingHTTPServer(('127.0.0.1', port), Handler)
     server.daemon_threads = True

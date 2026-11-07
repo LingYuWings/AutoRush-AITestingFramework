@@ -45,6 +45,7 @@ export interface AutomationCapabilities {
 export interface PlanRecord {
   agent_options?: AgentOptions | null
   id: string
+  source_plan_id?: string | null
   version: number
   status: 'draft' | 'ready'
   name: string
@@ -249,10 +250,12 @@ export const API_BASE = window.location.protocol === 'app:' ? 'http://127.0.0.1:
 let operatorToken = ''
 let screenshotAuthorization: Promise<void> | null = null
 
+// Stop screenshot work immediately when the requesting view cancels it.
 function checkScreenshotAbort(signal?: AbortSignal) {
   if (signal?.aborted) throw new DOMException('Screenshot request cancelled', 'AbortError')
 }
 
+// Share the authorization refresh across concurrent screenshot requests.
 async function authorizeScreenshot(): Promise<void> {
   if (!screenshotAuthorization) {
     const previous = operatorToken
@@ -265,16 +268,20 @@ async function authorizeScreenshot(): Promise<void> {
 }
 const operatorListeners = new Set<() => void>()
 
+// Select the WebSocket origin for Electron or a browser page.
 function socketBase() {
   return window.location.protocol === 'app:' ? 'ws://127.0.0.1:8000'
     : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`
 }
 
+// Keep the HTTP status available for callers that handle specific request failures.
 export class ApiRequestError extends Error {
   readonly status:number
+  // Store the response status alongside the error message.
   constructor(message:string,status:number){super(message);this.status=status}
 }
 
+// Send a backend request, attach authorization when requested, and normalize errors.
 export async function request<T>(path: string, init?: RequestInit, authenticated = true): Promise<T> {
   let response: Response
   try {
@@ -305,37 +312,51 @@ export async function request<T>(path: string, init?: RequestInit, authenticated
   return response.json() as Promise<T>
 }
 
+// Post an optional JSON payload through the shared request helper.
 const post = <T>(path: string, payload?: unknown) => request<T>(path, {
   method: 'POST',
   body: payload === undefined ? undefined : JSON.stringify(payload),
 })
 
 export const api = {
+  // Discover supported local model runtimes and their available models.
   discoverLocalModels:()=>request<LocalModelDiscovery>('/api/v1/providers/local-models'),
+  // Fetch available model IDs for the supplied connection settings.
   modelCatalog:(payload:ModelCatalogPayload)=>post<{models:string[]}>('/api/v1/providers/model-catalog',payload),
+  // Check image support on a saved provider configuration.
   testProviderVision:(id:string)=>post<ProviderVisionTest>(`/api/v1/providers/configs/${encodeURIComponent(id)}/vision-test`),
+  // Read which automation capabilities the backend can provide.
   automationCapabilities: () => request<AutomationCapabilities>('/api/v1/automation/capabilities'),
+  // List desktop windows available as automation targets.
   desktopWindows: () => request<{windows:DesktopTarget[]}>('/api/v1/automation/desktop/windows'),
+  // Store a normalized token and notify subscribers only when it changes.
   setOperatorToken: (token: string) => {
     const next = token.trim()
     if (next === operatorToken) return
     operatorToken = next
     operatorListeners.forEach(listener => listener())
   },
+  // Read the operator token currently held in memory.
   getOperatorToken: () => operatorToken,
+  // Subscribe to token changes and return an unsubscribe function.
   onOperatorTokenChange: (listener: () => void) => {
     operatorListeners.add(listener)
     return () => { operatorListeners.delete(listener) }
   },
+  // Build the preview WebSocket URL for a specific paired device.
   screenUrl: (id: string) => `${socketBase()}/api/v1/devices/${encodeURIComponent(id)}/screen/ws`,
+  // Build the WebSocket URL for local ADB screen streaming.
   adbScreenUrl: () => `${socketBase()}/api/v1/devices/adb/screen/ws`,
+  // List Android devices visible to the local ADB service.
   adbDevices: () => request<{ devices: AdbDevice[]; error?: string }>('/api/v1/devices/adb'),
+  // Fetch a trusted evidence image and renew operator authorization if needed.
   screenshot: async (path: string, signal?: AbortSignal): Promise<Blob> => {
     if (!/^\/api\/v1\/(?:runs\/[A-Za-z0-9-]+\/(?:screenshots|evidence)|case-debug-runs\/[A-Za-z0-9-]+\/evidence)\/[A-Za-z0-9_-]+\.jpg$/.test(path)) throw new Error('截图资源地址无效')
     checkScreenshotAbort(signal)
     if (!operatorToken) await authorizeScreenshot()
     checkScreenshotAbort(signal)
     const sentToken = operatorToken
+    // Fetch the image using the token available at the time of the attempt.
     const fetchImage = () => fetch(`${API_BASE}${path}`, { signal, cache: 'no-store', headers: operatorToken ? { 'X-Autorush-Operator-Token': operatorToken } : {} })
     let response = await fetchImage()
     if (response.status === 401 || response.status === 403) {
@@ -348,39 +369,76 @@ export const api = {
     if (response.headers.get('Content-Type')?.split(';')[0].trim() !== 'image/jpeg') throw new Error('截图格式无效')
     return response.blob()
   },
+  // Request local operator authorization without sending the current token.
   operatorSession: () => request<OperatorSession>('/api/v1/devices/operator-session', undefined, false),
+  // Read the local device server's current endpoint and status.
   localDeviceServer: () => request<LocalDeviceServer>('/api/v1/devices/local-server'),
+  // Start the local WSS endpoint for Android devices.
   startLocalDeviceServer: () => post<LocalDeviceServer>('/api/v1/devices/local-server/start'),
+  // Stop the local WSS endpoint.
   stopLocalDeviceServer: () => post<LocalDeviceServer>('/api/v1/devices/local-server/stop'),
+  // Create a pairing request for the selected device transport.
   createPairing: (payload: PairingPayload) => post<CreatedPairing>('/api/v1/devices/pairings', payload),
+  // Read the status of a pairing request.
   pairing: (id: string) => request<PairingRecord>(`/api/v1/devices/pairings/${encodeURIComponent(id)}`),
+  // Cancel a pending pairing request.
   cancelPairing: (id: string) => post<PairingRecord>(`/api/v1/devices/pairings/${encodeURIComponent(id)}/cancel`),
+  // List devices with stored pairing authorization.
   pairedDevices: () => request<PairedDevice[]>('/api/v1/devices/paired'),
+  // Revoke a paired device's authorization.
   revokeDevice: (id: string) => post<{ device_id: string; revoked: true }>(`/api/v1/devices/paired/${encodeURIComponent(id)}/revoke`),
+  // List device IDs with live backend connections.
   devices: () => request<{ devices: string[] }>('/api/v1/devices'),
+  // Ask a connected device to report its information.
   deviceInfo: (id: string) => post<Record<string, unknown>>(`/api/v1/devices/${encodeURIComponent(id)}/commands`, { method: 'device.info', params: {} }),
+  // Check whether the backend is reachable.
   health: () => request<{ status: string }>('/health'),
+  // List cases, optionally including archived records.
   cases: (includeArchived=false) => request<CaseRecord[]>('/api/v1/cases'+(includeArchived?'?include_archived=true':'')),
+  // Save a new case from an editor payload.
   createCase: (payload: Pick<CaseRecord, 'title' | 'description' | 'execution_mode' | 'platform' | 'steps' | 'postconditions'>) => post<CaseRecord>('/api/v1/cases', payload),
+  // Update a saved case using its expected version to detect conflicts.
   updateCase:(id:string,version:number,payload:Pick<CaseRecord,'title'|'description'|'execution_mode'|'platform'|'steps'|'postconditions'>)=>request<CaseRecord>(`/api/v1/cases/${id}?expected_version=${version}`,{method:'PUT',body:JSON.stringify(payload)}),
+  // Archive a case so it leaves active case views.
   archiveCase:(id:string)=>request<CaseRecord>(`/api/v1/cases/${id}`,{method:'DELETE'}),
+  // Return an archived case to the active list.
   restoreCase:(id:string)=>post<CaseRecord>(`/api/v1/cases/${id}/restore`),
+  // Ask the selected model to compile natural-language test steps.
   compileCase: (payload: CaseCompilePayload) => post<CaseCompileResult>('/api/v1/cases/compile', payload),
+  // Mark a saved case as approved for use in plans.
   approveCase: (id: string) => post<CaseRecord>(`/api/v1/cases/${id}/approve`),
+  // List the saved test plans.
   plans: () => request<PlanRecord[]>('/api/v1/plans'),
+  // Save a plan with its cases and runtime settings.
   createPlan: (payload: PlanPayload) => post<PlanRecord>('/api/v1/plans', payload),
+  // Save changes against the plan version loaded by the editor.
+  updatePlan: (id: string, version: number, payload: PlanPayload) => request<PlanRecord>(
+    `/api/v1/plans/${id}?expected_version=${version}`, {method: 'PUT', body: JSON.stringify(payload)}),
+  // Move the selected plan to the ready state.
   readyPlan: (id: string) => post<PlanRecord>(`/api/v1/plans/${id}/ready`),
+  // Execute the plan through the standard runner.
   runPlan: (id: string) => post<RunRecord>(`/api/v1/plans/${id}/runs`),
+  // Start an agent run using an idempotency key to handle retries.
   startAgentRun:(id:string,key:string)=>post<AgentExecution>(`/api/v1/plans/${id}/agent-runs`,{idempotency_key:key}),
+  // List agent executions for the run monitor.
   agentRuns:()=>request<AgentExecution[]>('/api/v1/agent-runs'),
+  // Fetch one agent execution and its progress.
   agentRun:(id:string)=>request<AgentExecution>(`/api/v1/agent-runs/${id}`),
+  // Request cancellation of the specified agent execution.
   cancelAgentRun:(id:string)=>post<AgentExecution>(`/api/v1/agent-runs/${id}/cancel`),
+  // List run records used by the reporting views.
   runs: () => request<RunRecord[]>('/api/v1/runs'),
+  // Fetch provider presets for the settings form.
   providerPresets: () => request<ProviderPreset[]>('/api/v1/providers/presets'),
+  // List saved model provider configurations.
   providerConfigs: () => request<ProviderConfig[]>('/api/v1/providers/configs'),
+  // Save a new provider configuration.
   createProviderConfig: (payload: ProviderConfigPayload) => post<ProviderConfig>('/api/v1/providers/configs', payload),
+  // Run preliminary checks for a saved provider.
   preflightProvider: (id: string) => post<ProviderPreflight>(`/api/v1/providers/configs/${id}/preflight`),
+  // Verify connectivity with a saved provider endpoint.
   testProviderConnection: (id: string) => post<ProviderConnectionTest>(`/api/v1/providers/configs/${id}/test-connection`),
+  // Subscribe to backend events and return a function that closes the socket.
   watchEvents: (onEvent: (event: PlatformEvent) => void, onClosed: () => void) => {
     const base = window.location.protocol === 'app:'
       ? 'ws://127.0.0.1:8000'
@@ -393,6 +451,7 @@ export const api = {
     socket.onclose = onClosed
     return () => socket.close()
   },
+  // Download an authorized report in the requested format.
   downloadReport: async (id: string, format: 'json' | 'html' | 'junit' = 'json') => {
     const response = await fetch(`${API_BASE}/api/v1/runs/${id}/report/${format}`, { cache: 'no-store', headers: operatorToken ? { 'X-Autorush-Operator-Token': operatorToken } : {} })
     if (!response.ok) throw new Error(`报告下载失败：${response.status}`)

@@ -8,6 +8,7 @@ const boundaries = [
   { title: '数据与报告', value: 'SQLite', text: '结果保存在本地数据库，并生成 JSON、HTML 与 JUnit XML 报告。' },
 ]
 
+// Show local runtime information and provider configuration.
 export default function Settings({ presets, configs, onCreate, onPreflight }: {
   presets: ProviderPreset[]
   configs: ProviderConfig[]

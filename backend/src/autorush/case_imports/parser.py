@@ -6,6 +6,7 @@ from .models import ImportLimits, ImportOptions, ImportParseError, ImportPreview
 from .mapping import diagnostic
 
 
+# Validate the upload and dispatch it to the selected document parser.
 def parse_import(content: bytes, filename: str, options: ImportOptions | None = None,
                  *, limits: ImportLimits | None = None) -> ImportPreview:
     limits = limits or ImportLimits()

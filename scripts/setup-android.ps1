@@ -1,3 +1,4 @@
+# Provision the Windows Android build toolchain under the workspace artifacts directory.
 [CmdletBinding()]
 param([switch]$AcceptSdkLicense)
 $ErrorActionPreference = 'Stop'
@@ -7,11 +8,13 @@ $taskTools = Join-Path $taskRoot 'artifacts\tools'
 $taskDownloads = Join-Path $taskTools 'downloads'
 New-Item -ItemType Directory -Path $taskDownloads -Force | Out-Null
 
+# Download an upstream build dependency with retry and timeout limits.
 function Get-OfficialFile([string]$Url, [string]$Destination) {
     & curl.exe --silent --show-error --fail --location --retry 2 --connect-timeout 20 --max-time 900 --output $Destination $Url
     if ($LASTEXITCODE -ne 0) { throw "Download failed: $Url" }
 }
 
+# Reuse an archive only after comparing it with the upstream SHA-256 checksum.
 function Get-VerifiedArchive([string]$Url, [string]$Name, [string]$ChecksumUrl) {
     $archive = Join-Path $taskDownloads $Name
     $checksumFile = "$archive.sha256"

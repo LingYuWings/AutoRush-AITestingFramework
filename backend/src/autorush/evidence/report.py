@@ -17,11 +17,13 @@ from autorush.evidence.screenshot import evidence_path
 _INVALID_XML_CHAR = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]")
 
 
+# Serialize JUnit XML and strip characters forbidden by XML.
 def serialize_junit(suite: ElementTree.Element) -> str:
     xml = ElementTree.tostring(suite, encoding="unicode")
     return '<?xml version="1.0" encoding="utf-8"?>\n' + _INVALID_XML_CHAR.sub("\ufffd", xml)
 
 
+# Publish a JSON report through an atomic replacement.
 def save_json_report(run: RunRecord, report_dir: Path) -> Path:
     report_dir.mkdir(parents=True, exist_ok=True)
     destination = report_dir / f"{run.id}.json"
@@ -52,6 +54,7 @@ def save_reports(run: RunRecord, report_dir: Path) -> dict[str, Path]:
     return paths
 
 
+# Publish a complete export without exposing partially written content.
 def _write_atomic(destination: Path, content: str) -> Path:
     temporary = destination.with_name(f".{destination.name}.tmp")
     try:
@@ -62,6 +65,7 @@ def _write_atomic(destination: Path, content: str) -> Path:
     return destination.resolve()
 
 
+# Embed a screenshot only after validating its recorded size and hash.
 def _screenshot_html(evidence: dict, run: RunRecord, report_dir: Path) -> str:
     metadata = evidence.get("screenshot")
     if not isinstance(metadata, dict):
@@ -83,6 +87,7 @@ def _screenshot_html(evidence: dict, run: RunRecord, report_dir: Path) -> str:
         return "<p>Screenshot evidence unavailable</p>"
 
 
+# Build a standalone HTML report with readable step details and evidence.
 def _render_html(run: RunRecord, report_dir: Path) -> str:
     total = len(run.cases)
     passed = sum(case.status.value == "passed" for case in run.cases)
@@ -124,6 +129,7 @@ figure{{margin:12px 0}}figure img{{max-width:280px;max-height:520px;object-fit:c
 {''.join(case_sections)}</main></body></html>"""
 
 
+# Render decision rounds and nested evidence for an agent step.
 def _agent_html(evidence,run,report_dir):
     agent=evidence.get('agent',{})
     if not isinstance(agent,dict): return ''
@@ -138,6 +144,7 @@ def _agent_html(evidence,run,report_dir):
     return ''.join(parts)
 
 
+# Map case outcomes to the corresponding JUnit result elements.
 def _render_junit(run: RunRecord) -> str:
     run_error = run.termination_reason if run.status.value == "error" else None
     failures = sum(case.status.value == "failed" for case in run.cases)

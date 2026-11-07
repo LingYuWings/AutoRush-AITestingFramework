@@ -13,6 +13,7 @@ import android.widget.Toast
 /** Opened only by the phone user; a server command never launches system consent. */
 class ScreenConsentActivity : Activity() {
     private var authorizationEpoch = -1L
+    // Open Android's capture prompt when sharing can be authorized and restore pending consent state.
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         authorizationEpoch = savedInstanceState?.getLong("authorization_epoch", -1L) ?: ScreenStreamer.authorizationEpoch
@@ -31,6 +32,7 @@ class ScreenConsentActivity : Activity() {
         }
     }
 
+    // Pass a successful grant to the capture service only if it still belongs to the current session.
     @Suppress("OVERRIDE_DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
@@ -43,6 +45,7 @@ class ScreenConsentActivity : Activity() {
         finish()
     }
 
+    // Keep the authorization epoch across activity recreation.
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putLong("authorization_epoch", authorizationEpoch)
         super.onSaveInstanceState(outState)

@@ -3,14 +3,17 @@ from collections import Counter
 from autorush.agent.observers import AgentObserver,fingerprint
 
 
+# Provide the Android-specific identity for shared agent observation.
 class AndroidObserver(AgentObserver):
     kind='android'
 
 
+# Filter out UI nodes fully outside the Android root window.
 def on_screen(nodes):
     """Drop nodes laid out wholly outside the root window, such as scrolled-away list rows."""
     root=nodes[0].get('bounds') if nodes else None
     if not (isinstance(root,list) and len(root)==4 and all(type(v) is int for v in root)): return nodes
+    # Test whether a node with valid bounds overlaps the root window.
     def inside(node):
         b=node.get('bounds')
         if not (isinstance(b,list) and len(b)==4 and all(type(v) is int for v in b)): return True
@@ -18,6 +21,7 @@ def on_screen(nodes):
     return [n for n in nodes if inside(n)]
 
 
+# Collect visible Android UI state and handle app startup.
 async def collect_android_state(driver):
     snapshot=await driver._snapshot(allow_startup=True)
     if snapshot.get('startup'):

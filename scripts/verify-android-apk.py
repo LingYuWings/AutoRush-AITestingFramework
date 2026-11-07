@@ -4,6 +4,7 @@ import struct
 import zipfile
 
 
+# Read the DEX string, type and class tables to identify actual definitions.
 def defined_classes(data):
     strings_size, strings_off = struct.unpack_from('<II', data, 56)
     types_size, types_off = struct.unpack_from('<II', data, 64)
@@ -19,6 +20,7 @@ def defined_classes(data):
     return {types[struct.unpack_from('<I', data, classes_off + index * 32)[0]] for index in range(classes_size)}
 
 
+# Check every DEX in the APK for the classes required to launch the scanner.
 def verify(path):
     with zipfile.ZipFile(path) as apk:
         classes = set().union(*(defined_classes(apk.read(name)) for name in apk.namelist() if name.endswith('.dex')))

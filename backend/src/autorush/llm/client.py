@@ -1,5 +1,6 @@
 """Bounded multimodal JSON client with explicit destinations and compatibility retry."""
 from __future__ import annotations
+import asyncio
 import inspect
 import json
 import os
@@ -9,10 +10,12 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import httpx
+from autorush.llm.local_runtime import LocalVisionError, LocalVisionRuntime, managed_profile
 from autorush.llm.models import ProviderConfigRecord
 from autorush.llm.protocols import SUPPORTED_PROTOCOLS, build_model_request, is_loopback_url, parse_model_response
 
 
+# Carry the parsed model response and metadata about the request attempts.
 @dataclass(frozen=True)
 class ModelJsonResponse:
     value: dict[str, Any]
@@ -24,12 +27,16 @@ class ModelJsonResponse:
     attempt_stats: list[dict] = field(default_factory=list)
 
 
+# Report a model request or response failure.
 class ModelClientError(RuntimeError):
     pass
 
 
+# Send structured requests using the configured model provider protocol.
 class ModelClient:
-    def __init__(self, config: ProviderConfigRecord, allowed_hosts: set[str], *, transport=None, timeout=90):
+    # Validate the provider endpoint and configure the HTTP client.
+    def __init__(self, config: ProviderConfigRecord, allowed_hosts: set[str], *, transport=None, timeout=90,
+                 local_runtime: LocalVisionRuntime | None = None):
         parsed = urlsplit(config.base_url)
         if parsed.scheme not in {'http', 'https'} or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
             raise ModelClientError('model base_url must be an HTTP(S) endpoint without credentials or parameters')
@@ -54,13 +61,21 @@ class ModelClient:
             if config.protocol == 'anthropic_messages': headers['x-api-key'] = token
             else: headers['Authorization'] = f'Bearer {token}'
         self._config = config
+        self._local_runtime = local_runtime
+        self._profile = managed_profile(config) if local_runtime is not None else None
+        self._resolved_endpoint: str | None = None
+        self._managed = False
+        self._endpoint_lock = asyncio.Lock()
+        self._closed = False
         self._client = httpx.AsyncClient(headers=headers, timeout=httpx.Timeout(timeout, connect=min(timeout,10)),
                                          follow_redirects=False, trust_env=False, transport=transport)
 
+    # Request a JSON object, retrying invalid responses when allowed.
     async def generate_json(self, system_prompt, user_prompt, *, images=None, schema=None, on_attempt=None):
         try:
             endpoint, payload, headers = build_model_request(self._config, system_prompt, user_prompt, images or [], schema)
         except ValueError as exc: raise ModelClientError(str(exc)) from exc
+        endpoint = await self._resolve_endpoint(endpoint)
         started = time.monotonic()
         stats = []
         last_error = 'model response was not a valid JSON object'
@@ -102,18 +117,56 @@ class ModelClient:
                 stats.append({'error':last_error,'latency_ms':round((time.monotonic()-attempt_start)*1000)})
         raise ModelClientError(last_error)
 
+    async def _resolve_endpoint(self, endpoint: str) -> str:
+        """Keep a reachable server in use, or load the project's model on demand."""
+        async with self._endpoint_lock:
+            if self._closed:
+                raise ModelClientError("model client is closed")
+            return await self._resolve_local_endpoint(endpoint)
+
+    async def _resolve_local_endpoint(self, endpoint: str) -> str:
+        """Acquire at most one local model lease for this client."""
+        if self._profile is None or self._local_runtime is None:
+            return endpoint
+        if self._resolved_endpoint is None:
+            try:
+                await self._client.get("http://127.0.0.1:8080/health", timeout=2)
+            except (httpx.ConnectError, httpx.ConnectTimeout):
+                try:
+                    port = await self._local_runtime.acquire(self._profile)
+                except LocalVisionError as exc:
+                    raise ModelClientError(str(exc)) from exc
+                self._managed = True
+                endpoint = f"http://127.0.0.1:{port}/v1/chat/completions"
+            except httpx.RequestError:
+                # A listener answered slowly or closed the probe. Leave it in control of its endpoint.
+                pass
+            self._resolved_endpoint = endpoint
+        return self._resolved_endpoint
+
+    # Close HTTP resources and release any owned model lease.
     async def close(self):
-        await self._client.aclose()
+        async with self._endpoint_lock:
+            self._closed = True
+            try:
+                await self._client.aclose()
+            finally:
+                if self._managed and self._local_runtime is not None:
+                    self._managed = False
+                    await self._local_runtime.release()
 
 
+# Retain the client entry point used by existing case compilation callers.
 class OpenAICompatibleClient(ModelClient):
     """Compatibility entry point for existing case compilation callers."""
 
 
+# Extract the text from a provider's response body.
 def _response_text(body, protocol):
     return parse_model_response(body, protocol)[0]
 
 
+# Remove a surrounding Markdown code fence before parsing JSON.
 def _strip_code_fence(value):
     stripped=value.strip()
     if stripped.startswith('```') and stripped.endswith('```'):

@@ -20,20 +20,24 @@ from fastapi import HTTPException, WebSocket, WebSocketDisconnect
 from autorush.devices import adb
 
 
+# Signal that the ADB device or screen capture is unavailable.
 class AdbUnavailable(RuntimeError):
     pass
 
 
+# Signal that an ADB device does not match the active pairing.
 class BindingError(RuntimeError):
     pass
 
 
+# Track a paired device's viewer and revocation signal.
 @dataclass(eq=False)
 class AdbView:
     device_id: UUID
     revoked: asyncio.Event = field(default_factory=asyncio.Event)
 
 
+# Own the ADB screen recording process and its remote PID.
 @dataclass(eq=False)
 class Recording:
     serial: str
@@ -42,6 +46,7 @@ class Recording:
     closed: bool = False
     started_at: float = field(default_factory=time.monotonic)
 
+    # Read the remote PID followed by H.264 data from the process.
     async def chunks(self):
         assert self.process.stdout is not None
         line = await asyncio.wait_for(self.process.stdout.readline(), 5)
@@ -65,6 +70,7 @@ class Recording:
         if not received or code != 0 or time.monotonic() - self.started_at < 170:
             raise RuntimeError('手机 H.264 编码器已退出，请检查 ADB 连接')
 
+    # Stop the remote recording and clean up the local process.
     async def close(self):
         if self.closed:
             return
@@ -104,6 +110,7 @@ class Recording:
                 await self.process.wait()
 
 
+# Launch an ADB H.264 recording for the selected serial.
 async def start_recording(serial: str) -> Recording:
     # Echo the owned shell PID before exec replaces it with screenrecord. This
     # lets disconnect cleanup stop the remote process as well as the host adb.
@@ -115,6 +122,7 @@ async def start_recording(serial: str) -> Recording:
     return Recording(serial, process)
 
 
+# Capture one bounded display image to show before video frames arrive.
 async def capture_poster(serial: str) -> bytes:
     """One bounded full-display image; H.264 framing never guesses idle NAL ends."""
     spawn = asyncio.create_task(asyncio.create_subprocess_exec(
@@ -149,20 +157,25 @@ async def capture_poster(serial: str) -> bytes:
                 await process.wait()
 
 
+# Manage ADB screen viewers and their recording processes.
 class AdbScreenHub:
+    # Track active viewers and recordings using the pairing store.
     def __init__(self, pairings):
         self.pairings = pairings
         self.active: dict[str, AdbView] = {}
         self.recordings: set[Recording] = set()
 
+    # Signal every viewer attached to the revoked device.
     def revoke(self, device_id: UUID):
         for view in self.active.values():
             if view.device_id == device_id:
                 view.revoked.set()
 
+    # Close any screen recordings still running.
     async def close(self):
         await asyncio.gather(*(recording.close() for recording in list(self.recordings)), return_exceptions=True)
 
+    # Verify the device pairing and stream its display to the viewer.
     async def stream(self, socket: WebSocket, serial: str, device_id: UUID):
         if not self.pairings.is_active_device(device_id):
             raise BindingError('仅可查看当前有效配对的手机')
@@ -208,6 +221,7 @@ class AdbScreenHub:
                     self.recordings.discard(recording)
 
 
+# Authenticate the screen viewer and manage its stream until disconnect or revocation.
 async def serve_adb_viewer(socket: WebSocket, hub: AdbScreenHub, require_operator, allowed_origins):
     if socket.headers.get('origin') not in allowed_origins:
         await socket.close(code=1008)

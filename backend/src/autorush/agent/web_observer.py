@@ -2,6 +2,7 @@
 from autorush.agent.observers import AgentObserver,fingerprint
 
 
+# Provide the web-specific identity for shared agent observation.
 class WebObserver(AgentObserver):
     kind='web'
 
@@ -35,6 +36,7 @@ DOM_OBSERVATION=r"""() => {
 }"""
 
 
+# Collect bounded browser state and the elements available for targeting.
 async def collect_web_state(driver):
     page=driver._page
     if page.is_closed():

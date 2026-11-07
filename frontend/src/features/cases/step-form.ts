@@ -8,24 +8,30 @@ export type EditableStep = {
   waitState:string; timeout:string
   apiParameters?:Record<string,unknown>
 }
+// Start an assertion that checks for HTTP status 200.
 export const newAssertion=():EditableAssertion=>({id:crypto.randomUUID(),kind:'status_code',expected:'200',path:''})
+// Supply editable defaults for a new structured step.
 export const newStep=():EditableStep=>({id:crypto.randomUUID(),intent:'',driver:'api',operation:'api.request',method:'GET',path:'/',
   queryJson:'',bodyJson:'',targetBy:'role',targetValue:'',targetName:'',input:'',alwaysRun:false,assertions:[newAssertion()],
   x:'',y:'',button:'left',clicks:'-3',waitState:'visible',timeout:'10000'})
+// Reset driver-specific fields while preserving the step's identity and intent.
 export function switchDriver(step:EditableStep,driver:DriverKind):EditableStep {
   return {...newStep(),id:step.id,intent:step.intent,alwaysRun:step.alwaysRun,driver,assertions:[],
     operation:{api:'api.request',web:'web.open',android:'android.launch',desktop:'desktop.click'}[driver],
     targetBy:driver==='android'?'resource_id':'role'}
 }
+// Parse operation parameters and require a JSON object.
 function objectJson(value:string):Record<string,unknown> {
   const parsed=JSON.parse(value)
   if (!parsed||typeof parsed!=='object'||Array.isArray(parsed)) throw new Error('参数必须是 JSON 对象')
   return parsed
 }
+// Reject empty and fractional values in integer fields.
 function integer(value:string,label:string):number {
   if (!value.trim()||!Number.isInteger(Number(value))) throw new Error(`${label}必须是整数`)
   return Number(value)
 }
+// Convert assertion input to the value type expected by the assertion kind.
 function expected(item:EditableAssertion):unknown {
   if(item.kind==='status_code') return integer(item.expected,'状态码')
   if(item.kind==='element_visible') {
@@ -40,6 +46,7 @@ function expected(item:EditableAssertion):unknown {
   if(item.kind==='json_field_equals') {try{return JSON.parse(item.expected)}catch{return item.expected}}
   return item.expected
 }
+// Validate driver-specific inputs and produce an ordered backend step specification.
 export function compileEditableStep(step:EditableStep,index:number):StepSpec {
   if(step.apiParameters)return {order:index+1,intent:step.intent.trim(),driver:'api',operation:'api.request',parameters:step.apiParameters,always_run:step.alwaysRun,
     assertions:step.assertions.map(a=>({kind:a.kind,expected:expected(a),...(a.kind==='json_field_equals'?{path:a.path}:{})}))}
@@ -63,6 +70,7 @@ export function compileEditableStep(step:EditableStep,index:number):StepSpec {
   return {order:index+1,intent:step.intent.trim(),driver:step.driver,operation:op,parameters,always_run:step.alwaysRun,
     assertions:step.assertions.map(a=>({kind:a.kind,expected:expected(a),...(a.kind==='json_field_equals'?{path:a.path}:{})}))}
 }
+// Populate form fields from a saved operation, parameters, and assertions.
 export function editCompiledStep(step:StepSpec):EditableStep {
   const p=step.parameters,t=(p.target??{}) as Record<string,unknown>
   const targetBy=(['role','label','test_id','css','resource_id','text','description'].find(k=>k in t)??'role') as EditableStep['targetBy']

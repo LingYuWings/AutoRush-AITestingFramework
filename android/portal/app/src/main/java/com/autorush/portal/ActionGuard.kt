@@ -2,6 +2,7 @@ package com.autorush.portal
 
 /** Check plan context immediately before the device invokes a mutating action. */
 internal object ActionGuard {
+    // Require matching package context and a fresh snapshot when the command supplies them.
     fun validate(
         currentPackage: String,
         expectedPackage: String?,

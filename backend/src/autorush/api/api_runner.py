@@ -10,19 +10,23 @@ from autorush.api_testing.tree import TreeError
 from autorush.evidence.report import serialize_junit
 
 
+# Expose collection Runner controls, progress and exports.
 def create_runner_router(manager, authorize):
     router = APIRouter(prefix='/runner', tags=['API Runner'])
 
+    # Resolve a collection run or return an HTTP 404.
     def require(run_id):
         value = manager.store.get(run_id)
         if value is None: raise HTTPException(404, 'run not found')
         return value
 
+    # Translate Runner domain errors into HTTP responses.
     async def mutation(callback):
         try: return await callback()
         except TreeError as exc: raise HTTPException(exc.status, str(exc)) from None
         except ValueError as exc: raise HTTPException(422, str(exc)) from None
 
+    # Start or recover an idempotent collection run.
     @router.post('/runs', status_code=202)
     async def start(request: Request, payload: dict = Body(...), x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
@@ -32,6 +36,7 @@ def create_runner_router(manager, authorize):
                 for item in exc.errors(include_input=False))) from None
         return await mutation(lambda: manager.start(command))
 
+    # Search and page collection run summaries.
     @router.get('/runs')
     def listing(request: Request, search: str = Query(default='', max_length=200), status: str | None = None,
         offset: int = Query(default=0, ge=0), limit: int = Query(default=20, ge=1, le=100),
@@ -39,11 +44,13 @@ def create_runner_router(manager, authorize):
         authorize(request, x_autorush_operator_token)
         return manager.store.summaries(search, status, offset, limit)
 
+    # Read a collection run's latest summary.
     @router.get('/runs/{run_id}')
     def get(run_id: str, request: Request, x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
         return require(run_id)
 
+    # Page compact request results in execution order.
     @router.get('/runs/{run_id}/steps')
     def steps(run_id: str, request: Request, offset: int = Query(default=0, ge=0), limit: int = Query(default=50, ge=1, le=100),
         x_autorush_operator_token: str | None = Header(default=None)):
@@ -51,6 +58,7 @@ def create_runner_router(manager, authorize):
         require(run_id)
         return manager.store.steps(run_id, offset, limit)
 
+    # Return the complete result for one request in a collection run.
     @router.get('/runs/{run_id}/steps/{seq}')
     def detail(run_id: str, seq: int, request: Request, x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
@@ -59,11 +67,13 @@ def create_runner_router(manager, authorize):
         if value is None: raise HTTPException(404, 'request result not found')
         return value
 
+    # Signal cancellation without discarding results already collected.
     @router.post('/runs/{run_id}/cancel')
     async def cancel(run_id: str, request: Request, x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
         return await mutation(lambda: manager.cancel(run_id))
 
+    # Run the previous collection snapshot under a new execution ID.
     @router.post('/runs/{run_id}/rerun', status_code=202)
     async def rerun(run_id: str, request: Request, payload: dict = Body(...), x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
@@ -71,6 +81,7 @@ def create_runner_router(manager, authorize):
         if not isinstance(key, str) or not 8 <= len(key) <= 100: raise HTTPException(422, 'idempotency_key requires 8..100 characters')
         return await mutation(lambda: manager.rerun(run_id, key))
 
+    # Download a collection run in the selected report format.
     @router.get('/runs/{run_id}/export')
     def export(run_id: str, request: Request, format: str = 'json', x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)

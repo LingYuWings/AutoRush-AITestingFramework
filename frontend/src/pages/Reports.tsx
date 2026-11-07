@@ -11,6 +11,7 @@ type StatusFilter='all'|'passed'|'failed'
 // Survives unmounting so returning from a report lands on the same search, page and scroll offset.
 const memory={query:'',status:'all' as StatusFilter,page:1,scroll:0}
 
+// Browse run reports and restore list state after viewing a report.
 export default function Reports({runs,plans,onOpen,onDownload}:{runs:RunRecord[];plans:PlanRecord[];onOpen:(id:string)=>void;onDownload:(id:string,format:'json'|'html'|'junit')=>Promise<void>}) {
   const [query,setQuery]=useState(memory.query)
   const [status,setStatus]=useState<StatusFilter>(memory.status)
@@ -19,6 +20,7 @@ export default function Reports({runs,plans,onOpen,onDownload}:{runs:RunRecord[]
   const planName=useMemo(()=>new Map(plans.map(plan=>[plan.id,plan.name])),[plans])
   const failing=runs.filter(run=>run.status!=='passed').length
   useLayoutEffect(()=>{ if(memory.scroll) scroller()?.scrollTo({top:memory.scroll}) },[])
+  // Remember the current filters, page, and scroll position before opening a report.
   const open=(id:string)=>{Object.assign(memory,{query,status,page:paged.page,scroll:scroller()?.scrollTop??0});onOpen(id)}
   const filters:{key:StatusFilter;label:string;count:number}[]=[{key:'all',label:'全部',count:runs.length},{key:'passed',label:'通过',count:runs.length-failing},{key:'failed',label:'未通过',count:failing}]
 

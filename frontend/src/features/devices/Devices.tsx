@@ -8,9 +8,11 @@ import { pairingPayload } from './pairing'
 import ScreenViewer from './ScreenViewer'
 
 type VisiblePairing = PairingRecord & { qr_payload?: string }
+// Read an error message or use the device action's fallback text.
 const errorMessage = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback
 const pairingLabel = { pending: '等待扫码', claimed: '配对成功', expired: '二维码已过期', cancelled: '配对已取消' }
 
+// Manage Android authorization, pairing, and screen viewing from one page.
 export default function Devices() {
   const [authorized, setAuthorized] = useState(Boolean(api.getOperatorToken()))
   const [manualToken, setManualToken] = useState('')
@@ -35,6 +37,7 @@ export default function Devices() {
   const [busy, setBusy] = useState<string | null>(null)
   const sessionEpoch = useRef(0)
 
+  // Refresh online and paired devices and discard results from an obsolete authorization session.
   const loadDevices = async (epoch = sessionEpoch.current) => {
     const [online, paired] = await Promise.allSettled([api.devices(), api.pairedDevices()])
     if (epoch !== sessionEpoch.current) return
@@ -47,6 +50,7 @@ export default function Devices() {
   useEffect(() => {
     if (!authorized) return
     let active = true
+    // Refresh the device lists during background polling and report failures.
     const refresh = () => void loadDevices().catch(error => { if (active) setMessage(errorMessage(error, '设备查询失败')) })
     refresh()
     const timer = window.setInterval(refresh, 5000)
@@ -66,6 +70,7 @@ export default function Devices() {
     let timer: number | undefined
     const epoch = sessionEpoch.current
     const id = pairing.id
+    // Refresh the pending pairing until it ends and ignore results after authorization changes.
     const poll = async () => {
       try {
         const record = await api.pairing(id)
@@ -89,6 +94,7 @@ export default function Devices() {
     return () => { active = false; if (timer !== undefined) window.clearTimeout(timer) }
   }, [authorized, pairing?.id, pairing?.status])
 
+  // Obtain local operator authorization and load device state.
   const connect = async () => {
     setBusy('connect'); setMessage(''); setPollError('')
     try {
@@ -109,6 +115,7 @@ export default function Devices() {
     finally { setBusy(null) }
   }
 
+  // Reload device lists and clear the current device inspection.
   const refresh = async () => {
     setBusy('refresh'); setMessage(''); setInfo(null)
     try { await loadDevices() }
@@ -116,6 +123,7 @@ export default function Devices() {
     finally { setBusy(null) }
   }
 
+  // Switch to a supplied operator token and reload device state.
   const authorizeManually = async () => {
     setBusy('authorize'); setMessage(''); setPollError('')
     try {
@@ -130,6 +138,7 @@ export default function Devices() {
     finally { setBusy(null) }
   }
 
+  // Stop viewing, cancel pending pairing where possible, and clear local authorization.
   const clearAuthorization = async () => {
     setViewing(null)
     setBusy('clear')
@@ -144,6 +153,7 @@ export default function Devices() {
     setBusy(null)
   }
 
+  // Validate the connection settings and request a new pairing code.
   const generate = async () => {
     let payload
     try { payload = pairingPayload(connection === 'wss' && remoteMode === 'lan' ? 'lan' : connection, serial, server, packages) }
@@ -158,6 +168,7 @@ export default function Devices() {
     finally { setBusy(null) }
   }
 
+  // Start the local WSS service for pairing over the same network.
   const startLocal = async () => {
     setBusy('local-server'); setMessage('')
     try {
@@ -167,11 +178,13 @@ export default function Devices() {
     finally { setBusy(null) }
   }
 
+  // Select WSS and start the local service when LAN mode is authorized.
   const selectRemote = () => {
     setConnection('wss')
     if (authorized && remoteMode === 'lan') void startLocal()
   }
 
+  // Cancel pairing tied to the local WSS endpoint before stopping it.
   const stopLocal = async () => {
     setBusy('local-server'); setMessage('')
     try {
@@ -183,6 +196,7 @@ export default function Devices() {
     finally { setBusy(null) }
   }
 
+  // Cancel the current pairing request and clear any polling error.
   const cancel = async () => {
     if (!pairing) return
     setBusy('cancel'); setMessage('')
@@ -191,6 +205,7 @@ export default function Devices() {
     finally { setBusy(null) }
   }
 
+  // Fetch details for the selected connected device.
   const inspect = async (id: string) => {
     setBusy('inspect'); setMessage(''); setInspected(id); setInfo(null)
     try { setInfo(await api.deviceInfo(id)) }
@@ -198,6 +213,7 @@ export default function Devices() {
     finally { setBusy(null) }
   }
 
+  // Remove device authorization and close any active view of that device.
   const revoke = async (id: string) => {
     if (viewing === id) setViewing(null)
     setBusy(`revoke:${id}`); setMessage('')
@@ -210,6 +226,7 @@ export default function Devices() {
     finally { setBusy(null) }
   }
 
+  // Copy a device ID to the clipboard or display a manual-copy hint.
   const copy = (id: string) => {
     if (!navigator.clipboard) { setMessage('当前浏览器无法复制，请选择设备 ID 手动复制。'); return }
     void navigator.clipboard.writeText(id).then(() => setMessage('设备 ID 已复制')).catch(() => setMessage('设备 ID 复制失败，请手动复制。'))

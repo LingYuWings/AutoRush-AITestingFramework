@@ -12,6 +12,7 @@ from autorush.api_testing.tree import TreeError
 from autorush.api_testing.variables import redact, secret_strings, variable_values
 
 
+# Execute selected requests in order with fresh state for each dataset row.
 async def execute_sequence(snapshot, allowed_hosts, *, on_result=None):
     """Per-iteration variables/cookies; deterministic selected request order."""
     secrets = set(snapshot.get('secret_values', []))
@@ -30,7 +31,9 @@ async def execute_sequence(snapshot, allowed_hosts, *, on_result=None):
             if snapshot['stop_on_failure'] and result.public['status'] != 'passed': return
 
 
+# Prepare and manage durable collection runs.
 class ApiRunner:
+    # Initialize durable storage and track the active run task.
     def __init__(self, vault, tree, allowed_hosts):
         self.vault, self.tree, self.allowed_hosts = vault, tree, allowed_hosts
         self.store = ApiRunStore(vault)
@@ -39,6 +42,7 @@ class ApiRunner:
         self.active_id = None
         self.closing = False
 
+    # Resolve the selected requests, dataset, and variables into a run snapshot.
     def prepare(self, command):
         requests = self.tree.ordered_requests(command.collection_id, command.folder_id)
         if command.request_ids:
@@ -70,6 +74,7 @@ class ApiRunner:
             'environment_name': redact(source['environment_name'], secrets)}
         return public_source, snapshot
 
+    # Deduplicate the start command and launch a new run when needed.
     async def start(self, command):
         signature = hashlib.sha256(json.dumps(command.model_dump(), sort_keys=True, ensure_ascii=False).encode()).hexdigest()
         async with self.lock:
@@ -82,6 +87,7 @@ class ApiRunner:
             snapshot['signature'] = signature
             return self.launch(source, snapshot, command.idempotency_key)
 
+    # Persist the queued run and start its background task.
     def launch(self, source, snapshot, key):
         if self.task and not self.task.done(): raise TreeError('a Runner task is already active: ' + self.active_id, 409)
         record = self.store.create(source, snapshot, key)
@@ -89,6 +95,7 @@ class ApiRunner:
         self.task = asyncio.create_task(self.execute(record, snapshot))
         return record
 
+    # Start a new run from a previously saved snapshot.
     async def rerun(self, run_id, key):
         async with self.lock:
             original = self.store.get(run_id)
@@ -102,6 +109,7 @@ class ApiRunner:
             snapshot['rerun_of'] = run_id
             return self.launch(original['source'], snapshot, key)
 
+    # Execute a saved run while updating progress and retained evidence.
     async def execute(self, record, snapshot):
         started = time.perf_counter()
         record.update(state='running', started_at=now())
@@ -136,6 +144,7 @@ class ApiRunner:
             record.update(finished_at=now(), current_request=None, elapsed_ms=round((time.perf_counter()-started)*1000, 2))
             self.store.save(record)
 
+    # Request cancellation and update the current run's state.
     async def cancel(self, run_id):
         async with self.lock:
             record = self.store.get(run_id)
@@ -154,6 +163,7 @@ class ApiRunner:
                     self.store.save(record)
             return self.store.get(run_id)
 
+    # Mark runs left active by a previous process as interrupted.
     async def recover_interrupted(self):
         for record in self.store.summaries(limit=100)['items']:
             if record['state'] in {'queued', 'running', 'cancelling'}:
@@ -161,6 +171,7 @@ class ApiRunner:
                 record['counts']['skipped'] = record['total'] - record['completed']
                 self.store.save(record)
 
+    # Stop the active run task during shutdown.
     async def close(self):
         self.closing = True
         if self.task and not self.task.done():

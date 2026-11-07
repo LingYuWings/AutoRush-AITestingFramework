@@ -10,18 +10,23 @@ from autorush.events import PlatformEvent
 from autorush.runner.engine import Runner
 
 
+# Manage the lifecycle and persisted progress of agent executions.
 class AgentRunManager:
+    # Store execution dependencies and initialize task tracking.
     def __init__(self,settings,store,session_factory,client_factory,broker):
         self.settings,self.store=settings,store
         self.session_factory,self.client_factory,self.broker=session_factory,client_factory,broker
         self.tasks={};self.cancel_events={};self.started=set();self.start_lock=asyncio.Lock()
 
+    # Publish an execution event when a broker is available.
     async def emit(self,event_type,payload):
         if self.broker: await self.broker.publish(PlatformEvent(type=event_type,payload=payload))
 
+    # Load an execution record by ID.
     def get(self,execution_id):
         return self.store.get_agent_execution(execution_id)
 
+    # Create or reuse an execution for the supplied idempotency key.
     async def start(self,plan_id,*,idempotency_key):
         async with self.start_lock:
             existing=self.store.find_agent_execution(idempotency_key)
@@ -38,9 +43,11 @@ class AgentRunManager:
             self.store.save_agent_execution(record)
             return self._schedule(record)
 
+    # Start a background task and register its cancellation signal.
     def _schedule(self, record):
         self.cancel_events[record.id]=asyncio.Event()
         task=asyncio.create_task(self._execute(record));self.tasks[record.id]=task
+        # Handle task completion and clear its in-memory tracking.
         def done(completed):
             if not completed.cancelled():
                 error=completed.exception()
@@ -57,6 +64,7 @@ class AgentRunManager:
         task.add_done_callback(done)
         return record
 
+    # Mark the execution as stopping and signal its task.
     async def cancel(self,execution_id):
         record=self.get(execution_id)
         if record is None: return None
@@ -66,6 +74,7 @@ class AgentRunManager:
         if execution_id in self.started and execution_id in self.tasks: self.tasks[execution_id].cancel()
         return record
 
+    # Build interrupted case results from completed results and saved progress.
     def interrupted_results(self,record,completed,reason):
         results=list(completed);done={r.case_id for r in results}
         active=record.progress.get('active',{})
@@ -92,6 +101,7 @@ class AgentRunManager:
             results.append(CaseResult(case_id=case.id,title=case.title,status=ResultStatus.BLOCKED,steps=steps))
         return results
 
+    # Persist the final run and mark the execution's terminal state.
     async def finish(self,record,results,reason=None,*,interrupted=False):
         prior=self.store.get_run(record.id)
         if prior is None:
@@ -112,6 +122,7 @@ class AgentRunManager:
         await self.emit('report.ready',{'run_id':str(record.id),'plan_id':str(record.plan_id),
             'status':self.store.get_run(record.id).status.value,'report_url':f'/api/v1/runs/{record.id}/report'})
 
+    # Run the saved cases with an execution session and model client.
     async def _execute(self,record):
         self.started.add(record.id)
         session=None;client=None;results=[];reason=None
@@ -122,6 +133,7 @@ class AgentRunManager:
             session=await self.session_factory(record.plan_snapshot,record.case_snapshots,record.id)
             client=self.client_factory(config,set(self.settings.allowed_llm_hosts),timeout=record.plan_snapshot.agent_options.model_timeout_seconds) if config else None
             await self.emit('run.started',{'run_id':str(record.id),'plan_id':str(record.plan_id),'case_count':len(record.case_snapshots)})
+            # Save completed and active case progress and honor cancellation.
             async def checkpoint(value):
                 record.progress={'completed_cases':[c.model_dump(mode='json') for c in results],'active':value}
                 if event.is_set(): record.state='stopping'
@@ -134,6 +146,7 @@ class AgentRunManager:
                         run_id=record.id,checkpoint=checkpoint,emit=self.emit,vision_verified=config.vision_verified,cancelled=event.is_set)
                     result=await runner.run_case(case)
                 else:
+                    # Translate structured runner progress into an execution checkpoint.
                     async def structured_progress(steps,current):
                         await checkpoint({'case_id':str(case.id),'steps':[s.model_dump(mode='json') for s in steps],
                             'active_step':{'order':current.order,'intent':current.intent,'expected_result':'结构化断言','traces':[]} if current else None,
@@ -154,6 +167,7 @@ class AgentRunManager:
         if reason: results=self.interrupted_results(record,results,reason)
         await self.finish(record,results,reason)
 
+    # Finalize unfinished executions found in storage after a restart.
     async def recover_interrupted(self):
         for record in self.store.list_agent_executions():
             if record.state in {'running','stopping'} and record.id not in self.tasks:
@@ -161,6 +175,7 @@ class AgentRunManager:
                 completed=[CaseResult.model_validate(c) for c in record.progress.get('completed_cases',[])]
                 await self.finish(record,self.interrupted_results(record,completed,reason),reason,interrupted=True)
 
+    # Cancel active executions and wait for their tasks to exit.
     async def close(self):
         tasks=list(self.tasks.items())
         for ident,_ in tasks: await self.cancel(ident)

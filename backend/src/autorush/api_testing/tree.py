@@ -3,19 +3,25 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 
+# Report a tree mutation or lookup error with an HTTP status.
 class TreeError(ValueError):
+    # Attach the HTTP status to the error.
     def __init__(self, message, status=422):
         super().__init__(message)
         self.status = status
 
 
+# Manage API collection hierarchy and request order transactionally.
 class TreeService:
+    # Store the vault used by tree operations.
     def __init__(self, store): self.store = store
 
+    # Load collection, folder, and request records within the current transaction.
     def records(self, connection):
         rows = connection.execute("SELECT kind,id,payload FROM api_testing_records WHERE kind IN ('collections','folders','requests') ORDER BY rowid").fetchall()
         return {(kind, record_id): self.store.decode(payload) for kind, record_id, payload in rows}
 
+    # Check that tree relationships stay within collections and avoid cycles.
     @staticmethod
     def validate(records):
         for (kind, record_id), value in records.items():
@@ -41,6 +47,7 @@ class TreeService:
                 depth += 1
                 if depth > 8: raise TreeError('folder depth cannot exceed 8')
 
+    # Insert or update an encrypted tree record in the current transaction.
     def persist(self, connection, kind, value, *, insert=False):
         if insert:
             connection.execute('INSERT INTO api_testing_records(kind,id,version,payload) VALUES(?,?,?,?)',
@@ -49,6 +56,7 @@ class TreeService:
             connection.execute('UPDATE api_testing_records SET version=?,payload=? WHERE kind=? AND id=?',
                 (value['version'], self.store.encode(value), kind, value['id']))
 
+    # Validate and persist a version-checked create or update.
     def write(self, kind, value, record_id=None, expected_version=None):
         with self.store.connect() as connection:
             connection.execute('BEGIN IMMEDIATE')
@@ -66,6 +74,7 @@ class TreeService:
             self.persist(connection, kind, record, insert=previous is None)
         return record
 
+    # Delete a tree item only after checking that it has no children.
     def delete(self, kind, record_id):
         with self.store.connect() as connection:
             connection.execute('BEGIN IMMEDIATE')
@@ -80,12 +89,14 @@ class TreeService:
             if count: raise TreeError(f'configuration contains {count} children; move or delete them first', 409)
             connection.execute('DELETE FROM api_testing_records WHERE kind=? AND id=?', (kind, record_id))
 
+    # Return the immediate children of a parent in position order.
     @staticmethod
     def siblings(records, collection_id, parent_id):
         return sorted([(kind, value) for (kind, _), value in records.items()
             if kind in {'folders', 'requests'} and value.get('collection_id') == collection_id
             and value.get('parent_id' if kind == 'folders' else 'folder_id') == parent_id], key=lambda item: item[1].get('position', 0))
 
+    # Reorder a complete set of siblings after checking their versions.
     def reorder(self, collection_id, parent_id, items):
         with self.store.connect() as connection:
             connection.execute('BEGIN IMMEDIATE')
@@ -109,6 +120,7 @@ class TreeService:
                 result.append({**record, 'kind': item['kind']})
         return {'items': result}
 
+    # Flatten a collection or folder subtree into request execution order.
     def ordered_requests(self, collection_id, folder_id=None, *, records=None):
         if records is None:
             with self.store.connect() as connection: records = self.records(connection)
@@ -116,6 +128,7 @@ class TreeService:
         if folder_id and records.get(('folders', folder_id), {}).get('collection_id') != collection_id:
             raise TreeError('folder not found in collection', 404)
         result = []
+        # Visit each child in order and recurse into folders.
         def visit(parent):
             for kind, value in self.siblings(records, collection_id, parent):
                 if kind == 'folders': visit(value['id'])
@@ -123,8 +136,10 @@ class TreeService:
         visit(folder_id)
         return result
 
+    # Save an imported hierarchy with newly assigned IDs.
     def import_collection(self, collection, requests, folders):
         now = datetime.now(timezone.utc).isoformat()
+        # Give an imported item a fresh identity and initial timestamps.
         def record(value): return {**value, 'id': str(uuid4()), 'version': 1, 'created_at': now, 'updated_at': now}
         saved = record(collection)
         mapping = {folder['id']: str(uuid4()) for folder in folders}

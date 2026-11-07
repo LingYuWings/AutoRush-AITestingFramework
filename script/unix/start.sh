@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
+# Start and supervise the loopback backend and Web console on Unix platforms.
 set -euo pipefail
 
+# Print a launcher error and trigger the registered exit cleanup.
 fail() {
     printf '[AutoRush] %s\n' "$*" >&2
     exit 1
@@ -73,6 +75,7 @@ mkdir -p "$log_dir"
 backend_pid=
 frontend_pid=
 
+# Signal both owned services before waiting for either one to exit.
 cleanup() {
     local pid
     for pid in "$frontend_pid" "$backend_pid"; do
@@ -89,6 +92,7 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+# Poll the service endpoint and fail early if its child process exits.
 wait_for_url() {
     local url=$1 pid=$2 log=$3 attempt
     for ((attempt = 0; attempt < 60; attempt++)); do

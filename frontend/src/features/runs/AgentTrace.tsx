@@ -1,5 +1,6 @@
 import type {AgentTraceRecord} from '../../shared/api'
 import StepScreenshot from '../../components/StepScreenshot'
+// Display agent decisions and verification records attached to step evidence.
 export default function AgentTrace({evidence,authEpoch=0,live=false}:{evidence:Record<string,unknown>;authEpoch?:number;live?:boolean}) {
   const agent=evidence.agent as {expected_result?:string;verification_kind?:string;traces?:AgentTraceRecord[]}|undefined
   if(!agent)return null

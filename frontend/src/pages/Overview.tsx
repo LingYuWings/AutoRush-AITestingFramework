@@ -4,6 +4,7 @@ import type { LiveEvent, View } from '../app/types'
 import { EmptyState, PageHeader, ResultBar, StatusBadge } from '../components/ui'
 import { countStatuses, relative, shortId } from '../shared/format'
 
+// Summarize the testing pipeline and surface recent activity and reports.
 export default function Overview({ cases, plans, runs, events, onNavigate, onNewCase, onOpenRun }: {
   cases: CaseRecord[]
   plans: PlanRecord[]

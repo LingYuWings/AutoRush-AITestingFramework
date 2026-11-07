@@ -3,7 +3,9 @@ import json
 from autorush.agent.contracts import parse_decision
 from autorush.agent.schema import decision_schema
 
+# Report a rejected model decision along with the original model response.
 class InvalidDecisionError(ValueError):
+    # Store the validation error and response for inspection.
     def __init__(self,error,response):
         super().__init__(str(error));self.response=response
 
@@ -36,6 +38,7 @@ HINTS={
 
 
 
+# Ask the model for a decision based on bounded observation and history data.
 async def decide(client,step,observation,history,*,budget,feedback='',send_images=True):
     public=observation.public_dict()
     public['text']=public['text'][:4000]

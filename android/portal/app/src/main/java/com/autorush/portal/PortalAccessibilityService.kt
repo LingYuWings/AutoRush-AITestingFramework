@@ -21,6 +21,7 @@ import java.util.UUID
 
 /** Device-side execution boundary. Every read and action checks the current allowlisted app. */
 class PortalAccessibilityService : AccessibilityService() {
+    // Save the node details needed to recognize it after walking its path again.
     private data class NodeRef(val path: List<Int>, val className: String, val viewId: String, val bounds: Rect)
     private var snapshotId = ""
     private var snapshotGeneration = -1L
@@ -34,12 +35,14 @@ class PortalAccessibilityService : AccessibilityService() {
     internal var captureEpochNs = System.nanoTime()
         private set
 
+    // Register the live service for command dispatch and update its status.
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
         PortalState.accessibilityConnected = true
     }
 
+    // Invalidate stale snapshots, recheck capture access, and update the latest allowed observation.
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         generation++
         refreshCaptureBoundary()
@@ -61,11 +64,13 @@ class PortalAccessibilityService : AccessibilityService() {
         PortalState.lastObservedAt = System.currentTimeMillis()
     }
 
+    // Mark accessibility unavailable and let the streamer recheck its policy.
     override fun onInterrupt() {
         PortalState.accessibilityConnected = false
         ScreenStreamer.policyChanged()
     }
 
+    // Clear pending work and remove this service from command dispatch.
     override fun onDestroy() {
         mainHandler.removeCallbacksAndMessages(null)
         if (instance === this) instance = null
@@ -111,6 +116,7 @@ class PortalAccessibilityService : AccessibilityService() {
         }
     }
 
+    // Return the active accessibility root after checking its package is allowed.
     private fun allowedRoot(): AccessibilityNodeInfo {
         val root = rootInActiveWindow ?: error("当前没有可访问的界面")
         val pkg = root.packageName?.toString().orEmpty()
@@ -118,6 +124,7 @@ class PortalAccessibilityService : AccessibilityService() {
         return root
     }
 
+    // Verify the live root matches any package and snapshot constraints supplied by the command.
     private fun actionRoot(params: JSONObject): AccessibilityNodeInfo {
         val root = allowedRoot()
         ActionGuard.validate(
@@ -129,6 +136,7 @@ class PortalAccessibilityService : AccessibilityService() {
         return root
     }
 
+    // Report the device, display, and currently enabled testing capabilities.
     private fun deviceInfo(): JSONObject {
         val display = resources.displayMetrics
         return JSONObject().put("device_id", PortalConfig.deviceId(this))
@@ -141,6 +149,7 @@ class PortalAccessibilityService : AccessibilityService() {
             .put("allowed_packages", JSONArray(PortalConfig.allowedPackages(this).toList()))
     }
 
+    // Read a bounded accessibility tree, hide password contents, and index nodes for later commands.
     private fun snapshot(): JSONObject {
         val root = allowedRoot()
         val nodes = JSONArray()
@@ -171,6 +180,7 @@ class PortalAccessibilityService : AccessibilityService() {
             .put("snapshot_id", snapshotId).put("nodes", nodes).put("truncated", queue.isNotEmpty())
     }
 
+    // Verify the snapshot node, then click an eligible ancestor or tap its center.
     private fun tapElement(params: JSONObject, complete: (Result<JSONObject>) -> Unit) {
         val root = actionRoot(params)
         check(params.getString("snapshot_id") == snapshotId && snapshotGeneration == generation) {
@@ -194,6 +204,7 @@ class PortalAccessibilityService : AccessibilityService() {
         gesture(now.centerX(), now.centerY(), now.centerX(), now.centerY(), 80L, complete)
     }
 
+    // Set text on a verified snapshot node or the currently focused editable field.
     private fun inputText(params: JSONObject): JSONObject {
         val root = actionRoot(params)
         val value = params.getString("text")
@@ -217,6 +228,7 @@ class PortalAccessibilityService : AccessibilityService() {
             .put("length", value.length)
     }
 
+    // Start an allowed app and wait until its accessibility window is active.
     private fun launchApp(params: JSONObject, complete: (Result<JSONObject>) -> Unit) {
         val pkg = params.getString("package")
         check(PortalConfig.isPackageAllowed(this, pkg)) { "目标应用不在允许操作范围中" }
@@ -239,12 +251,14 @@ class PortalAccessibilityService : AccessibilityService() {
         awaitWindow(20)
     }
 
+    // Follow child indices from the root to resolve a node in the current tree.
     private fun nodeAtPath(root: AccessibilityNodeInfo, path: List<Int>): AccessibilityNodeInfo? {
         var node: AccessibilityNodeInfo? = root
         for (part in path) node = node?.getChild(part) ?: return null
         return node
     }
 
+    // Check screen coordinates and report the outcome of Android's asynchronous gesture.
     private fun gesture(x1: Int, y1: Int, x2: Int, y2: Int, duration: Long, complete: (Result<JSONObject>) -> Unit) {
         val display = resources.displayMetrics
         require(listOf(x1, x2).all { it in 0 until display.widthPixels } &&
@@ -253,9 +267,11 @@ class PortalAccessibilityService : AccessibilityService() {
         val description = GestureDescription.Builder()
             .addStroke(GestureDescription.StrokeDescription(path, 0, duration)).build()
         val accepted = dispatchGesture(description, object : GestureResultCallback() {
+            // Report success after Android completes the gesture.
             override fun onCompleted(gestureDescription: GestureDescription?) {
                 complete(Result.success(JSONObject().put("performed", true)))
             }
+            // Report a failure if Android cancels the gesture.
             override fun onCancelled(gestureDescription: GestureDescription?) {
                 complete(Result.failure(IllegalStateException("手势被系统取消")))
             }
@@ -263,6 +279,7 @@ class PortalAccessibilityService : AccessibilityService() {
         if (!accepted) complete(Result.failure(IllegalStateException("系统拒绝手势")))
     }
 
+    // Advance the capture epoch when the active app, window, or visible window geometry changes.
     private fun refreshCaptureBoundary() {
         val root = rootInActiveWindow
         val pkg = root?.packageName?.toString().orEmpty()
@@ -280,6 +297,7 @@ class PortalAccessibilityService : AccessibilityService() {
         }
     }
 
+    // Require screenshot permission and a visible, isolated window for the requested app.
     internal fun currentCapturePackage(expected: String? = null): String {
         check(PortalState.accessibilityConnected) { "无障碍服务未启用" }
         check(PortalConfig.screenshotAllowed(this)) { "设备端未授权截图" }
@@ -293,14 +311,17 @@ class PortalAccessibilityService : AccessibilityService() {
         return pkg
     }
 
+    // Return the safe bounds of the current authorized app window.
     internal fun currentCaptureBounds(expected: String): CaptureBounds {
         currentCapturePackage(expected)
         return CaptureSurface.isolatedBounds(captureWindows.first { it.id == captureWindow }, captureWindows)
             ?: error("应用画面被其他窗口遮挡，已暂停截图")
     }
 
+    // Advance the capture epoch so pixels from the earlier display state are discarded.
     internal fun invalidateCapture() { captureEpochNs = System.nanoTime() }
 
+    // Return a size-limited screenshot response with Base64 JPEG data and capture metadata.
     private fun screenshot(params: JSONObject, complete: (Result<JSONObject>) -> Unit) {
         val options = ScreenshotOptions.fromJson(params)
         captureScreenshot(options.expectedPackage, options.maxWidth, options.quality) { result ->
@@ -323,6 +344,7 @@ class PortalAccessibilityService : AccessibilityService() {
         var completed = false
         var acquired = false
         lateinit var timeout: Runnable
+        // Complete once and release any screenshot slot held by this request.
         fun finish(result: Result<CapturedScreen>) {
             if (completed) return
             completed = true
@@ -332,6 +354,7 @@ class PortalAccessibilityService : AccessibilityService() {
         }
         timeout = Runnable { finish(Result.failure(IllegalStateException("截图超时"))) }
         mainHandler.postDelayed(timeout, 5000)
+        // Wait for the shared slot, then request a screenshot of the authorized window or display.
         fun start() {
             if (completed) return
             try {
@@ -348,6 +371,7 @@ class PortalAccessibilityService : AccessibilityService() {
                 val bounds = currentCaptureBounds(pkg)
                 val windowBounds = captureWindows.first { it.id == window }.bounds
                 val callback = object : TakeScreenshotCallback {
+                    // Recheck the window, crop and encode the image, then release the Android buffer.
                     override fun onSuccess(result: ScreenshotResult) {
                         var bitmap: Bitmap? = null
                         var cropped: Bitmap? = null
@@ -386,6 +410,7 @@ class PortalAccessibilityService : AccessibilityService() {
                             result.hardwareBuffer.close()
                         }
                     }
+                    // Pass the system screenshot error to the waiting request.
                     override fun onFailure(errorCode: Int) {
                         finish(Result.failure(IllegalStateException("系统截图失败：$errorCode")))
                     }

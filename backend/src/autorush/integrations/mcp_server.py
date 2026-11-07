@@ -10,12 +10,14 @@ from mcp.types import ToolAnnotations
 from autorush.integrations.operator import LocalOperator
 
 
+# Register the scoped local Android operator tools with FastMCP.
 def build_server(operator: LocalOperator | None = None) -> FastMCP:
     operator = operator or LocalOperator(
         base_url=os.getenv("AUTORUSH_MCP_API_URL", "http://127.0.0.1:8000"),
         console_origin=os.getenv("AUTORUSH_MCP_CONSOLE_ORIGIN", "http://127.0.0.1:5173"),
         allowed_packages=frozenset(item.strip() for item in os.getenv("AUTORUSH_MCP_ALLOWED_PACKAGES", "com.autorush.fixture").split(",") if item.strip()),
     )
+    # Close the operator HTTP client when the MCP server shuts down.
     @asynccontextmanager
     async def lifespan(_):
         try:
@@ -61,6 +63,7 @@ def build_server(operator: LocalOperator | None = None) -> FastMCP:
     return server
 
 
+# Start the MCP server over standard input and output.
 def main():
     build_server().run(transport="stdio")
 

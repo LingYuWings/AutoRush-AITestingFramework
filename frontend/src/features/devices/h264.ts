@@ -7,9 +7,11 @@ const MAX_UNIT = 4 * 1024 * 1024
 
 export interface AccessUnit { data: Uint8Array<ArrayBuffer>; key: boolean; codec: string }
 
+// Read fixed-width and Exp-Golomb fields from an H.264 NAL unit.
 class Bits {
   private bytes: Uint8Array
   private offset = 0
+  // Strip the NAL header and emulation-prevention bytes before reading.
   constructor(nal: Uint8Array) {
     const bytes: number[] = []
     for (let i = 1; i < nal.length; i++) {
@@ -18,17 +20,20 @@ class Bits {
     }
     this.bytes = new Uint8Array(bytes)
   }
+  // Consume a bounded number of bits from the current offset.
   read(count: number): number {
     if (count < 0 || count > 32 || this.offset + count > this.bytes.length * 8) throw new Error('H.264 header 截断')
     let value = 0
     for (let i = 0; i < count; i++, this.offset++) value = value * 2 + ((this.bytes[this.offset >> 3] >> (7 - this.offset % 8)) & 1)
     return value
   }
+  // Decode an unsigned Exp-Golomb value with a bounded prefix length.
   ue(): number {
     let zeros = 0
     while (this.read(1) === 0) { if (++zeros > 24) throw new Error('H.264 header 无效') }
     return 2 ** zeros - 1 + this.read(zeros)
   }
+  // Map an unsigned Exp-Golomb code to its signed value.
   se(): number { const value = this.ue(); return value % 2 ? (value + 1) / 2 : -value / 2 }
 }
 
@@ -38,6 +43,7 @@ interface Sps {
 }
 interface Pps { raw: Uint8Array; spsId: number; bottomPoc: boolean }
 
+// Read sequence parameters needed for the codec and slice identity.
 function readSps(nal: Uint8Array): { id: number; sps: Sps } {
   if (nal.length > 65536) throw new Error('SPS 过大')
   const bits = new Bits(nal)
@@ -78,6 +84,7 @@ function readSps(nal: Uint8Array): { id: number; sps: Sps } {
   return { id, sps: { raw: nal, codec, frameBits, pocType, pocBits, deltaAlwaysZero, frameOnly, separateColor } }
 }
 
+// Read picture parameters and their reference to the sequence parameters.
 function readPps(nal: Uint8Array): { id: number; pps: Pps } {
   if (nal.length > 65536) throw new Error('PPS 过大')
   const bits = new Bits(nal)
@@ -87,6 +94,7 @@ function readPps(nal: Uint8Array): { id: number; pps: Pps } {
   return { id, pps: { raw: nal, spsId, bottomPoc } }
 }
 
+// Prefix NAL units with start codes to rebuild an Annex B access unit.
 function concatenate(nals: Uint8Array[]): Uint8Array<ArrayBuffer> {
   const size = nals.reduce((sum, nal) => sum + 4 + nal.length, 0)
   if (size > MAX_UNIT) throw new Error('H.264 帧缓冲过大')
@@ -96,6 +104,7 @@ function concatenate(nals: Uint8Array[]): Uint8Array<ArrayBuffer> {
   return output
 }
 
+// Assemble arbitrary Annex B chunks into decoder-ready H.264 access units.
 export class H264Parser {
   private buffer: Uint8Array<ArrayBuffer> = new Uint8Array()
   private sps = new Map<number, Sps>()
@@ -107,12 +116,14 @@ export class H264Parser {
   private key = false
   private waitingForKey = true
 
+  // Discard buffered data and wait for the next key picture.
   reset() {
     this.buffer = new Uint8Array(); this.sps.clear(); this.pps.clear()
     this.nals = []; this.unitBytes = 0; this.picture = ''; this.parameters = null
     this.key = false; this.waitingForKey = true
   }
 
+  // Parse complete NAL units and keep an incomplete tail for the next chunk.
   push(chunk: Uint8Array): AccessUnit[] {
     if (this.buffer.length + chunk.length > MAX_BUFFER) throw new Error('H.264 NAL 缓冲过大')
     const combined = new Uint8Array(this.buffer.length + chunk.length)
@@ -144,6 +155,7 @@ export class H264Parser {
     return units
   }
 
+  // Emit a decodable picture and attach parameter sets to key units.
   private finish(units: AccessUnit[]) {
     if (this.picture && this.parameters && (this.key || !this.waitingForKey)) {
       const params = this.key ? [this.parameters.sps.raw, this.parameters.pps.raw] : []
@@ -153,6 +165,7 @@ export class H264Parser {
     this.nals = []; this.unitBytes = 0; this.picture = ''; this.parameters = null; this.key = false
   }
 
+  // Track parameter sets and detect picture boundaries while collecting slices.
   private nal(raw: Uint8Array, units: AccessUnit[]) {
     let end = raw.length
     while (end && raw[end - 1] === 0) end--
@@ -193,6 +206,7 @@ export interface H264Update {
 }
 export interface H264Failure { reason: string; detail: string }
 
+// Decode an authorized ADB screen stream into the canvas and report fallback conditions.
 export function openAdbH264({ url, token, serial, deviceId, canvas, onChange, onFallback }: {
   url: string; token: string; serial: string; deviceId: string; canvas: HTMLCanvasElement
   onChange: (update: H264Update) => void; onFallback: (failure: H264Failure) => void
@@ -219,7 +233,9 @@ export function openAdbH264({ url, token, serial, deviceId, canvas, onChange, on
   let frameTimes: number[] = []
   let lastUpdate = 0
   let watchdog: ReturnType<typeof setTimeout> | undefined
+  // Publish decoder state and the current canvas dimensions and frame rate.
   const emit = (state: string, detail: string, fps = 0) => onChange({ state, detail, active: !closed, width: canvas.width, height: canvas.height, fps })
+  // Invalidate pending work and close the old decoder before restarting.
   const clearDecoder = (clearPicture = true) => {
     generation++
     if (decoder && decoder.state !== 'closed') decoder.close()
@@ -231,6 +247,7 @@ export function openAdbH264({ url, token, serial, deviceId, canvas, onChange, on
       canvas.width = canvas.height = 0
     }
   }
+  // Tear down the stream, decoder, watchdog, and browser listeners.
   const stop = (detail = '已停止查看', state = 'stopped') => {
     if (closed) return
     closed = true
@@ -244,19 +261,24 @@ export function openAdbH264({ url, token, serial, deviceId, canvas, onChange, on
     }
     emit(state, detail)
   }
+  // Stop on a sanitized error and request preview fallback when allowed.
   const fail = (reason: string, detail: string, fallback = true) => {
     if (closed) return
     const safe = detail.replaceAll(token, '[已隐藏]').slice(0, 300)
     stop(safe, 'error')
     if (fallback) onFallback({ reason, detail: safe })
   }
+  // Restart the timeout that detects a stream without decodable frames.
   const arm = () => { clearTimeout(watchdog); watchdog = setTimeout(() => fail('timeout', 'ADB 长时间没有可解码画面'), 12000) }
+  // Stop sharing when the viewer is hidden.
   const visibility = () => { if (document.hidden) stop('页面已隐藏，已停止共享') }
+  // Stop the stream when the browser loses its network connection.
   const offline = () => stop('网络已断开，请重新开始查看', 'offline')
   document.addEventListener('visibilitychange', visibility)
   window.addEventListener('offline', offline)
   arm()
 
+  // Submit queued access units to the current decoder while respecting its capacity.
   const pump = async () => {
     if (pumping || closed) return
     pumping = true
@@ -273,6 +295,7 @@ export function openAdbH264({ url, token, serial, deviceId, canvas, onChange, on
           if (!support.supported) throw new Error('浏览器不支持设备的 H.264 编码格式')
           if (decoder && decoder.state !== 'closed') decoder.close()
           const currentDecoder = new VideoDecoder({
+            // Draw a current frame, report its display metrics, and release it.
             output: frame => {
               try {
                 if (closed || epoch !== generation || decoder !== currentDecoder) return
@@ -291,6 +314,7 @@ export function openAdbH264({ url, token, serial, deviceId, canvas, onChange, on
               } catch { fail('decode', 'H.264 画面绘制失败') }
               finally { frame.close() }
             },
+            // Handle a decoding failure only if it belongs to the active decoder.
             error: () => { if (epoch === generation && decoder === currentDecoder) fail('decode', '浏览器 H.264 解码失败') },
           })
           decoder = currentDecoder; codec = unit.codec

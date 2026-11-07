@@ -18,6 +18,7 @@ OPERATIONS={
  'api':{'request':({'method':{'enum':['GET','POST','PUT','PATCH','DELETE','HEAD']},'path':S,
     'query':{'type':'object','additionalProperties':True},'json':{}},['method','path'])}}
 
+# Build a decision schema limited to the operations available for this step.
 def decision_schema(step,observation):
     schema=DECISION_ADAPTER.json_schema()
     action=schema['$defs'].pop('ActionDecision')

@@ -10,6 +10,7 @@ const abilities:Record<ModelCapability,string>={text_only:'文本',structured_ou
 const implemented=new Set(['openai_chat','openai_responses','anthropic_messages'])
 const empty:CatalogState={providerId:'',region:'',credentialType:'api_key',protocol:'',baseUrl:'',secretRef:'',modelId:'',models:[],verified:false,visionVerified:false}
 
+// Configure model providers, discover local runtimes, and verify saved endpoints.
 export default function ProviderSettings({presets,configs,onCreate,onPreflight}:{presets:ProviderPreset[];configs:ProviderConfig[];onCreate:(payload:ProviderConfigPayload)=>Promise<boolean>;onPreflight:(id:string)=>Promise<ProviderPreflight|null>}) {
   const [editing,setEditing]=useState(false)
   const [endpoint,setEndpoint]=useState<CatalogState>(empty)
@@ -27,7 +28,9 @@ export default function ProviderSettings({presets,configs,onCreate,onPreflight}:
   const [probeBusy,setProbeBusy]=useState('')
   const preset=useMemo(()=>presets.find(p=>p.id===endpoint.providerId),[presets,endpoint.providerId])
   const currentCatalogKey=useRef('');currentCatalogKey.current=catalogKey(endpoint)
+  // Invalidate model selection when endpoint settings change.
   const change=(fields:Partial<CatalogState>)=>{setEndpoint(old=>invalidateModelSelection(old,fields));setCatalogError('')}
+  // Reset the form to the chosen provider's connection defaults.
   const choosePreset=(id:string)=>{
     const next=presets.find(p=>p.id===id);if(!next)return
     setEndpoint({...empty,providerId:id,region:next.regions[0]??'',credentialType:next.credential_types[0]??'api_key',
@@ -35,7 +38,9 @@ export default function ProviderSettings({presets,configs,onCreate,onPreflight}:
     setCapabilities(['structured_output',...(next.capabilities.includes('vision')?['vision' as const]:[])])
     setCatalogError('')
   }
+  // Obtain local authorization before inspecting model endpoints.
   const ensureOperator=async()=>{api.setOperatorToken((await api.operatorSession()).operator_token)}
+  // Fetch models for the current endpoint and ignore stale responses.
   const fetchCatalog=async()=>{
     const key=catalogKey(endpoint);setCatalogBusy(true);setCatalogError('')
     try {
@@ -47,6 +52,7 @@ export default function ProviderSettings({presets,configs,onCreate,onPreflight}:
     }catch(error){if(currentCatalogKey.current===key)setCatalogError(error instanceof Error?error.message:'获取模型列表失败')}
     finally{setCatalogBusy(false)}
   }
+  // Query local model runtimes and report discovery results.
   const discover=async()=>{
     setDiscoveryBusy(true);setDiscoveryMessage('')
     try {await ensureOperator();const result=await api.discoverLocalModels();setRuntimes(result.runtimes)
@@ -54,11 +60,13 @@ export default function ProviderSettings({presets,configs,onCreate,onPreflight}:
     }catch(error){setDiscoveryMessage(error instanceof Error?error.message:'本地发现失败')}
     finally{setDiscoveryBusy(false)}
   }
+  // Fill the provider form with a discovered runtime and its models.
   const useRuntime=(runtime:LocalModelRuntime)=>{
     const id=runtime.id==='ollama'?'ollama':'local_openai';choosePreset(id)
     setEndpoint(previous=>({...previous,baseUrl:runtime.base_url,models:runtime.models,modelId:runtime.models[0]??''}))
     setName(runtime.name+' · '+(runtime.models[0]??''));setEditing(true)
   }
+  // Save the configured provider only when the selected model is in its catalog.
   const submit=async(event:React.FormEvent)=>{
     event.preventDefault();if(!preset||!endpoint.models.includes(endpoint.modelId))return
     setSaving(true)
@@ -66,6 +74,7 @@ export default function ProviderSettings({presets,configs,onCreate,onPreflight}:
       protocol:endpoint.protocol,base_url:endpoint.baseUrl.trim(),secret_ref:endpoint.credentialType==='local'?null:endpoint.secretRef.trim(),
       model_id:endpoint.modelId,capabilities})){setEditing(false);setName('')}}finally{setSaving(false)}
   }
+  // Run the requested connection or vision check and record the result.
   const probe=async(config:ProviderConfig,vision=false)=>{
     setProbeBusy(config.id)
     try {

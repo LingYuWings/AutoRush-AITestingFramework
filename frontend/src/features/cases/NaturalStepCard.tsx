@@ -1,5 +1,6 @@
 import type {DriverKind} from '../../shared/api'
 import type {NaturalStep} from './natural-form'
+// Edit one natural-language action or cleanup step.
 export default function NaturalStepCard({step,index,cleanup,onChange,onRemove,lockDriver=false}:{step:NaturalStep;index:number;cleanup?:boolean;onChange:(step:NaturalStep)=>void;onRemove:()=>void;lockDriver?:boolean}) {
   return <section className="surface step-card"><div className="section-title"><strong>{cleanup?'后处理':'执行步骤'} {index+1}</strong><button type="button" className="secondary-button" onClick={onRemove}>删除{cleanup?'后处理':'步骤'}</button></div>
     <label className="field"><span>驱动</span><select disabled={lockDriver} value={step.driver} onChange={e=>onChange({...step,driver:e.target.value as DriverKind})}><option value="web">Web · Playwright</option><option value="desktop">Desktop · PyAutoGUI</option><option value="android">Android · Portal</option><option value="api">HTTP API</option></select></label>

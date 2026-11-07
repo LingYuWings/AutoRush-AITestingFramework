@@ -1,5 +1,6 @@
 import type { PairingPayload } from '../../shared/api'
 
+// Validate the transport settings and allowed packages for Android pairing.
 export function pairingPayload(connection: 'usb' | 'wss' | 'lan', serial: string, server: string, packages: string): PairingPayload {
   const allowedPackages = [...new Set(packages.split(/[\s,，]+/).filter(Boolean))]
   if (!allowedPackages.length || allowedPackages.length > 10) throw new Error('请填写 1–10 个允许测试的 App 包名。')

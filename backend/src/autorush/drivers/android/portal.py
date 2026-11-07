@@ -16,6 +16,7 @@ from autorush.evidence.screenshot import record_screenshot
 OPERATIONS = {"android.launch", "android.inspect", "android.tap", "android.input_text", "android.swipe", "android.back"}
 
 
+# Validate the operation and parameters for an Android step.
 def validate_android_step(step: StepSpec) -> None:
     if step.operation not in OPERATIONS:
         raise ValueError("unsupported Android operation")
@@ -48,13 +49,16 @@ def validate_android_step(step: StepSpec) -> None:
         raise ValueError("Android assertions require android.inspect")
 
 
+# Run Android actions through a leased Portal device session.
 class AndroidPortalDriver:
+    # Store the device lease, target package, and screenshot settings.
     def __init__(self, hub: DeviceHub, device_id: UUID, package: str, lease: UUID, *,
                  capture_screenshots: bool = False, evidence_directory: Path | None = None, run_id: UUID | None = None):
         self._hub, self._device_id, self._package, self._lease = hub, device_id, package, lease
         self._capture_screenshots, self._evidence_directory, self._run_id = capture_screenshots, evidence_directory, run_id
         self._closed = False
 
+    # Validate the package and evidence settings before acquiring a device lease.
     @classmethod
     async def create(cls, hub: DeviceHub, device_id: UUID, package: str, **options: Any) -> "AndroidPortalDriver":
         if not re.fullmatch(r"(?:[A-Za-z_][A-Za-z0-9_]*\.)+[A-Za-z_][A-Za-z0-9_]*", package):
@@ -63,12 +67,14 @@ class AndroidPortalDriver:
             raise ValueError("screenshot evidence requires a run and report directory")
         return cls(hub, device_id, package, hub.acquire(device_id), **options)
 
+    # Send a Portal request using the current device lease.
     async def _call(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         try:
             return await self._hub.call(self._device_id, method, params, lease_id=self._lease)
         except (ConnectionError, asyncio.TimeoutError) as exc:
             raise DriverBlockedError("Android device disconnected or timed out") from exc
 
+    # Fetch Android UI state and check the package and snapshot completeness.
     async def _snapshot(self, *, require_complete: bool = True, allow_startup: bool = False) -> dict[str, Any]:
         snapshot = await self._call("ui.snapshot", {})
         if snapshot.get("package") != self._package:
@@ -81,11 +87,13 @@ class AndroidPortalDriver:
             raise DriverBlockedError("Android UI snapshot is truncated; target uniqueness and assertions cannot be verified")
         return snapshot
 
+    # Find visible nodes matching the requested selector.
     @staticmethod
     def _match(snapshot: dict[str, Any], target: dict[str, str]) -> list[dict[str, Any]]:
         key, expected = next(iter(target.items()))
         return [node for node in snapshot["nodes"] if isinstance(node, dict) and node.get(key) == expected and node.get("visible", True)]
 
+    # Poll Android UI state until its assertions pass or the deadline expires.
     async def _inspect(self, step: StepSpec) -> ActionResult:
         deadline = asyncio.get_running_loop().time() + step.parameters.get("timeout_ms", 3000) / 1000
         target = step.parameters.get("target")
@@ -103,6 +111,7 @@ class AndroidPortalDriver:
                 return ActionResult(output, "inspect Android UI", {"ui_snapshot": snapshot})
             await asyncio.sleep(0.15)
 
+    # Validate and dispatch one Android action through Portal.
     async def execute(self, step: StepSpec) -> ActionResult:
         if self._closed or not self._hub.owns_lease(self._device_id, self._lease):
             raise DriverBlockedError("Android execution lease is no longer active")
@@ -145,6 +154,7 @@ class AndroidPortalDriver:
             raise RuntimeError("Android action returned performed=false or no confirmation")
         return ActionResult(result, operation or "Android action", {"ui_snapshot": snapshot})
 
+    # Capture and store Android screenshot evidence for the leased device.
     async def capture_evidence(self) -> dict[str, Any]:
         if not self._capture_screenshots:
             return {}
@@ -166,10 +176,12 @@ class AndroidPortalDriver:
                     raise
         return {"screenshot": record_screenshot(captured, self._evidence_directory, self._run_id, self._package)}
 
+    # Collect the current Android state for the agent.
     async def observe(self):
         from autorush.agent.android_observer import collect_android_state
         return await collect_android_state(self)
 
+    # Close the driver and release its device lease.
     async def close(self) -> None:
         self._closed = True
         self._hub.release(self._device_id, self._lease)

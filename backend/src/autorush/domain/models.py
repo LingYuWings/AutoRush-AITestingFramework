@@ -10,16 +10,19 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, Field, model_validator
 
 
+# Enumerates the review states of a case revision.
 class CaseStatus(StrEnum):
     DRAFT = "draft"
     APPROVED = "approved"
 
 
+# Distinguishes an editable draft plan from a ready plan.
 class PlanStatus(StrEnum):
     DRAFT = "draft"
     READY = "ready"
 
 
+# Defines outcomes shared by steps, cases and runs.
 class ResultStatus(StrEnum):
     PASSED = "passed"
     FAILED = "failed"
@@ -28,11 +31,13 @@ class ResultStatus(StrEnum):
     SKIPPED = "skipped"
 
 
+# Describes one expected property of a driver result.
 class AssertionSpec(BaseModel):
     kind: Literal["status_code", "json_field_equals", "body_contains", "url_equals", "url_contains", "text_contains", "element_visible", "pixel_rgb_equals", "package_equals"]
     expected: Any
     path: str | None = None
 
+    # Require a lookup path when an assertion targets a JSON field.
     @model_validator(mode="after")
     def require_path_for_json_field(self) -> "AssertionSpec":
         if self.kind == "json_field_equals" and not self.path:
@@ -46,6 +51,7 @@ class AssertionSpec(BaseModel):
         return self
 
 
+# Carries the intent, driver and optional compiled operation for one step.
 class StepSpec(BaseModel):
     order: int = Field(ge=1)
     intent: str = Field(min_length=1, max_length=1000)
@@ -57,6 +63,7 @@ class StepSpec(BaseModel):
     always_run: bool = False
 
 
+# Defines editable case content shared by create, import and debug requests.
 class CaseCreate(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     description: str = ""
@@ -65,6 +72,7 @@ class CaseCreate(BaseModel):
     steps: list[StepSpec] = Field(min_length=1)
     postconditions: list[StepSpec] = Field(default_factory=list)
 
+    # Check step numbering and execution-mode constraints before accepting a case.
     @model_validator(mode="after")
     def orders_must_be_unique(self) -> "CaseCreate":
         if self.platform and any(step.driver not in {self.platform, 'api'} for step in self.steps+self.postconditions):
@@ -85,6 +93,7 @@ class CaseCreate(BaseModel):
         return self
 
 
+# Adds durable identity, review state and revision history to a case.
 class CaseRecord(CaseCreate):
     id: UUID = Field(default_factory=uuid4)
     version: int = 1
@@ -94,11 +103,13 @@ class CaseRecord(CaseCreate):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+# Defines the requested Playwright viewport dimensions.
 class WebViewport(BaseModel):
     width: int = Field(default=1280, strict=True, ge=320, le=3840)
     height: int = Field(default=800, strict=True, ge=240, le=2160)
 
 
+# Identifies the specific local window authorized for desktop execution.
 class DesktopTarget(BaseModel):
     hwnd: int = Field(strict=True, ge=1, le=2**53 - 1)
     pid: int = Field(strict=True, ge=1, le=2**32 - 1)
@@ -108,6 +119,7 @@ class DesktopTarget(BaseModel):
     screen_height: int = Field(strict=True, ge=1, le=16384)
 
 
+# Defines the model selection and bounds for a natural-language run.
 class AgentOptions(BaseModel):
     provider_config_id: UUID
     max_rounds_per_step: int = Field(default=8,strict=True,ge=1,le=20)
@@ -116,6 +128,7 @@ class AgentOptions(BaseModel):
     case_timeout_seconds: int = Field(default=600,strict=True,ge=30,le=1800)
 
 
+# Defines the case order and execution targets for a mixed plan.
 class PlanCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     environment: str = Field(min_length=1, max_length=100)
@@ -133,14 +146,17 @@ class PlanCreate(BaseModel):
     android_package: str | None = Field(default=None, max_length=200, pattern=r"^(?:[A-Za-z_][A-Za-z0-9_]*\.)+[A-Za-z_][A-Za-z0-9_]*$")
 
 
+# Adds identity, readiness and frozen environment metadata to a plan.
 class PlanRecord(PlanCreate):
     api_environment_snapshot_id: UUID | None = None
+    source_plan_id: UUID | None = None
     id: UUID = Field(default_factory=uuid4)
     version: int = 1
     status: PlanStatus = PlanStatus.DRAFT
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+# Records one operation's outcome, assertions and evidence.
 class StepResult(BaseModel):
     order: int
     intent: str
@@ -150,6 +166,7 @@ class StepResult(BaseModel):
     evidence: dict[str, Any] = Field(default_factory=dict)
 
 
+# Groups step outcomes for one case within a run.
 class CaseResult(BaseModel):
     case_id: UUID
     title: str = ""
@@ -157,6 +174,7 @@ class CaseResult(BaseModel):
     steps: list[StepResult]
 
 
+# Stores aggregate status, case results and report export references.
 class RunRecord(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     plan_id: UUID

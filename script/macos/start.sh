@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Validate the host platform before delegating to the shared Unix launcher.
 set -eu
 
 if [[ $(uname -s) != Darwin ]]; then

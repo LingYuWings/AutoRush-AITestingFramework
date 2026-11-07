@@ -12,13 +12,17 @@ from autorush.drivers.base import Driver, DriverBlockedError
 from autorush.api_testing.variables import ApiBlocked
 
 
+# Execute structured steps through the registered platform drivers.
 class Runner:
+    # Bind driver names to the active execution session's driver instances.
     def __init__(self, drivers: Mapping[str, Driver]) -> None:
         self._drivers = drivers
 
+    # Run primary steps and eligible cleanup steps, retaining partial progress.
     async def run_case(self, case: CaseRecord, *, on_progress=None) -> CaseResult:
         self.begin_case()
         results: list[StepResult] = []
+        # Publish a snapshot of completed and currently active structured steps.
         async def progress(current=None):
             if on_progress is not None:await on_progress(results,current)
         failed = False
@@ -48,6 +52,7 @@ class Runner:
             case_status = ResultStatus.ERROR
         return CaseResult(case_id=case.id, title=case.title, status=case_status, steps=results)
 
+    # Execute a structured operation and evaluate its configured assertions.
     async def _run_step(self, step: StepSpec, *, capture_evidence:bool=True) -> StepResult:
         driver = self._drivers.get(step.driver)
         if driver is None:
@@ -80,14 +85,17 @@ class Runner:
         sanitizer = getattr(self._drivers.get('api'), 'sanitize_result', None)
         return sanitizer(result) if sanitizer else result
 
+    # Give drivers a chance to reset per-case state before the first step.
     def begin_case(self):
         for driver in self._drivers.values():
             reset = getattr(driver, 'begin_case', None)
             if callable(reset): reset()
 
+    # Dispatch one structured step through the normal execution path.
     async def execute_step(self,step:StepSpec,*,capture_evidence:bool=True) -> StepResult:
         return await self._run_step(step,capture_evidence=capture_evidence)
 
+    # Release driver resources owned by the runner.
     async def close(self) -> None:
         results=await asyncio.gather(*(driver.close() for driver in self._drivers.values()),return_exceptions=True)
         errors=[result for result in results if isinstance(result,BaseException)]

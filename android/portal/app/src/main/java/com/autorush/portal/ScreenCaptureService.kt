@@ -45,16 +45,22 @@ class ScreenCaptureService : Service() {
     @Volatile private var stopping = false
     private var projectionVisible = true
     private val projectionCallback = object : MediaProjection.Callback() {
+        // Tear down screen sharing when Android ends the projection.
         override fun onStop() { stopSharing("系统已停止录屏") }
+        // Resize the capture surface when Android reports new content dimensions.
         override fun onCapturedContentResize(width: Int, height: Int) { resize(width, height) }
+        // Track whether projected content is visible and report when it is blocked.
         override fun onCapturedContentVisibilityChanged(isVisible: Boolean) {
             projectionVisible = isVisible
             if (!isVisible) ScreenStreamer.projectionBlocked("系统录屏画面不可见")
         }
     }
     private val displayListener = object : DisplayManager.DisplayListener {
+        // Ignore new displays because this projection follows the default display.
         override fun onDisplayAdded(displayId: Int) {}
+        // End sharing if the default display is removed.
         override fun onDisplayRemoved(displayId: Int) { if (displayId == 0) stopSharing("屏幕已移除") }
+        // Update the capture size for default display changes on Android versions before 14.
         override fun onDisplayChanged(displayId: Int) {
             if (displayId == 0 && Build.VERSION.SDK_INT < 34) {
                 val metrics = metrics()
@@ -63,7 +69,9 @@ class ScreenCaptureService : Service() {
         }
     }
 
+    // Expose no binder because capture is controlled through start intents.
     override fun onBind(intent: Intent?): IBinder? = null
+    // Start the JPEG worker and register the screen-sharing notification channel.
     override fun onCreate() {
         super.onCreate()
         workerThread.start()
@@ -72,6 +80,7 @@ class ScreenCaptureService : Service() {
             NotificationChannel(CHANNEL, "AutoRush 屏幕共享", NotificationManager.IMPORTANCE_LOW))
     }
 
+    // Start capture from a current system grant or handle a user stop request.
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
             ScreenStreamer.stopByUser()
@@ -116,8 +125,10 @@ class ScreenCaptureService : Service() {
         return START_NOT_STICKY
     }
 
+    // Read the default display's real pixel dimensions and density.
     private fun metrics() = DisplayMetrics().also { getSystemService(WindowManager::class.java).defaultDisplay.getRealMetrics(it) }
 
+    // Read the latest frame, check the app boundary on the main thread, and encode it on the worker.
     private fun newReader(width: Int, height: Int): ImageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2).also {
         it.setOnImageAvailableListener({ source ->
             val image = runCatching { source.acquireLatestImage() }.getOrNull() ?: return@setOnImageAvailableListener
@@ -163,6 +174,7 @@ class ScreenCaptureService : Service() {
         }, worker)
     }
 
+    // Crop the padded image buffer to the approved app bounds and encode it as JPEG.
     private fun encode(image: Image, pkg: String, capturedAt: Long, bounds: CaptureBounds, screenWidth: Int, screenHeight: Int): CapturedScreen {
         var padded: Bitmap? = null
         var cropped: Bitmap? = null
@@ -186,6 +198,7 @@ class ScreenCaptureService : Service() {
         }
     }
 
+    // Invalidate stale frames after a display change and swap the reader when output size changes.
     private fun resize(sourceWidth: Int, sourceHeight: Int) {
         if (stopping || sourceWidth <= 0 || sourceHeight <= 0) return
         val dimensions = ScreenFrames.dimensions(sourceWidth, sourceHeight)
@@ -206,6 +219,7 @@ class ScreenCaptureService : Service() {
         previous?.close()
     }
 
+    // Release projection resources once and report that sharing has stopped.
     internal fun stopSharing(detail: String) {
         if (stopping) return
         stopping = true
@@ -228,6 +242,7 @@ class ScreenCaptureService : Service() {
         stopSelf()
     }
 
+    // Build the ongoing screen-sharing notification with a stop action.
     private fun notification(): Notification {
         val open = PendingIntent.getActivity(this, 21, Intent(this, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val stop = PendingIntent.getService(this, 22, Intent(this, ScreenCaptureService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
@@ -236,6 +251,7 @@ class ScreenCaptureService : Service() {
             .setContentIntent(open).addAction(android.R.drawable.ic_menu_close_clear_cancel, "停止共享", stop).setOngoing(true).build()
     }
 
+    // Release capture resources and shut down the JPEG worker when the service ends.
     override fun onDestroy() {
         stopSharing("录屏服务已结束")
         workerThread.quitSafely()

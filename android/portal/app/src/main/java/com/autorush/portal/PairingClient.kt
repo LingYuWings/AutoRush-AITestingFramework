@@ -8,9 +8,12 @@ import org.json.JSONObject
 import org.json.JSONTokener
 import java.util.concurrent.TimeUnit
 
+// The phone identity and Android details submitted with the pairing code.
 class PairingDevice(val id: String, val manufacturer: String, val model: String, val sdkInt: Int)
 
+// The verified server settings and device token returned by a successful claim.
 class ClaimedPairing(val serverUrl: String, val deviceToken: String, val allowedPackages: List<String>, val tlsSha256: String? = null) {
+    // Keep the device token out of diagnostic text.
     override fun toString() = "Claimed AutoRush pairing"
 }
 
@@ -22,6 +25,7 @@ class PairingClient {
         .callTimeout(15, TimeUnit.SECONDS).build()
     @Volatile private var activeClient = client
 
+    // Exchange the code and verify the returned device, server, and allowlist.
     fun claim(pairing: PairingQr, device: PairingDevice): ClaimedPairing {
         val json = JSONObject().put("pairing_code", pairing.pairingCode)
             .put("device_id", device.id).put("manufacturer", device.manufacturer)
@@ -57,11 +61,13 @@ class PairingClient {
         }
     }
 
+    // Cancel outstanding requests from the default and active clients.
     fun cancel() {
         client.dispatcher.cancelAll()
         activeClient.dispatcher.cancelAll()
     }
 
+    // Cancel the exchange and evict pooled connections when pairing is no longer needed.
     fun close() {
         cancel()
         client.connectionPool.evictAll()

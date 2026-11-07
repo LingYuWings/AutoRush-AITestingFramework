@@ -4,6 +4,7 @@ from autorush.agent.executions import AgentExecutionRecord
 from autorush.domain.models import AgentOptions, CaseCreate, CaseResult, DesktopTarget, WebViewport
 
 
+# Defines the execution targets accepted by single-case debugging.
 class DebugTargets(BaseModel):
     model_config = ConfigDict(extra='forbid')
     api_base_url: str | None = None
@@ -18,6 +19,7 @@ class DebugTargets(BaseModel):
     agent_options: AgentOptions | None = None
 
 
+# Describes the source case or unsaved snapshot for an idempotent debug run.
 class DebugStart(BaseModel):
     model_config = ConfigDict(extra='forbid')
     idempotency_key: UUID
@@ -27,6 +29,7 @@ class DebugStart(BaseModel):
     case: CaseCreate | None = None
     targets: DebugTargets = Field(default_factory=DebugTargets)
 
+    # Require either draft content or a versioned saved case.
     @model_validator(mode='after')
     def source_required(self):
         if self.source_case_id is None and self.case is None:
@@ -38,6 +41,7 @@ class DebugStart(BaseModel):
         return self
 
 
+# Stores debug identity, source metadata and the isolated execution result.
 class DebugRecord(AgentExecutionRecord):
     source_case_id: UUID | None = None
     source_version: int | None = None
@@ -47,6 +51,7 @@ class DebugRecord(AgentExecutionRecord):
     result: CaseResult | None = None
 
 
+# Return the compact fields used in the debug history list.
 def debug_summary(record: DebugRecord) -> dict:
     return {'id':str(record.id),'state':record.state,'title':record.case_snapshots[0].title,
         'source_case_id':str(record.source_case_id) if record.source_case_id else None,

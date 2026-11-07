@@ -5,18 +5,22 @@ import type { View } from './types'
 export type Route = { view: View; id?: string; edit?: boolean }
 
 const views: View[] = ['overview', 'cases', 'plans', 'reports', 'devices', 'settings', 'api-testing']
+// Rank list, detail, and edit routes for directional transitions.
 const depth = (route: Route) => (route.id ? 1 : 0) + (route.edit ? 1 : 0)
 
+// Decode a hash into a known console route and fall back to the overview.
 export function parseRoute(hash: string): Route {
   const [view, id, mode] = hash.replace(/^#\/?/, '').split('/').filter(Boolean).map(decodeURIComponent)
   if (!views.includes(view as View)) return { view: 'overview' }
   return { view: view as View, id, edit: mode === 'edit' || undefined }
 }
 
+// Encode route segments into a shareable browser hash.
 export function routeHash(route: Route) {
   return '#/' + [route.view, route.id, route.edit ? 'edit' : ''].filter(Boolean).map(part => encodeURIComponent(part!)).join('/')
 }
 
+// Compare routes using their canonical hash.
 export const sameRoute = (a: Route, b: Route) => routeHash(a) === routeHash(b)
 
 /**
@@ -25,12 +29,12 @@ export const sameRoute = (a: Route, b: Route) => routeHash(a) === routeHash(b)
  * - `forward` / `back`  drilling into / out of a record: the page slides horizontally
  * - `swap`    sibling record at the same depth (report pager): quick crossfade
  * - `detail`  master–detail pages (cases): only the detail pane changes, the list stays still
- * - `tab`     in-page section tabs (API testing): quick crossfade
+ * - `tab`     in-page section tabs (API testing and plans): quick crossfade
  */
 export function navKind(from: Route, to: Route) {
   if (from.view !== to.view) return 'switch'
   if (to.view === 'cases') return 'detail'
-  if (to.view === 'api-testing') return 'tab'
+  if (to.view === 'api-testing' || to.view === 'plans') return 'tab'
   return depth(to) > depth(from) ? 'forward' : depth(to) < depth(from) ? 'back' : 'swap'
 }
 

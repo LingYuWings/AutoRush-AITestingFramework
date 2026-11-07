@@ -1,7 +1,9 @@
 import type { DriverKind, ResultStatus, StepSpec } from './api'
 
+// Format a timestamp for Chinese-language console displays.
 export const date = (value: string) => new Date(value).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 
+// Display a timestamp as elapsed time from now.
 export const relative = (value: string) => {
   const seconds = Math.round((Date.now() - new Date(value).getTime()) / 1000)
   if (seconds < 60) return '刚刚'
@@ -11,6 +13,7 @@ export const relative = (value: string) => {
   return date(value)
 }
 
+// Create a compact uppercase label from the first eight ID characters.
 export const shortId = (id: string) => id.slice(0, 8).toUpperCase()
 
 export const statusLabel: Record<string, string> = {
@@ -20,10 +23,12 @@ export const statusLabel: Record<string, string> = {
 
 export const driverLabel: Record<DriverKind, string> = { api: 'API', web: 'Web', android: 'Android', desktop: 'Desktop' }
 
+// List each driver used by the steps once, in first-seen order.
 export const driversOf = (steps: StepSpec[]) => [...new Set(steps.map(step => step.driver))]
 
 export const resultOrder: ResultStatus[] = ['passed', 'failed', 'error', 'blocked', 'skipped']
 
+// Count outcomes by status for result summaries.
 export const countStatuses = (items: { status: ResultStatus }[]) => {
   const counts: Record<ResultStatus, number> = { passed: 0, failed: 0, error: 0, blocked: 0, skipped: 0 }
   for (const item of items) counts[item.status] += 1

@@ -6,6 +6,7 @@ from pydantic import BaseModel,Field
 from autorush.domain.models import CaseRecord,PlanRecord
 
 
+# Record an agent execution and the inputs needed to track or recover it.
 class AgentExecutionRecord(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     plan_id: UUID
@@ -19,6 +20,7 @@ class AgentExecutionRecord(BaseModel):
     created_at: datetime = Field(default_factory=lambda:datetime.now(timezone.utc))
 
 
+# Check that a plan's natural steps can run with the selected model and settings.
 def validate_agent_configuration(settings,store,plan,cases):
     from urllib.parse import urlsplit
     from autorush.llm.service import preflight_provider

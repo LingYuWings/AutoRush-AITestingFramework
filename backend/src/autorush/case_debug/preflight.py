@@ -11,6 +11,7 @@ from autorush.drivers.web.validation import validate_web_step
 from autorush.drivers.api.http import legacy_request
 
 
+# Validate the selected drivers, targets and model before a debug run starts.
 def check_debug(settings, store, plan, case, device_hub, api_store):
     steps = case.steps + case.postconditions
     if len(steps) > 120: raise ValueError('debug case exceeds 120 steps')

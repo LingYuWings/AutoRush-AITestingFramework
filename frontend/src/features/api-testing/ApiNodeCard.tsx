@@ -5,6 +5,7 @@ import {configuration,newRequest} from './types'
 import RequestEditor from './RequestEditor'
 import './api-testing.css'
 
+// Edit an API request embedded as a step in a test case.
 export default function ApiNodeCard({parameters,intent,index,cleanup,alwaysRun,onChange,onIntent,onRemove,onAlwaysRun,onMoveUp,onMoveDown}:{parameters:Record<string,unknown>;intent:string;index:number;cleanup?:boolean;alwaysRun:boolean;onChange:(value:Record<string,unknown>)=>void;onIntent:(value:string)=>void;onRemove:()=>void;onAlwaysRun:(value:boolean)=>void;onMoveUp?:()=>void;onMoveDown?:()=>void}){
   const [draft,setDraft]=useState<ApiRequest|null>(parameters.request?parameters.request as ApiRequest:parameters.request_snapshot_id?null:newRequest())
   const [requests,setRequests]=useState<ApiRequestRecord[]>([]),[collections,setCollections]=useState<CollectionRecord[]>([])
@@ -22,6 +23,7 @@ export default function ApiNodeCard({parameters,intent,index,cleanup,alwaysRun,o
     }).catch(cause=>{if(live&&selection.current===generation)setError(String(cause))})
     return()=>{live=false}
   },[snapshotId])
+  // Copy a saved request into the step and preserve its source metadata.
   const choose=(id:string)=>{
     const record=requests.find(item=>item.id===id)
     if(!record)return
@@ -30,6 +32,7 @@ export default function ApiNodeCard({parameters,intent,index,cleanup,alwaysRun,o
     setEditorScope(scope=>scope+1);setDraft(value);setInherited([]);setError('')
     onChange({request:value,source_request_id:record.id,source_version:record.version})
   }
+  // Update the step's request while preserving its collection variables and source.
   const edit=(request:ApiRequest)=>{setDraft(request);onChange({request,collection_variables:inherited,source_request_id:parameters.source_request_id,source_version:parameters.source_version})}
   return <section className="surface step-card api-node-card"><div className="section-title"><strong>{cleanup?'后处理':'执行步骤'} {index+1} · API 节点</strong><div className="api-toolbar"><button type="button" className="text-button" disabled={!onMoveUp} onClick={onMoveUp}>上移</button><button type="button" className="text-button" disabled={!onMoveDown} onClick={onMoveDown}>下移</button><button type="button" className="secondary-button" onClick={onRemove}>删除 API 节点</button></div></div>
     <label className="field"><span>操作意图</span><input value={intent} required onChange={e=>onIntent(e.target.value)}/></label>

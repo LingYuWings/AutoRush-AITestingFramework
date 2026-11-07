@@ -22,7 +22,9 @@ _ALLOWED_HOTKEYS = {
 }
 
 
+# Run guarded Windows desktop actions using PyAutoGUI.
 class PyAutoGuiDesktopDriver:
+    # Validate the target settings and acquire the desktop automation lock.
     def __init__(self, backend: Any, *, expected_size: tuple[int, int], window_title: str, guard=None) -> None:
         if not isinstance(expected_size, tuple) or len(expected_size) != 2 or any(type(value) is not int or value <= 0 for value in expected_size):
             raise ValueError("expected_size must be a positive (width, height) pair")
@@ -42,6 +44,7 @@ class PyAutoGuiDesktopDriver:
             _DESKTOP_LEASE.release()
             raise
 
+    # Create a Windows desktop driver with a native window guard.
     @classmethod
     def from_system(cls, *, target) -> "PyAutoGuiDesktopDriver":
         if sys.platform != "win32":
@@ -53,6 +56,7 @@ class PyAutoGuiDesktopDriver:
         from autorush.drivers.desktop.win32 import WindowGuard
         return cls(pyautogui, expected_size=(target.screen_width,target.screen_height), window_title=target.title, guard=WindowGuard(target))
 
+    # Serialize desktop actions and run each one on the calling thread.
     async def execute(self, step: StepSpec) -> ActionResult:
         async with self._action_lock:
             if self._closed:
@@ -61,6 +65,7 @@ class PyAutoGuiDesktopDriver:
             # mouse/keyboard action running after the caller thinks it has stopped.
             return self._execute_sync(step)
 
+    # Validate and perform one supported desktop action.
     def _execute_sync(self, step: StepSpec) -> ActionResult:
         validate_desktop_step(step)
         if step.driver != "desktop":
@@ -124,6 +129,7 @@ class PyAutoGuiDesktopDriver:
         except self._backend.FailSafeException as exc:
             raise DriverBlockedError("PyAutoGUI fail-safe triggered; desktop actions stopped") from exc
 
+    # Recheck the window and screen dimensions and enable the PyAutoGUI fail-safe.
     def _preflight(self) -> None:
         if self._guard is not None: self._guard.check()
         self._backend.FAILSAFE = True
@@ -138,6 +144,7 @@ class PyAutoGuiDesktopDriver:
         if x in {0, width - 1} and y in {0, height - 1}:
             raise DriverBlockedError("mouse is in a fail-safe screen corner")
 
+    # Convert target-relative coordinates into a checked screen point.
     def _coordinates(self, parameters: dict[str, Any]) -> tuple[int, int]:
         x, y = parameters.get("x"), parameters.get("y")
         if self._guard is not None: return self._guard.screen_point(x,y)
@@ -150,6 +157,7 @@ class PyAutoGuiDesktopDriver:
             raise ValueError("desktop actions cannot target fail-safe screen corners")
         return x, y
 
+    # Capture a screenshot of the bound window's client area.
     def capture_image(self):
         if self._guard is None: raise DriverBlockedError('screenshots require an identity-bound target')
         self._preflight()
@@ -159,6 +167,7 @@ class PyAutoGuiDesktopDriver:
         if self._guard.check()!=rect: raise DriverBlockedError('target moved during screenshot')
         return image
 
+    # Wait for active desktop work and release the automation lock.
     async def close(self) -> None:
         async with self._action_lock:
             if not self._closed:

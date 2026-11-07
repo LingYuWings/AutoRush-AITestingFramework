@@ -9,6 +9,7 @@ from autorush.drivers.desktop.contracts import validate_desktop_step
 DriverKind=Literal['api','web','android','desktop']
 
 
+# Convert a semantic scroll direction and amount to signed desktop wheel clicks.
 def desktop_action_parameters(operation,parameters):
     """Bind semantic model direction to the existing signed native wheel contract."""
     params=dict(parameters)
@@ -22,10 +23,12 @@ def desktop_action_parameters(operation,parameters):
     return params
 
 
+# Reject unexpected fields in agent model payloads.
 class StrictModel(BaseModel):
     model_config=ConfigDict(extra='forbid')
 
 
+# Describe an observed element and the details available for targeting it.
 class ObservedElement(StrictModel):
     id: str = Field(min_length=1,max_length=100)
     role: str = Field(default='',max_length=100)
@@ -36,6 +39,7 @@ class ObservedElement(StrictModel):
     options: list[dict[str,str]] = Field(default_factory=list,max_length=50)
 
 
+# Capture the target, evidence, and state from one agent observation.
 class AgentObservation(StrictModel):
     id: str = Field(min_length=1,max_length=100)
     driver: DriverKind
@@ -49,6 +53,7 @@ class AgentObservation(StrictModel):
     last_output: dict = Field(default_factory=dict)
     startup: bool = False
 
+    # Prepare the observation data the model is allowed to see.
     def public_dict(self):
         public=self.model_dump(mode='json')
         if self.driver=='android':
@@ -65,6 +70,7 @@ class AgentObservation(StrictModel):
         return public
 
 
+# Describe a model-proposed action tied to an observation.
 class ActionDecision(StrictModel):
     kind: Literal['action']
     observation_id: str = Field(min_length=1,max_length=100)
@@ -75,6 +81,7 @@ class ActionDecision(StrictModel):
     element_id: str | None = Field(default=None,min_length=1,max_length=100)
     brief_reason: str = Field(min_length=1,max_length=1000)
 
+    # Check driver-specific operation parameters and element references.
     @model_validator(mode='after')
     def validate_operation(self):
         params=dict(self.parameters)
@@ -105,6 +112,7 @@ class ActionDecision(StrictModel):
         return self
 
 
+# Describe an assertion or read-only operation for deterministic verification.
 class DeterministicCheck(StrictModel):
     kind: Literal['deterministic']
     operation: Literal['web.inspect','android.inspect','desktop.inspect_pixel'] | None = None
@@ -114,12 +122,14 @@ class DeterministicCheck(StrictModel):
     assertions: list[AssertionSpec] = Field(min_length=1,max_length=10)
 
 
+# Record a visual verdict and its explanation.
 class VisualCheck(StrictModel):
     kind: Literal['visual']
     passed: bool = Field(strict=True)
     explanation: str = Field(min_length=1,max_length=1000)
 
 
+# Bind a proposed verification to the observation and expected result.
 class VerifyDecision(StrictModel):
     kind: Literal['verify']
     observation_id: str = Field(min_length=1,max_length=100)
@@ -128,6 +138,7 @@ class VerifyDecision(StrictModel):
     brief_reason: str = Field(min_length=1,max_length=1000)
 
 
+# Explain why the model cannot proceed.
 class BlockedDecision(StrictModel):
     kind: Literal['blocked']
     brief_reason: str = Field(min_length=1,max_length=1000)
@@ -137,5 +148,6 @@ AgentDecision=Annotated[Union[ActionDecision,VerifyDecision,BlockedDecision],Fie
 DECISION_ADAPTER=TypeAdapter(AgentDecision)
 
 
+# Validate a model response against the supported decision types.
 def parse_decision(value):
     return DECISION_ADAPTER.validate_python(value)

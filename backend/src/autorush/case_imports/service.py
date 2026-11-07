@@ -20,6 +20,7 @@ REVALIDATED_ERRORS = {'expected_required', 'platform_required', 'invalid_platfor
                       'case_validation', 'api_request_required', 'invalid_api_request'}
 
 
+# Carries one edited candidate and its source issue acknowledgement.
 class Selection(BaseModel):
     model_config = ConfigDict(extra='forbid')
     candidate_id: str = Field(min_length=1, max_length=64)
@@ -27,6 +28,7 @@ class Selection(BaseModel):
     acknowledge_source_issues: bool = False
 
 
+# Groups selected candidates with the browser scope and retry key.
 class ImportCommit(BaseModel):
     model_config = ConfigDict(extra='forbid')
     session_id: UUID
@@ -35,12 +37,14 @@ class ImportCommit(BaseModel):
     allow_duplicate_file: bool = False
 
 
+# Derive a stable storage scope from the random browser session ID.
 def owner_key(session):
     # The router authenticates the current local operator before every operation.
     # The random browser scope survives bootstrap-token rotation and restarts.
     return hashlib.sha256(('autorush-import:' + str(session)).encode()).hexdigest()
 
 
+# Revalidate edited content while carrying forward unresolved source issues.
 def check_selection(original, selection):
     issues = [issue for issue in original.diagnostics if issue.severity == 'warning']
     if not selection.acknowledge_source_issues:
@@ -72,11 +76,14 @@ def check_selection(original, selection):
     return ImportCandidate(candidate_id=original.candidate_id, source=original.source, draft=draft, diagnostics=issues)
 
 
+# Coordinate preview review and transactional case creation.
 class ImportService:
+    # Open the formal case store and the import store on the same database.
     def __init__(self, path):
         self.cases = SqliteStore(path)
         self.store = ImportStore(path)
 
+    # Parse the source, flag existing titles and save a temporary preview.
     def preview(self, content, filename, options, owner):
         preview = parse_import(content, filename, options)
         existing = {case.title.casefold() for case in self.cases.list_cases(include_archived=True)}
@@ -88,6 +95,7 @@ class ImportService:
             duplicate = self.store.duplicate_file(db, preview.file_sha256)
         return dict(import_id=ident, expires_at=expires, preview=preview.model_dump(mode='json'), duplicate_file=duplicate, result=None)
 
+    # Recover a durable commit receipt before looking for an uncommitted preview.
     def get(self, ident, owner):
         with closing(self.store.api.connect()) as db:
             result = receipt(db.execute('SELECT result FROM case_import_commits WHERE owner=? AND import_id=?', (owner, ident)).fetchone())
@@ -97,6 +105,7 @@ class ImportService:
             return dict(import_id=ident, preview=preview, expires_at=expires, result=None,
                         duplicate_file=self.store.duplicate_file(db, preview['file_sha256']))
 
+    # Reject duplicate or foreign candidate IDs before validating edits.
     def selections(self, preview, payload):
         originals = {item.candidate_id:item for item in ImportPreview.model_validate(preview).candidates}
         identifiers = [item.candidate_id for item in payload.selections]
@@ -104,11 +113,13 @@ class ImportService:
             raise ImportStoreError(422, '选择项重复或不属于当前预览。')
         return [check_selection(originals[item.candidate_id], item) for item in payload.selections]
 
+    # Return updated diagnostics without changing the formal case store.
     def validate(self, ident, owner, payload):
         with closing(self.store.api.connect()) as db:
             _, preview = self.store.get_preview(db, ident, owner)
         return {'candidates':[item.model_dump(mode='json') for item in self.selections(preview, payload)]}
 
+    # Freeze request snapshots, create drafts and save the retry receipt in one transaction.
     def commit(self, ident, owner, payload):
         data = payload.model_dump(mode='json', exclude={'idempotency_key', 'session_id'})
         fingerprint = hashlib.sha256(json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()).hexdigest()

@@ -3,14 +3,17 @@ import { ChevronLeft, ChevronRight, type Icon } from './icons'
 import type { DriverKind, ResultStatus } from '../shared/api'
 import { countStatuses, driverLabel, resultOrder, statusLabel } from '../shared/format'
 
+// Display a status with its translated label and matching visual treatment.
 export function StatusBadge({ status }: { status: string }) {
   return <span className={`badge badge-${status}`}><span className="badge-dot" />{statusLabel[status] ?? status}</span>
 }
 
+// Label a driver with its corresponding platform style.
 export function DriverChip({ driver }: { driver: DriverKind }) {
   return <span className={`driver-chip driver-${driver}`}>{driverLabel[driver] ?? driver}</span>
 }
 
+// Give an empty panel a reason and an optional next action.
 export function EmptyState({ icon: Icon, title, description, action }: { icon: Icon; title: string; description: string; action?: ReactNode }) {
   return <div className="empty-state">
     <Icon size={18} className="empty-icon" />
@@ -20,6 +23,7 @@ export function EmptyState({ icon: Icon, title, description, action }: { icon: I
   </div>
 }
 
+// Render a page title with its optional description and controls.
 export function PageHeader({ title, description, actions }: { title: string; description?: string; actions?: ReactNode }) {
   return <div className="page-heading">
     <div>
@@ -40,6 +44,7 @@ export function ResultBar({ items, size = 'md' }: { items: { status: ResultStatu
   </div>
 }
 
+// Draw the console logo at the requested size.
 export function BrandMark({ size = 30 }: { size?: number }) {
   return <svg className="brand-mark" width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
     <rect width="32" height="32" rx="9" className="brand-mark-bg" />
@@ -58,10 +63,12 @@ export function usePaged<T>(items: T[], resetKey: string, pageSize = 20, initial
   return {
     items: items.slice((current - 1) * pageSize, current * pageSize),
     page: current, pageCount, total: items.length, pageSize,
+    // Record the selected page for the current filter key.
     setPage: (next: number) => setState({ page: next, key: resetKey }),
   }
 }
 
+// Show the visible item range and controls when results span multiple pages.
 export function Pagination({ page, pageCount, total, pageSize, setPage }: { page: number; pageCount: number; total: number; pageSize: number; setPage: (page: number) => void }) {
   if (pageCount <= 1) return null
   const start = (page - 1) * pageSize + 1

@@ -48,12 +48,15 @@ export function openScreen({ url, token, mode, onChange }: {
   let sequence = -1
   let awaitingLoad = false
   let frame: ScreenUpdate['frame'] = null
+  // Release the frame URL and clear its pending render acknowledgment.
   const clearFrame = () => {
     if (frame) URL.revokeObjectURL(frame.url)
     frame = null
     awaitingLoad = false
   }
+  // Publish socket status and the current preview frame.
   const emit = (state: string, detail: string) => onChange({ state, detail, active: !closed, frame })
+  // Close the preview socket, release its frame, and remove browser listeners.
   const stop = (detail = '已停止查看', state = 'stopped') => {
     if (closed) return
     closed = true
@@ -65,7 +68,9 @@ export function openScreen({ url, token, mode, onChange }: {
     socket.close()
     emit(state, detail)
   }
+  // Stop screenshot sharing when the viewer is hidden.
   const visibility = () => { if (document.hidden) stop('页面已隐藏，已停止共享') }
+  // Stop screenshot sharing after the browser goes offline.
   const offline = () => stop('网络已断开，请重新开始查看', 'offline')
   const handshake = setTimeout(() => stop('连接画面超时，请检查设备和授权', 'error'), 8000)
   document.addEventListener('visibilitychange', visibility)
@@ -113,11 +118,13 @@ export function openScreen({ url, token, mode, onChange }: {
   emit('connecting', '正在连接设备画面')
   return {
     stop,
+    // Acknowledge the current image after it has rendered so the stream can advance.
     loaded: (imageUrl: string) => {
       if (closed || !frame || frame.url !== imageUrl || !awaitingLoad || socket.readyState !== 1) return
       awaitingLoad = false
       socket.send(JSON.stringify({ type: 'frame.ack', sequence: frame.metadata.sequence }))
     },
+    // Stop the preview if the current image fails to decode.
     failed: (imageUrl: string) => { if (frame?.url === imageUrl) stop('画面解码失败，请重新开始查看', 'error') },
   }
 }

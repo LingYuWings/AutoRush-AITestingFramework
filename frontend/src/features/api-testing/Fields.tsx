@@ -2,6 +2,7 @@ import {X} from '../../components/icons'
 import type {Pair,Variable} from './types'
 import {newPair} from './types'
 
+// Edit ordered key-value rows used by API headers and query parameters.
 export function PairsEditor({value,onChange,label}:{value:Pair[];onChange:(value:Pair[])=>void;label:string}){
   return <div className="api-fields"><div className="section-title"><strong>{label}</strong><button type="button" className="text-button" onClick={()=>onChange([...value,newPair()])}>添加{label}</button></div>
     {value.map((item,index)=><div className="api-kv" key={index}>
@@ -12,7 +13,9 @@ export function PairsEditor({value,onChange,label}:{value:Pair[];onChange:(value
     </div>)}{!value.length&&<p className="muted">尚未配置，可添加重复名称的条目。</p>}</div>
 }
 
+// Edit variable rows with type and secret settings.
 export function VariablesEditor({value,onChange}:{value:Variable[];onChange:(value:Variable[])=>void}){
+  // Apply a patch to one variable row.
   const update=(index:number,patch:Partial<Variable>)=>onChange(value.map((row,i)=>i===index?{...row,...patch}:row))
   return <div className="api-fields"><div className="section-title"><strong>变量</strong><button type="button" className="text-button" onClick={()=>onChange([...value,{key:'',value:'',enabled:true,secret:false}])}>添加变量</button></div>
     {value.map((item,index)=><div className="api-variable" key={index}>

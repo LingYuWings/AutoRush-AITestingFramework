@@ -10,6 +10,7 @@ CANDIDATES=(('ollama','Ollama',11434),('lm_studio','LM Studio',1234),('jan','Jan
             ('gpt4all','GPT4All',4891),('llama_cpp','llama.cpp',8080),('koboldcpp','KoboldCpp',5001))
 
 
+# Extract model IDs from supported model catalog formats.
 def model_ids(body):
     if not isinstance(body,dict): return []
     items=body.get('data',body.get('models',[]))
@@ -23,9 +24,11 @@ def model_ids(body):
     return sorted(values,key=str.casefold)
 
 
+# Probe known local model runtimes and report the ones that respond.
 async def discover_local_models(*,transport=None):
     started=time.monotonic()
     async with httpx.AsyncClient(timeout=1.2,follow_redirects=False,trust_env=False,transport=transport) as client:
+        # Query one loopback model catalog and record its response time.
         async def probe(identifier,name,port):
             before=time.monotonic();base=f'http://127.0.0.1:{port}/v1'
             url=f'http://127.0.0.1:{port}/api/tags' if identifier=='ollama' else base+'/models'
@@ -41,6 +44,7 @@ async def discover_local_models(*,transport=None):
     return LocalDiscoveryResult(runtimes=[x for x in found if x],scanned=6,duration_ms=round((time.monotonic()-started)*1000))
 
 
+# Fetch the configured provider's model catalog.
 async def fetch_model_catalog(config,allowed_hosts,*,transport=None):
     client=ModelClient(config,allowed_hosts,transport=transport)
     try:

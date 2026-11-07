@@ -7,12 +7,15 @@ import kotlin.math.roundToInt
 import kotlin.math.max
 import kotlin.math.min
 
+// Validate and encode the binary WebSocket format for screen frames.
 internal object ScreenFrames {
     const val MAX_JPEG = 600_000
     const val QUALITY = 60
+    // Require a UUID in canonical form, ignoring letter case.
     fun validateId(id: String) {
         require(runCatching { UUID.fromString(id).toString() == id.lowercase() }.getOrDefault(false)) { "无效的画面流 ID" }
     }
+    // Build a binary frame from the format marker, length-prefixed metadata, and JPEG bytes.
     fun encode(id: String, sequence: Long, width: Int, height: Int, pkg: String, capturedAt: Long, jpeg: ByteArray): ByteArray {
         validateId(id)
         require(sequence >= 1 && width in 1..1280 && height in 1..1280 && pkg.length in 1..200 && capturedAt > 0)
@@ -24,6 +27,7 @@ internal object ScreenFrames {
         return ByteBuffer.allocate(8 + metadata.size + jpeg.size).put(byteArrayOf(65, 82, 70, 49))
             .putInt(metadata.size).put(metadata).put(jpeg).array()
     }
+    // Fit the image within the long and short side limits while preserving its aspect ratio.
     fun dimensions(width: Int, height: Int): Pair<Int, Int> {
         require(width > 0 && height > 0)
         val scale = min(1.0, min(1280.0 / max(width, height), 720.0 / min(width, height)))

@@ -6,9 +6,12 @@ from autorush.drivers.api.http import HttpApiDriver
 from autorush.runner.engine import Runner
 
 
+# Owns the driver instances opened for one mixed execution.
 class DriverSession:
+    # Record the drivers that this session will close.
     def __init__(self,drivers): self.drivers=drivers;self._closed=False
 
+    # Open only the drivers required by the case snapshots and unwind partial setup on failure.
     @classmethod
     async def create(cls,settings,plan,case_snapshots,run_id:UUID,*,web_factory,desktop_factory,device_hub,api_transport=None):
         kinds={step.driver for case in case_snapshots for step in case.steps+case.postconditions}
@@ -41,6 +44,7 @@ class DriverSession:
             except BaseException as cleanup: exc.add_note(f'driver cleanup also failed: {type(cleanup).__name__}')
             raise
 
+    # Close the initialized drivers and report cleanup failures.
     async def close(self):
         if not self._closed:
             self._closed=True

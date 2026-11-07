@@ -5,6 +5,7 @@ from autorush.agent.contracts import ActionDecision
 from autorush.drivers.base import DriverBlockedError
 
 
+# Carry the verdict, messages, and evidence from an expectation check.
 @dataclass
 class VerificationResult:
     passed: bool
@@ -13,6 +14,7 @@ class VerificationResult:
     evidence: dict
 
 
+# Verify the current observation using a visual verdict or deterministic checks.
 async def verify_expected(decision,step,observation,driver,*,vision_verified,observer,executor):
     if decision.observation_id!=observation.id or decision.expected_result!=step.expected_result:
         raise DriverBlockedError('completion must match the expected result and current observation')

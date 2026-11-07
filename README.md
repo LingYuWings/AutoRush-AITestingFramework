@@ -87,6 +87,8 @@ py -3.12 -m venv .venv-dev
 
 Windows desktop automation is enabled by default and needs an interactive desktop session. Use `-DesktopAutomation:$false` to disable it. Stop any running backend before changing the desktop setting, which is read at startup. You can drop `-Install` on later runs.
 
+When the verified local Qwen runtime and weights are installed under `artifacts/`, the Windows launcher enables on-demand loading for the saved `autorush-vision-2b`, `autorush-vision-4b` and `autorush-vision-8b` configurations at `http://127.0.0.1:8080/v1`. If that endpoint is offline, a plan or case-debug run starts an owned model process. Runs using the same profile share it, and the last run to finish or cancel releases the process and its GPU memory. Finish the current runs before starting a different owned profile. Existing external model servers keep their own lifecycle. The standalone `scripts/start-local-vision.ps1` launcher unloads idle weights after 30 seconds by default, configurable with `-IdleSeconds`.
+
 ### Linux and macOS
 
 From the cloned repository, create the virtual environment and run the entry point for your OS. Bash and curl are required.

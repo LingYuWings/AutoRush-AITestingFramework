@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+# Holds runtime paths, host allowlists, ports and local feature switches.
 @dataclass(frozen=True)
 class Settings:
     database_path: Path
@@ -20,10 +21,13 @@ class Settings:
     backend_port: int = 8000
     local_device_port: int = 8443
     desktop_enabled: bool = False
+    local_vision_launcher: Path | None = None
 
+    # Read process configuration with workspace-relative defaults for local storage.
     @classmethod
     def from_env(cls) -> "Settings":
         workspace = Path.cwd()
+        vision_launcher = os.getenv("AUTORUSH_LOCAL_VISION_LAUNCHER")
         return cls(
             database_path=Path(os.getenv("AUTORUSH_DB_PATH", workspace / "data" / "autorush.sqlite3")),
             report_dir=Path(os.getenv("AUTORUSH_REPORT_DIR", workspace / "reports")),
@@ -48,4 +52,5 @@ class Settings:
             backend_port=int(os.getenv("AUTORUSH_BACKEND_PORT", "8000")),
             local_device_port=int(os.getenv("AUTORUSH_LOCAL_DEVICE_PORT", "8443")),
             desktop_enabled=os.getenv('AUTORUSH_DESKTOP_ENABLED','0') == '1',
+            local_vision_launcher=Path(vision_launcher).resolve() if vision_launcher else None,
         )

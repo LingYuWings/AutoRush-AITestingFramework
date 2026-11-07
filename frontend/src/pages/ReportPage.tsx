@@ -9,11 +9,13 @@ import {ApiEvidence} from '../features/api-testing/ResponsePanel'
 
 type CaseResult=RunRecord['cases'][number]
 
+// Render the raw step evidence only while its disclosure is open.
 function RawEvidence({value}:{value:unknown}) {
   const [open,setOpen]=useState(false)
   return <details className="raw-evidence" onToggle={event=>setOpen(event.currentTarget.open)}><summary>原始证据 JSON</summary>{open&&<pre className="evidence-preview">{JSON.stringify(value,null,2)}</pre>}</details>
 }
 
+// Show a case result and optionally limit its visible steps to issues.
 function CaseSection({item,index,title,authEpoch,onlyIssues}:{item:CaseResult;index:number;title:string;authEpoch:number;onlyIssues:boolean}) {
   const steps=onlyIssues?item.steps.filter(step=>step.status!=='passed'):item.steps
   const issues=item.steps.filter(step=>step.status!=='passed').length
@@ -38,6 +40,7 @@ function CaseSection({item,index,title,authEpoch,onlyIssues}:{item:CaseResult;in
   </section>
 }
 
+// Display a run report with per-case evidence, filters, and export actions.
 export default function ReportPage({id,runs,plans,cases,loaded,onBack,onOpen,onDownload}:{
   id:string;runs:RunRecord[];plans:PlanRecord[];cases:CaseRecord[];loaded:boolean
   onBack:()=>void;onOpen:(id:string)=>void;onDownload:(id:string,format:'json'|'html'|'junit')=>Promise<void>
@@ -52,14 +55,17 @@ export default function ReportPage({id,runs,plans,cases,loaded,onBack,onOpen,onD
   const [onlyIssues,setOnlyIssues]=useState(false)
   const counts=useMemo(()=>countStatuses(run?.cases??[]),[run])
   const stepTotal=run?run.cases.reduce((sum,item)=>sum+item.steps.length,0):0
+  // Prefer the recorded title, then fall back to the saved case or its short ID.
   const caseTitle=(item:CaseResult)=>item.title||cases.find(testCase=>testCase.id===item.case_id)?.title||shortId(item.case_id)
   useEffect(()=>{
+    // Return to the report list on Escape outside editable controls.
     const onKey=(event:KeyboardEvent)=>{
       if(event.key!=='Escape'||event.defaultPrevented||(event.target as HTMLElement).closest('input,textarea,select,[contenteditable]'))return
       onBack()
     }
     window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey)
   },[onBack])
+  // Refresh local authorization and reload evidence that needs operator access.
   const connect=async()=>{setConnecting(true);setError('');try{api.setOperatorToken((await api.operatorSession()).operator_token);setAuthEpoch(v=>v+1)}catch(cause){setError(cause instanceof Error?cause.message:'本地连接失败')}finally{setConnecting(false)}}
 
   const back=<button className="back-link" onClick={onBack}><ArrowLeft size={15}/>运行报告</button>

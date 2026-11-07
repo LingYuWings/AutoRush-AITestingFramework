@@ -9,8 +9,11 @@ const actions:Record<DriverKind,[string,string][]>= {
   desktop:[['desktop.click','点击坐标'],['desktop.write','输入 ASCII 文本'],['desktop.hotkey','快捷键'],['desktop.scroll','滚动'],['desktop.inspect_pixel','检查像素']],
 }
 const labels:Record<AssertionKind,string>={status_code:'状态码等于',json_field_equals:'JSON 字段等于',body_contains:'响应体包含',url_equals:'URL 等于',url_contains:'URL 包含',element_visible:'元素可见',text_contains:'元素文本包含',pixel_rgb_equals:'像素 RGB 等于',package_equals:'App 包名等于'}
+// Edit a structured step with fields specific to its driver and operation.
 export default function StepCard({step,index,cleanup,onChange,onRemove,lockDriver=false}:{step:EditableStep;index:number;cleanup:boolean;onChange:(step:EditableStep)=>void;onRemove:()=>void;lockDriver?:boolean}) {
+  // Apply a partial edit while retaining the rest of the step.
   const update=(patch:Partial<EditableStep>)=>onChange({...step,...patch})
+  // Render a labeled text input and forward its edited value.
   const field=(label:string,value:string,onValue:(value:string)=>void,placeholder='',required=false)=><label className="field"><span>{label}</span><input value={value} onChange={e=>onValue(e.target.value)} placeholder={placeholder} required={required}/></label>
   const op=step.operation,desktop=step.driver==='desktop',android=step.driver==='android',web=step.driver==='web'
   const target=web&&op!=='web.open'||android&&['android.tap','android.input_text','android.inspect'].includes(op)

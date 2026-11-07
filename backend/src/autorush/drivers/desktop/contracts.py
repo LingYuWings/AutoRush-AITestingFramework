@@ -5,6 +5,7 @@ HOTKEYS = {('ctrl','a'), ('tab',), ('shift','tab'), ('enter',), ('esc',), ('back
            ('delete',), ('home',), ('end',), ('left',), ('right',), ('up',), ('down',)}
 
 
+# Check that a desktop step uses a supported operation and valid parameters.
 def validate_desktop_step(step: StepSpec) -> None:
     op, p = step.operation, step.parameters
     fields = {'desktop.click': {'x','y','button'}, 'desktop.scroll': {'x','y','clicks'},

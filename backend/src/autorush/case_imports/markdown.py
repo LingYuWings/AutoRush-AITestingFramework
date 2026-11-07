@@ -12,6 +12,7 @@ HEADERS = {'序号': 'order', '操作': 'intent', '预期结果': 'expected',
 LABEL = re.compile(r'^(执行端|说明)\s*[:：]\s*(.*)$')
 
 
+# Find case and section headings and map each case into a candidate.
 def parse_markdown(text, options, limits, digest):
     tokens = MarkdownIt('commonmark', {'html': False, 'maxNesting': 256}).enable('table').parse(text)
     if len(tokens) > limits.max_nodes:
@@ -88,6 +89,7 @@ def parse_markdown(text, options, limits, digest):
     return candidates, []
 
 
+# Collect supported step tables, lists and API request blocks.
 def parse_step_section(tokens, issues, source, lines):
     rows, requests = [], {}
     index = 0
@@ -121,6 +123,7 @@ def parse_step_section(tokens, issues, source, lines):
     return rows, requests
 
 
+# Read step fields from a Markdown table and retain source locations.
 def table_rows(tokens, rows, issues, source, lines):
     headers = []
     cells = []
@@ -163,6 +166,7 @@ def table_rows(tokens, rows, issues, source, lines):
                 rows.append(row)
 
 
+# Read step fields from explicit ordered-list entries.
 def list_rows(tokens, rows, issues, source, lines):
     for index, token in enumerate(tokens):
         if token.type != 'list_item_open' or token.level != 1:

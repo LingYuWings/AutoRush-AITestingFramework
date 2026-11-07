@@ -23,6 +23,7 @@ import {
 
 // Heavy, rarely-first pages are split out and warmed up on idle so navigation never waits on a chunk.
 const loadDevices = () => import('../features/devices/Devices')
+// Load the settings page chunk on demand or during idle warmup.
 const loadSettings = () => import('../pages/Settings')
 const Devices = lazy(loadDevices)
 const Settings = lazy(loadSettings)
@@ -45,12 +46,14 @@ const navGroups: { label: string; items: NavItem[] }[] = [
 const navItems = navGroups.flatMap(group => group.items)
 
 type Theme = 'light' | 'dark'
+// Prefer a saved theme and fall back to the system color scheme.
 const initialTheme = (): Theme => {
   const saved = localStorage.getItem('autorush-theme')
   if (saved === 'light' || saved === 'dark') return saved
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
 
+// Coordinate console navigation, shared records, live run events, and the active page.
 export default function App() {
   const [debugSelection,setDebugSelection]=useState<DebugSelection|null>(null)
   const [debugOpen,setDebugOpen]=useState(false)
@@ -59,6 +62,7 @@ export default function App() {
   const apiGuard=useRef<ApiNavigationGuard>(null)
   const navigationIndex=useRef<number>(typeof history.state?.autorushIndex==='number'?history.state.autorushIndex:0)
   const restoringHistory=useRef(false),bypassPopGuard=useRef(false),afterHistoryRestore=useRef<(()=>void)|null>(null)
+  // Let the API workspace intercept navigation away from unsaved requests.
   const registerApiGuard=useCallback((guard:ApiNavigationGuard)=>{apiGuard.current=guard},[])
   const [cases, setCases] = useState<CaseRecord[]>([])
   const [plans, setPlans] = useState<PlanRecord[]>([])
@@ -74,11 +78,14 @@ export default function App() {
   const [progress, setProgress] = useState<RunProgress | null>(null)
   const [theme, setTheme] = useState<Theme>(initialTheme)
   const [notice, setNotice] = useState<{ text: string; error: boolean; leaving?: boolean } | null>(null)
+  // Replace the current toast with a new success or error message.
   const notify = (text: string, error = false) => setNotice({ text, error })
   // Plays the exit animation first; the toast unmounts on its `animationend`.
   const dismissNotice = useCallback(() => setNotice(current => current && (window.matchMedia('(prefers-reduced-motion: reduce)').matches ? null : { ...current, leaving: true })), [])
+  // Keep the 30 newest events at the top of the activity feed.
   const pushEvent = (event: LiveEvent) => setEvents(current => [event, ...current].slice(0, 30))
 
+  // Check for unsaved requests before updating history and animating the route.
   const go = useCallback((next: Route, options: { replace?: boolean;bypassApiGuard?:boolean } = {}) => {
     const from = routeRef.current
     if (sameRoute(from, next)) return
@@ -94,6 +101,7 @@ export default function App() {
   useEffect(() => {
     if (!location.hash) history.replaceState({autorushIndex:navigationIndex.current}, '', routeHash(routeRef.current))
     else if(typeof history.state?.autorushIndex!=='number')history.replaceState({autorushIndex:navigationIndex.current},'',location.href)
+    // Restore history while unsaved API edits are resolved, then replay the approved move.
     const onPop = (event:PopStateEvent) => {
       const targetIndex=typeof event.state?.autorushIndex==='number'?event.state.autorushIndex:navigationIndex.current-1
       if(restoringHistory.current){restoringHistory.current=false;navigationIndex.current=targetIndex;const action=afterHistoryRestore.current;afterHistoryRestore.current=null;action?.();return}
@@ -101,7 +109,7 @@ export default function App() {
       const delta=targetIndex-navigationIndex.current
       if(from.view==='api-testing'&&next.view!=='api-testing'&&apiGuard.current&&!bypassPopGuard.current&&delta!==0){
         restoringHistory.current=true;history.go(-delta)
-        apiGuard.current(()=>{const proceed=()=>{bypassPopGuard.current=true;history.go(delta)};if(restoringHistory.current)afterHistoryRestore.current=proceed;else proceed()})
+        apiGuard.current(()=>{/* Replay the approved history move once. */ const proceed=()=>{bypassPopGuard.current=true;history.go(delta)};if(restoringHistory.current)afterHistoryRestore.current=proceed;else proceed()})
         return
       }
       bypassPopGuard.current=false;navigationIndex.current=targetIndex
@@ -112,6 +120,7 @@ export default function App() {
     return () => window.removeEventListener('popstate', onPop)
   }, [])
   useEffect(() => {
+    // Fetch the lazy page chunks while the browser is idle.
     const warm = () => { void loadDevices(); void loadSettings() }
     const idle = typeof requestIdleCallback === 'function'
     const id = idle ? requestIdleCallback(warm, { timeout: 3000 }) : window.setTimeout(warm, 1500)
@@ -122,6 +131,7 @@ export default function App() {
     document.documentElement.dataset.theme = theme
     localStorage.setItem('autorush-theme', theme)
   }, [theme])
+  // Switch color schemes with an optional view transition.
   const toggleTheme = () => {
     const next = theme === 'dark' ? 'light' : 'dark'
     if (!document.startViewTransition || window.matchMedia('(prefers-reduced-motion: reduce)').matches) { setTheme(next); return }
@@ -129,6 +139,7 @@ export default function App() {
     void document.startViewTransition(() => { document.documentElement.dataset.theme = next; setTheme(next) }).finished.finally(() => { delete document.documentElement.dataset.nav })
   }
 
+  // Check backend availability and refresh the records shared across console pages.
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
@@ -146,6 +157,7 @@ export default function App() {
     let disposed = false
     let reconnect: number | undefined
     let closeSocket: (() => void) | undefined
+    // Update the console from live run events and reconnect when the stream closes.
     const connect = () => {
       closeSocket = api.watchEvents(event => {
         if (event.type === 'run.started') {
@@ -175,8 +187,11 @@ export default function App() {
   }, [refresh])
   useEffect(() => { if (!notice || notice.leaving) return; const timeout = window.setTimeout(dismissNotice, 5000); return () => window.clearTimeout(timeout) }, [notice, dismissNotice])
 
+  // Open a top-level page without carrying over detail or edit state.
   const navigate = (next: View) => go({ view: next })
+  // Obtain and store a local operator token for privileged actions.
   const authorizeLocal=async()=>{api.setOperatorToken((await api.operatorSession()).operator_token)}
+  // Run a mutation, report its outcome, and refresh the shared records on success.
   const action = async (fn: () => Promise<unknown>, success: string): Promise<boolean> => {
     try { await fn(); notify(success); await refresh(); return true }
     catch (error) { notify(error instanceof Error ? error.message : '操作失败', true); return false }
@@ -191,6 +206,7 @@ export default function App() {
   const creatingCase = view === 'cases' && route.id === 'new'
   const crumb = view === 'reports' && route.id ? `#${shortId(route.id)}`
     : view === 'api-testing' ? apiSections.find(([key]) => key === (route.id ?? 'workbench'))?.[1] ?? null
+    : view === 'plans' && route.id === 'executions' ? '执行状态'
     : creatingCase ? '新建' : editingCase ? '编辑' : null
 
   const caseEditor = (creatingCase || editingCase) && <CaseEditor
@@ -253,7 +269,7 @@ export default function App() {
           {view === 'overview' && <Overview cases={activeCases} plans={plans} runs={runs} events={events} onNavigate={navigate} onNewCase={() => { setNewCasePlatform('web'); go({ view: 'cases', id: 'new' }) }} onOpenRun={id => go({ view: 'reports', id })} />}
           {view === 'cases' && <Cases cases={cases} selectedId={creatingCase ? null : route.id ?? null} editor={caseEditor || null}
             onImported={refresh}
-            onDebug={item=>{setDebugSelection({read:()=>item,source:item,saved:true,sessionId:crypto.randomUUID()});setDebugOpen(true)}}
+            onDebug={item=>{setDebugSelection({/* Supply the saved case as the debug input. */ read:()=>item,source:item,saved:true,sessionId:crypto.randomUUID()});setDebugOpen(true)}}
             onDebugHistory={()=>{setDebugSelection(null);setDebugOpen(true)}}
             onSelect={id => go({ view: 'cases', id: id ?? undefined }, { replace: true })}
             onCreate={platform => { setNewCasePlatform(platform); go({ view: 'cases', id: 'new' }, { replace: true }) }}
@@ -261,7 +277,17 @@ export default function App() {
             onArchive={async id=>{await action(async()=>{await authorizeLocal();return api.archiveCase(id)},'用例已删除，可在已删除列表恢复')}}
             onRestore={async id=>{await action(async()=>{await authorizeLocal();return api.restoreCase(id)},'用例已恢复')}}
             onApprove={async id => { await action(() => api.approveCase(id), '用例已批准') }} />}
-          {view === 'plans' && <Plans plans={plans} cases={cases} runs={runs} onCreate={payload => action(() => api.createPlan(payload), '计划已创建')} onReady={async id => { await action(async()=>{await authorizeLocal();return api.readyPlan(id)}, '计划已就绪') }} onRun={async id => { await action(async()=>{await authorizeLocal();return api.runPlan(id)}, '运行完成，报告已保存') }} />}
+          {view === 'plans' && <Plans plans={plans} cases={cases} runs={runs} section={route.id}
+            onNavigate={id => { if (routeRef.current.view === 'plans') go({view:'plans', id}) }}
+            onSave={async (plan, payload) => {
+              if (plan) await authorizeLocal()
+              const saved = plan ? await api.updatePlan(plan.id, plan.version, payload) : await api.createPlan(payload)
+              await refresh()
+              notify(!plan ? '计划已创建' : saved.id !== plan.id ? '已创建计划修订草稿' : '计划已保存')
+              return saved
+            }}
+            onReady={async id => { await action(async()=>{await authorizeLocal();return api.readyPlan(id)}, '计划已就绪') }}
+            onRun={async id => { await action(async()=>{await authorizeLocal();return api.runPlan(id)}, '运行完成，报告已保存') }} />}
           {view === 'reports' && (route.id
             ? <ReportPage key={route.id} id={route.id} runs={runs} plans={plans} cases={cases} loaded={loaded}
                 onBack={() => go({ view: 'reports' })}

@@ -15,12 +15,15 @@ CASE_PREFIX = re.compile(r'^(?:用例|Case)\s*[:：]\s*(.*)$', re.IGNORECASE)
 PLATFORMS = {'web': 'web', 'android': 'android', 'desktop': 'desktop', 'gui': 'desktop', 'api': 'api'}
 
 
+# Create a source-linked issue for the import preview.
 def diagnostic(code, message, *, field=None, source=None, warning=False):
     return ImportDiagnostic(code=code, message=message, field=field, source=source,
                             severity='warning' if warning else 'error')
 
 
+# Parse API request blocks without accepting duplicate keys or nonfinite values.
 def strict_json(text):
+    # Reject ambiguous duplicate JSON object keys.
     def pairs(items):
         result = {}
         for key, value in items:
@@ -29,9 +32,11 @@ def strict_json(text):
             result[key] = value
         return result
 
+    # Reject nonstandard numeric constants in imported JSON.
     def reject_constant(value):
         raise ValueError('non-finite JSON number')
 
+    # Reject numbers that overflow to infinity during decoding.
     def finite_float(value):
         number = float(value)
         if not math.isfinite(number):
@@ -41,6 +46,7 @@ def strict_json(text):
     return json.loads(text, object_pairs_hook=pairs, parse_constant=reject_constant, parse_float=finite_float)
 
 
+# Resolve an explicit or default platform and record any invalid input.
 def platform(value, default, issues, source, field='platform'):
     if value is None:
         if default is None:
@@ -52,6 +58,7 @@ def platform(value, default, issues, source, field='platform'):
     return normalized
 
 
+# Validate a source API request block before mapping it to a step.
 def api_block(text, issues, source):
     try:
         value = strict_json(text)
@@ -76,10 +83,12 @@ def api_block(text, issues, source):
         return None
 
 
+# Convert source data into a case draft with diagnostics for review.
 def build_candidate(*, title, platform_value, description, rows, post_rows, api_requests,
                     post_api_requests, source: ImportSource, identity, options: ImportOptions, issues):
     chosen = platform(platform_value, options.default_platform, issues, source)
 
+    # Build ordered steps and associate API request blocks by source step number.
     def steps(values, requests, label):
         result = []
         seen = set()

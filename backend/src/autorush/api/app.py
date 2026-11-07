@@ -25,6 +25,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from autorush.config.settings import Settings
+from autorush.llm.local_runtime import LocalVisionRuntime
 from autorush.domain.models import (
     CaseResult,
     CaseCreate,
@@ -41,7 +42,7 @@ from autorush.devices import adb
 from autorush.devices.local_server import LocalDeviceServer
 from autorush.devices.screen import ScreenHub, serve_viewer
 from autorush.devices.adb_screen import AdbScreenHub, serve_adb_viewer
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, closing
 from autorush.devices.pairing import PairingClaim, PairingCreate, PairingStore, validate_wss_url
 from autorush.drivers.api.http import HttpApiDriver
 from autorush.drivers.android.portal import AndroidPortalDriver, validate_android_step
@@ -73,6 +74,7 @@ from autorush.runner.engine import Runner
 from autorush.storage.sqlite import SqliteStore
 
 
+# Defines the allowed command envelope sent to an online Portal.
 class DeviceCommand(BaseModel):
     method: Literal[
         "device.info", "ui.snapshot", "ui.tap_element", "ui.tap", "ui.long_press",
@@ -81,6 +83,7 @@ class DeviceCommand(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
 
 
+# Compose the HTTP API, device bridges, storage and execution managers.
 def create_app(
     settings: Settings | None = None,
     *,
@@ -101,8 +104,10 @@ def create_app(
     operator_token = settings.operator_token
     operator_lock = threading.Lock()
     app = FastAPI(title="AutoRush-AITester", version="0.1.0")
+    local_vision = LocalVisionRuntime(settings.local_vision_launcher) if settings.local_vision_launcher else None
     local_server = LocalDeviceServer(app, settings.database_path.parent / 'device-tls', settings.local_device_port)
     app.state.local_device_server = local_server
+    # Recover persisted work at startup and close owned services on shutdown.
     @asynccontextmanager
     async def lifespan(_):
         try:
@@ -113,6 +118,8 @@ def create_app(
         finally:
             await agent_manager.close()
             await debug_manager.close()
+            if local_vision is not None:
+                await local_vision.close()
             await app.state.api_runner.close()
             await adb_screen_hub.close()
             await local_server.stop()
@@ -122,16 +129,20 @@ def create_app(
     app.state.screen_hub = screen_hub
     adb_screen_hub = AdbScreenHub(pairing_store)
     app.state.adb_screen_hub = adb_screen_hub
+    # Check desktop targets before building a driver session for the agent.
     async def make_agent_session(plan,cases,run_id):
         if any(step.driver=='desktop' for case in cases for step in case.steps+case.postconditions):
             check_desktop_target(settings,plan)
         return await DriverSession.create(settings,plan,cases,run_id,web_factory=web_driver_factory,
             desktop_factory=desktop_driver_factory,device_hub=device_hub,api_transport=api_transport)
-    agent_manager=AgentRunManager(settings,store,make_agent_session,
-        model_client_factory or (lambda config,hosts,**kwargs:ModelClient(config,hosts,transport=llm_transport,**kwargs)),event_broker)
+    # Give formal and debug runs the same owned GPU runtime.
+    def make_model_client(config, hosts, **kwargs):
+        return ModelClient(config, hosts, transport=llm_transport, local_runtime=local_vision, **kwargs)
+
+    client_factory = model_client_factory or make_model_client
+    agent_manager=AgentRunManager(settings,store,make_agent_session,client_factory,event_broker)
     app.state.agent_runs=agent_manager
-    debug_manager=DebugRunManager(settings,store,make_agent_session,
-        model_client_factory or (lambda config,hosts,**kwargs:ModelClient(config,hosts,transport=llm_transport,**kwargs)),event_broker,device_hub)
+    debug_manager=DebugRunManager(settings,store,make_agent_session,client_factory,event_broker,device_hub)
     app.state.case_debug=debug_manager
     browser_origins = {
         f"http://127.0.0.1:{settings.frontend_port}",
@@ -146,6 +157,7 @@ def create_app(
         allow_headers=["Content-Type", "X-Autorush-Operator-Token"],
     )
 
+    # Prevent caching of device credentials and other local execution data.
     @app.middleware("http")
     async def do_not_cache_device_credentials(request: Request, call_next):
         response = await call_next(request)
@@ -153,6 +165,7 @@ def create_app(
             response.headers["Cache-Control"] = "no-store"
         return response
 
+    # Suppress raw validation inputs on pairing, debugging and import routes.
     @app.exception_handler(RequestValidationError)
     async def pairing_validation_error(request: Request, exc: RequestValidationError):
         # FastAPI's default validation payload includes raw request values.
@@ -164,16 +177,19 @@ def create_app(
             return JSONResponse(status_code=422, content={'detail':'导入参数无效，请重新检查文件、会话和选择项。'})
         return await request_validation_exception_handler(request, exc)
 
+    # Provide a lightweight readiness probe for launchers.
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    # Check the local operator token using constant-time comparison.
     def require_operator(token: str | None) -> None:
         if len(operator_token) < 32:
             raise HTTPException(503, "Android operator bridge is not configured")
         if token is None or not hmac.compare_digest(token.encode(), operator_token.encode()):
             raise HTTPException(403, "invalid operator token")
 
+    # Require a loopback peer, a local Host and trusted browser origin metadata.
     def trusted_local_request(request: Request) -> bool:
         if request.client is None:
             return False
@@ -198,6 +214,7 @@ def create_app(
         return (request.headers.get("sec-fetch-site") == "same-origin"
                 and request.headers.get("sec-fetch-mode") == "cors")
 
+    # Issue the local operator credential and discover available ADB devices.
     @app.get("/api/v1/devices/operator-session")
     def operator_session(request: Request) -> dict[str, Any]:
         nonlocal operator_token
@@ -215,14 +232,17 @@ def create_app(
             result["adb_error"] = str(exc)
         return result
 
+    # Remove the private certificate path from listener metadata.
     def public_server_info(info: dict) -> dict:
         return {key: value for key, value in info.items() if key != 'certificate_path'}
 
+    # Return the current state of the LAN device listener.
     @app.get('/api/v1/devices/local-server')
     def local_server_status(x_autorush_operator_token: str | None = Header(default=None)) -> dict:
         require_operator(x_autorush_operator_token)
         return public_server_info(local_server.status())
 
+    # Start the TLS listener used by Wi-Fi device pairing.
     @app.post('/api/v1/devices/local-server/start')
     async def start_local_server(request: Request, x_autorush_operator_token: str | None = Header(default=None)) -> dict:
         require_operator(x_autorush_operator_token)
@@ -233,11 +253,13 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
 
+    # Stop the local device listener.
     @app.post('/api/v1/devices/local-server/stop')
     async def stop_local_server(x_autorush_operator_token: str | None = Header(default=None)) -> dict:
         require_operator(x_autorush_operator_token)
         return public_server_info(await local_server.stop())
 
+    # Issue a one-time pairing grant for the requested connection mode.
     @app.post("/api/v1/devices/pairings", status_code=201)
     def create_pairing(payload: PairingCreate, x_autorush_operator_token: str | None = Header(default=None)) -> dict:
         require_operator(x_autorush_operator_token)
@@ -256,6 +278,7 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
 
+    # Read the current state of an existing pairing grant.
     @app.get("/api/v1/devices/pairings/{pairing_id}")
     def get_pairing(pairing_id: UUID, x_autorush_operator_token: str | None = Header(default=None)) -> dict:
         require_operator(x_autorush_operator_token)
@@ -264,6 +287,7 @@ def create_app(
             raise HTTPException(404, "pairing not found")
         return result
 
+    # Invalidate an unneeded pairing grant.
     @app.post("/api/v1/devices/pairings/{pairing_id}/cancel")
     def cancel_pairing(pairing_id: UUID, x_autorush_operator_token: str | None = Header(default=None)) -> dict:
         require_operator(x_autorush_operator_token)
@@ -272,6 +296,7 @@ def create_app(
             raise HTTPException(404, "pairing not found")
         return result
 
+    # Exchange a valid pairing grant for a device credential.
     @app.post("/api/v1/devices/pairings/claim")
     async def claim_pairing(payload: PairingClaim) -> dict:
         result = pairing_store.claim(payload)
@@ -281,12 +306,14 @@ def create_app(
         await device_hub.disconnect(payload.device_id)
         return result
 
+    # List durable pairing records and their connection state.
     @app.get("/api/v1/devices/paired")
     def list_paired_devices(x_autorush_operator_token: str | None = Header(default=None)) -> list[dict]:
         require_operator(x_autorush_operator_token)
         online = set(device_hub.list_devices())
         return [{**device, "online": device["device_id"] in online} for device in pairing_store.list_devices()]
 
+    # Revoke the stored credential and disconnect the associated session.
     @app.post("/api/v1/devices/paired/{device_id}/revoke")
     async def revoke_paired_device(device_id: UUID, x_autorush_operator_token: str | None = Header(default=None)) -> dict:
         require_operator(x_autorush_operator_token)
@@ -296,6 +323,7 @@ def create_app(
         await device_hub.disconnect(device_id)
         return {"device_id": str(device_id), "revoked": True}
 
+    # Authenticate the Portal handshake and route frames, statuses and command responses.
     @app.websocket("/api/v1/devices/ws")
     async def device_stream(websocket: WebSocket) -> None:
         supplied = websocket.headers.get("authorization", "")
@@ -364,6 +392,7 @@ def create_app(
                 screen_hub.disconnected(session)
                 device_hub.unregister(session)
 
+    # Discover USB devices visible to the local ADB server.
     @app.get('/api/v1/devices/adb')
     def adb_devices(x_autorush_operator_token: str | None = Header(default=None)) -> dict:
         require_operator(x_autorush_operator_token)
@@ -372,19 +401,23 @@ def create_app(
         except adb.AdbError as exc:
             return {'devices': [], 'error': str(exc)}
 
+    # Serve the operator's ADB screen stream through its WebSocket handler.
     @app.websocket('/api/v1/devices/adb/screen/ws')
     async def adb_screen_view(websocket: WebSocket):
         await serve_adb_viewer(websocket, adb_screen_hub, require_operator, allowed_origins)
 
+    # Serve Portal screen frames for the selected paired device.
     @app.websocket('/api/v1/devices/{device_id}/screen/ws')
     async def screen_view(websocket: WebSocket, device_id: UUID):
         await serve_viewer(websocket, device_id, device_hub, screen_hub, require_operator, allowed_origins)
 
+    # List Android Portal devices connected to the command hub.
     @app.get("/api/v1/devices")
     def list_android_devices(x_autorush_operator_token: str | None = Header(default=None)) -> dict[str, list[str]]:
         require_operator(x_autorush_operator_token)
         return {"devices": device_hub.list_devices()}
 
+    # Bound command input and dispatch it through the selected Portal session.
     @app.post("/api/v1/devices/{device_id}/commands")
     async def command_android_device(
         device_id: UUID, payload: DeviceCommand, x_autorush_operator_token: str | None = Header(default=None),
@@ -401,6 +434,7 @@ def create_app(
         except RuntimeError as exc:
             raise HTTPException(422, str(exc)) from exc
 
+    # Forward execution events to authorized console subscribers.
     @app.websocket("/api/v1/events/ws")
     async def event_stream(websocket: WebSocket) -> None:
         origin = websocket.headers.get("origin")
@@ -438,10 +472,12 @@ def create_app(
                 if remaining:
                     await asyncio.gather(*remaining, return_exceptions=True)
 
+    # Return the built-in model endpoint configurations.
     @app.get("/api/v1/providers/presets", response_model=list[ProviderPreset])
     def list_provider_presets() -> list[ProviderPreset]:
         return PROVIDER_PRESETS
 
+    # Persist a model endpoint configuration for later validation.
     @app.post("/api/v1/providers/configs", response_model=ProviderConfigRecord, status_code=201)
     def create_provider_config(payload: ProviderConfigCreate) -> ProviderConfigRecord:
         try:
@@ -452,10 +488,12 @@ def create_app(
         store.save_provider_config(config)
         return config
 
+    # Return saved model configurations in their public form.
     @app.get("/api/v1/providers/configs", response_model=list[ProviderConfigRecord])
     def list_provider_configs() -> list[ProviderConfigRecord]:
         return store.list_provider_configs()
 
+    # Check a model endpoint's configuration before connecting.
     @app.post("/api/v1/providers/configs/{config_id}/preflight", response_model=ProviderPreflight)
     def preflight_provider_config(config_id: UUID) -> ProviderPreflight:
         config = store.get_provider_config(config_id)
@@ -466,6 +504,7 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(409, str(exc)) from exc
 
+    # Compile a draft into structured steps for operator review.
     @app.post("/api/v1/cases/compile", response_model=CaseCompileResult)
     async def compile_case_draft(payload: CaseCompileRequest) -> CaseCompileResult:
         config = store.get_provider_config(payload.provider_config_id)
@@ -476,6 +515,7 @@ def create_app(
         except ModelClientError as exc:
             raise HTTPException(422, str(exc)) from exc
 
+    # Probe the configured provider and persist its verification status.
     @app.post("/api/v1/providers/configs/{config_id}/test-connection", response_model=ProviderConnectionTest)
     async def connect_provider_config(config_id: UUID) -> ProviderConnectionTest:
         config = store.get_provider_config(config_id)
@@ -490,6 +530,7 @@ def create_app(
         except (ValueError, ModelClientError) as exc:
             raise HTTPException(422, str(exc)) from exc
 
+    # Create a draft, freezing embedded API requests when present.
     @app.post("/api/v1/cases", response_model=CaseRecord, status_code=201)
     def create_case(payload: CaseCreate, request: Request, x_autorush_operator_token: str | None = Header(default=None)) -> CaseRecord:
         if any(step.driver == 'api' and ('request' in step.parameters or 'request_snapshot_id' in step.parameters)
@@ -503,14 +544,17 @@ def create_app(
         store.save_case(case)
         return case
 
+    # List case records with optional archived entries.
     @app.get("/api/v1/cases", response_model=list[CaseRecord])
     def list_cases(include_archived:bool=False) -> list[CaseRecord]:
         return store.list_cases(include_archived=include_archived)
 
+    # Require the trusted local operator for protected case changes.
     def authorize_case_change(request,token):
         require_operator(token)
         if not trusted_local_request(request):raise HTTPException(403,'case changes require a trusted local operator')
 
+    # Revise a draft in place or create a new draft from an approved case.
     @app.put('/api/v1/cases/{case_id}',response_model=CaseRecord)
     def update_case(case_id:UUID,payload:CaseCreate,expected_version:int,request:Request,x_autorush_operator_token:str|None=Header(default=None)):
         authorize_case_change(request,x_autorush_operator_token)
@@ -529,6 +573,7 @@ def create_app(
         if not store.replace_case(case,updated):raise HTTPException(409,'case changed; reload before editing')
         return updated
 
+    # Hide a case while preserving references from historical plans.
     @app.delete('/api/v1/cases/{case_id}',response_model=CaseRecord)
     def archive_case(case_id:UUID,request:Request,x_autorush_operator_token:str|None=Header(default=None)):
         authorize_case_change(request,x_autorush_operator_token)
@@ -539,6 +584,7 @@ def create_app(
         if not store.replace_case(case,updated):raise HTTPException(409,'case changed; reload before deleting')
         return updated
 
+    # Make an archived case available for editing and new plans again.
     @app.post('/api/v1/cases/{case_id}/restore',response_model=CaseRecord)
     def restore_case(case_id:UUID,request:Request,x_autorush_operator_token:str|None=Header(default=None)):
         authorize_case_change(request,x_autorush_operator_token)
@@ -548,6 +594,7 @@ def create_app(
         if not store.replace_case(case,updated):raise HTTPException(409,'case changed; reload before restoring')
         return updated
 
+    # Load a case by ID for inspection or editing.
     @app.get("/api/v1/cases/{case_id}", response_model=CaseRecord)
     def get_case(case_id: UUID) -> CaseRecord:
         case = store.get_case(case_id)
@@ -555,6 +602,7 @@ def create_app(
             raise HTTPException(404, "case not found")
         return case
 
+    # Validate the case's executable steps before approval.
     @app.post("/api/v1/cases/{case_id}/approve", response_model=CaseRecord)
     def approve_case(case_id: UUID, request: Request, x_autorush_operator_token: str | None = Header(default=None)) -> CaseRecord:
         case = store.get_case(case_id)
@@ -563,6 +611,7 @@ def create_app(
         if case.archived_at:raise HTTPException(409,'restore archived case before approving')
         if any(step.parameters.get('request_snapshot_id') for step in case.steps + case.postconditions):
             authorize_case_change(request, x_autorush_operator_token)
+        # Approve only the case version that was just reviewed.
         def approve_reviewed_snapshot():
             approved=case.model_copy(update={'status':CaseStatus.APPROVED})
             if not store.replace_case(case,approved):raise HTTPException(409,'case changed; reload before approving')
@@ -582,22 +631,31 @@ def create_app(
                 except ValueError as exc: raise HTTPException(409,str(exc)) from exc
         return approve_reviewed_snapshot()
 
-    @app.post("/api/v1/plans", response_model=PlanRecord, status_code=201)
-    def create_plan(payload: PlanCreate) -> PlanRecord:
-        if len(set(payload.case_ids)) != len(payload.case_ids):
+    # Validate case references before accepting a new or edited plan.
+    def validate_plan_cases(case_ids: list[UUID]) -> None:
+        if len(set(case_ids)) != len(case_ids):
             raise HTTPException(422, "case_ids must be unique")
-        missing = [str(case_id) for case_id in payload.case_ids if store.get_case(case_id) is None]
+        cases = [store.get_case(case_id) for case_id in case_ids]
+        missing = [str(case_id) for case_id, case in zip(case_ids, cases) if case is None]
         if missing:
             raise HTTPException(422, {"missing_cases": missing})
-        if any(store.get_case(case_id).archived_at for case_id in payload.case_ids):raise HTTPException(409,'archived cases cannot be added to a new plan')
+        if any(case is not None and case.archived_at for case in cases):
+            raise HTTPException(409, "archived cases cannot be added to a plan")
+
+    # Create a draft plan with distinct, existing and unarchived case IDs.
+    @app.post("/api/v1/plans", response_model=PlanRecord, status_code=201)
+    def create_plan(payload: PlanCreate) -> PlanRecord:
+        validate_plan_cases(payload.case_ids)
         plan = PlanRecord(**payload.model_dump())
         store.save_plan(plan)
         return plan
 
+    # List stored plans for the management console.
     @app.get("/api/v1/plans", response_model=list[PlanRecord])
     def list_plans() -> list[PlanRecord]:
         return store.list_plans()
 
+    # Load a plan and its configured execution targets.
     @app.get("/api/v1/plans/{plan_id}", response_model=PlanRecord)
     def get_plan(plan_id: UUID) -> PlanRecord:
         plan = store.get_plan(plan_id)
@@ -605,6 +663,28 @@ def create_app(
             raise HTTPException(404, "plan not found")
         return plan
 
+    # Edit drafts in place and retain ready configurations for their historical runs.
+    @app.put("/api/v1/plans/{plan_id}", response_model=PlanRecord)
+    def update_plan(plan_id: UUID, payload: PlanCreate, expected_version: int, request: Request,
+                    x_autorush_operator_token: str | None = Header(default=None)) -> PlanRecord:
+        require_operator(x_autorush_operator_token)
+        if not trusted_local_request(request):
+            raise HTTPException(403, "plan changes require a trusted local operator")
+        plan = get_plan(plan_id)
+        if plan.version != expected_version:
+            raise HTTPException(409, "plan version changed; reload before editing")
+        validate_plan_cases(payload.case_ids)
+        if plan.status == PlanStatus.READY:
+            revision = PlanRecord(**payload.model_dump(), version=plan.version + 1, source_plan_id=plan.id)
+            store.save_plan(revision)
+            return revision
+        updated = PlanRecord(**payload.model_dump(), id=plan.id, created_at=plan.created_at,
+                             version=plan.version + 1, source_plan_id=plan.source_plan_id)
+        if not store.replace_plan(plan, updated):
+            raise HTTPException(409, "plan changed; reload before saving")
+        return updated
+
+    # Preflight drivers and freeze the API environment before marking a plan ready.
     @app.post("/api/v1/plans/{plan_id}/ready", response_model=PlanRecord)
     def ready_plan(plan_id: UUID, request: Request, x_autorush_operator_token: str | None = Header(default=None)) -> PlanRecord:
         plan = store.get_plan(plan_id)
@@ -646,14 +726,26 @@ def create_app(
         except ValueError: raise HTTPException(409, 'API request snapshot not found or invalid') from None
         if any(step.driver == "web" for step in all_steps) and not plan.web_base_url:
             raise HTTPException(409, "Web cases require web_base_url")
-        snapshot_id = plan.api_environment_snapshot_id
-        if plan.api_environment_id and snapshot_id is None:
-            environment = api_store.get('environments', plan.api_environment_id)
-            if environment is None: raise HTTPException(409, 'API environment not found')
-            snapshot_id = UUID(api_store.create('environment_snapshots', {'name': environment['name'],
-                'variables': environment['variables'], 'source_version': environment['version']})['id'])
-        return store.set_plan_status(plan_id, PlanStatus.READY, api_environment_snapshot_id=snapshot_id)  # type: ignore[return-value]
+        ready = plan.model_copy(update={"status": PlanStatus.READY})
+        if plan.api_environment_id and plan.api_environment_snapshot_id is None:
+            # Freeze variables and publish readiness together, or roll both back on conflict.
+            with closing(api_store.connect()) as connection, connection:
+                connection.execute("BEGIN IMMEDIATE")
+                environment = api_store.get("environments", plan.api_environment_id, connection=connection)
+                if environment is None:
+                    raise HTTPException(409, "API environment not found")
+                snapshot = api_store.create("environment_snapshots", {
+                    "name": environment["name"], "variables": environment["variables"],
+                    "source_version": environment["version"],
+                }, connection=connection)
+                ready.api_environment_snapshot_id = UUID(snapshot["id"])
+                if not store.replace_plan(plan, ready, connection=connection):
+                    raise HTTPException(409, "plan changed; run preflight again")
+        elif not store.replace_plan(plan, ready):
+            raise HTTPException(409, "plan changed; run preflight again")
+        return ready
 
+    # Execute a structured plan in order, close its drivers and publish its report.
     @app.post("/api/v1/plans/{plan_id}/runs", response_model=RunRecord, status_code=201)
     async def run_plan(plan_id: UUID, request: Request, x_autorush_operator_token: str | None = Header(default=None)) -> RunRecord:
         plan = store.get_plan(plan_id)
@@ -731,6 +823,7 @@ def create_app(
         }))
         return run
 
+    # Load a stored run and its case outcomes by ID.
     @app.get("/api/v1/runs/{run_id}", response_model=RunRecord)
     def get_run(run_id: UUID) -> RunRecord:
         run = store.get_run(run_id)
@@ -738,10 +831,12 @@ def create_app(
             raise HTTPException(404, "run not found")
         return run
 
+    # Return report records in reverse insertion order.
     @app.get("/api/v1/runs", response_model=list[RunRecord])
     def list_runs() -> list[RunRecord]:
         return store.list_runs()
 
+    # Download the persisted JSON report for a completed run.
     @app.get("/api/v1/runs/{run_id}/report")
     def get_report(run_id: UUID) -> FileResponse:
         run = store.get_run(run_id)
@@ -749,6 +844,7 @@ def create_app(
             raise HTTPException(404, "report not found")
         return FileResponse(run.report_path, media_type="application/json", filename=f"{run_id}.json")
 
+    # Serve only evidence listed by the run after validating its size and hash.
     @app.get("/api/v1/runs/{run_id}/evidence/{filename}")
     def get_screenshot(run_id: UUID, filename: str, x_autorush_operator_token: str | None = Header(default=None)) -> Response:
         require_operator(x_autorush_operator_token)
@@ -778,6 +874,7 @@ def create_app(
             raise HTTPException(409, "screenshot evidence checksum or size mismatch")
         return Response(jpeg, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
+    # Download the selected report format and protect screenshot-bearing HTML.
     @app.get("/api/v1/runs/{run_id}/report/{report_format}")
     def get_formatted_report(run_id: UUID, report_format: str, x_autorush_operator_token: str | None = Header(default=None)) -> FileResponse:
         run = store.get_run(run_id)

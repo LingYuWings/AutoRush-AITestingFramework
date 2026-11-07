@@ -7,7 +7,9 @@ from uuid import uuid4
 from autorush.api_testing.store import ApiStore
 
 
+# Persist expiring encrypted previews and durable import receipts.
 class ImportStore:
+    # Attach the status used by the import router.
     def __init__(self, path):
         self.api = ApiStore(path)
         with closing(self.api.connect()) as db, db:
@@ -22,6 +24,7 @@ class ImportStore:
                     case_id TEXT PRIMARY KEY, import_id TEXT NOT NULL, payload TEXT NOT NULL);
             ''')
 
+    # Save a new encrypted preview and return its ID and expiry.
     def create_preview(self, owner, preview):
         ident = str(uuid4())
         expires_at = time.time() + 1800
@@ -34,6 +37,7 @@ class ImportStore:
                        (ident, owner, expires_at, self.api.encode(preview.model_dump(mode='json'))))
         return ident, expires_at
 
+    # Load an unexpired preview scoped to its owning browser.
     def get_preview(self, db, ident, owner):
         row = db.execute('SELECT expires_at,payload FROM case_import_previews WHERE id=? AND owner=?', (ident, owner)).fetchone()
         if row is None:
@@ -42,15 +46,19 @@ class ImportStore:
             raise ImportStoreError(410, '导入预览已过期，请重新预览文件。')
         return row[0], self.api.decode(row[1])
 
+    # Check whether the source digest has already been committed.
     def duplicate_file(self, db, digest):
         return db.execute('SELECT 1 FROM case_import_commits WHERE file_sha256=? LIMIT 1', (digest,)).fetchone() is not None
 
 
+# Carries an import persistence error and its HTTP status.
 class ImportStoreError(ValueError):
+    # Attach the status used by the import router.
     def __init__(self, status, message):
         super().__init__(message)
         self.status = status
 
 
+# Decode a persisted import receipt when a row exists.
 def receipt(row):
     return json.loads(row[0]) if row else None

@@ -55,10 +55,12 @@ $backendProcess = $null
 $frontendProcess = $null
 $ownsBackend = $false
 
+# Prefix launcher status messages so they stand out from child process output.
 function Write-Step([string]$Message) {
     Write-Host "[AutoRush] $Message" -ForegroundColor Cyan
 }
 
+# Probe whether an HTTP endpoint is responding successfully.
 function Test-Url([string]$Url) {
     try {
         $response = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 2
@@ -69,6 +71,7 @@ function Test-Url([string]$Url) {
     }
 }
 
+# Verify the AutoRush health payload before reusing an existing backend.
 function Test-BackendHealth([string]$Url) {
     try {
         $response = Invoke-RestMethod -Uri $Url -TimeoutSec 2
@@ -79,6 +82,7 @@ function Test-BackendHealth([string]$Url) {
     }
 }
 
+# Wait for startup or surface the child process's error log.
 function Wait-Url([string]$Url, [System.Diagnostics.Process]$Process, [string]$ErrorLog) {
     for ($attempt = 0; $attempt -lt 60; $attempt++) {
         if (Test-Url $Url) { return }
@@ -95,6 +99,7 @@ function Wait-Url([string]$Url, [System.Diagnostics.Process]$Process, [string]$E
     throw "Timed out waiting for $Url. See $ErrorLog"
 }
 
+# Stop a launcher-owned process tree from the leaves up.
 function Stop-OwnedProcess([System.Diagnostics.Process]$Process, [string]$Name) {
     if ($null -eq $Process -or $Process.HasExited) { return }
     Write-Step "Stopping $Name (PID $($Process.Id))"
@@ -192,6 +197,10 @@ $env:AUTORUSH_FRONTEND_PORT = "$FrontendPort"
 $env:AUTORUSH_BACKEND_PORT = "$BackendPort"
 $env:AUTORUSH_DESKTOP_ENABLED = if ($DesktopAutomation) { '1' } else { '0' }
 $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $workspace ".playwright-browsers"
+if (-not $env:AUTORUSH_LOCAL_VISION_LAUNCHER -and
+    (Test-Path -LiteralPath (Join-Path $workspace 'artifacts/tools/llama-vision-runtime/llama-server.exe'))) {
+    $env:AUTORUSH_LOCAL_VISION_LAUNCHER = Join-Path $workspace 'scripts/start-local-vision.ps1'
+}
 $backendUrl = "http://127.0.0.1:$BackendPort"
 $frontendUrl = "http://127.0.0.1:$FrontendPort"
 
