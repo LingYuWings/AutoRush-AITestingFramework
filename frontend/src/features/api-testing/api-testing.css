@@ -29,10 +29,6 @@
    ------------------------------------------------------------------ */
 .api-workspace [hidden] { display: none !important; }
 .api-section:not([hidden]) { animation: rise var(--dur-2) var(--ease) both; }
-.api-section-nav { display: inline-flex; flex-wrap: wrap; gap: 2px; margin: 0 0 16px; padding: 2px; border-radius: var(--radius); background: var(--neutral-soft); }
-.api-section-nav a { display: inline-flex; align-items: center; height: 30px; padding: 0 14px; border-radius: 5px; color: var(--ink-3); font-size: 13.5px; text-decoration: none !important; transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease); }
-.api-section-nav a:hover:not([aria-current=page]) { color: var(--ink); }
-.api-section-nav a[aria-current=page] { background: var(--surface); color: var(--ink); font-weight: 500; box-shadow: inset 0 0 0 1px var(--line-strong); }
 
 /* In the workspace the page header and section nav already introduce the module;
    the workbench's own tools (import / new / reconnect) share the row with the request tabs. */
@@ -89,6 +85,7 @@
 .api-url-row > input { flex: 1; min-width: 0; font-family: var(--font-mono) !important; font-size: 13px !important; }
 .api-url-row select { font-family: var(--font-mono) !important; font-weight: 600; }
 .api-kv, .api-variable, .api-assertion, .api-extraction { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+.api-assertion, .api-extraction, .api-form-field { animation: rise var(--dur-2) var(--ease) both; }
 .api-kv > input:not([type=checkbox]), .api-variable > input:not([type=checkbox]), .api-assertion > input, .api-extraction > input { flex: 1; min-width: 0; }
 .api-kv > select, .api-assertion > select { max-width: 210px; }
 .api-kv .check-line, .api-variable .check-line, .api-extraction .check-line { margin-top: 0; white-space: nowrap; }
@@ -154,6 +151,8 @@ textarea.api-code, .api-code { width: 100%; min-height: 160px; font-family: var(
 .api-report-evidence summary { width: fit-content; color: var(--ink-2); font-size: 13px; cursor: pointer; }
 .api-report-evidence summary:hover { color: var(--ink); }
 .api-node-card { border-left: 3px solid var(--accent); }
+.api-node-card > .api-node-request { margin-top: 12px; }
+.api-node-card > .inline-alert { margin: 12px 0 0; }
 
 /* ------------------------------------------------------------------
    Section pages: runner, environments, history
@@ -223,13 +222,12 @@ textarea.api-code, .api-code { width: 100%; min-height: 160px; font-family: var(
 /* ------------------------------------------------------------------
    Unsaved-changes dialog — flat, like the rest of the console
    ------------------------------------------------------------------ */
-.api-dialog-backdrop { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 20px; background: color-mix(in srgb, var(--bg) 72%, transparent); animation: fade-in var(--dur-2) var(--ease) both; }
-.api-draft-dialog { width: min(480px, 100%); padding: 22px 24px 18px; border: 1px solid var(--line-strong); border-radius: var(--radius-lg); background: var(--surface); color: var(--ink); animation: dialog-in var(--dur-2) var(--ease) both; }
-.api-draft-dialog h2 { margin: 0 0 6px; font-size: 16px; }
+.api-dialog-backdrop { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 20px; background: var(--backdrop); animation: fade-in var(--dur-2) var(--ease) both; }
+.api-draft-dialog { width: min(480px, 100%); padding: 20px 20px 16px; border: 1px solid var(--line-strong); border-radius: var(--radius-lg); background: var(--surface); color: var(--ink); box-shadow: var(--shadow-overlay); animation: dialog-in var(--dur-2) var(--ease) both; }
+.api-draft-dialog h2 { margin: 0 0 6px; font-size: 17px; }
 .api-draft-dialog p { margin: 0 0 12px; color: var(--ink-2); font-size: 13.5px; }
 .api-dialog-actions { flex-direction: row-reverse; justify-content: flex-start; margin-top: 18px; }
 .api-dialog-actions .text-button { margin-right: auto; }
-@keyframes dialog-in { from { opacity: 0; transform: translateY(8px) scale(.98); } }
 
 @media (max-width: 1050px) {
   .api-layout { grid-template-columns: 230px minmax(0, 1fr); }

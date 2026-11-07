@@ -1,10 +1,10 @@
-import {X} from '../../components/icons'
+import {Plus,X} from '../../components/icons'
 import type {Pair,Variable} from './types'
 import {newPair} from './types'
 
 // Edit ordered key-value rows used by API headers and query parameters.
 export function PairsEditor({value,onChange,label}:{value:Pair[];onChange:(value:Pair[])=>void;label:string}){
-  return <div className="api-fields"><div className="section-title"><strong>{label}</strong><button type="button" className="text-button" onClick={()=>onChange([...value,newPair()])}>添加{label}</button></div>
+  return <div className="api-fields"><div className="section-title"><strong>{label}</strong><button type="button" className="text-button" onClick={()=>onChange([...value,newPair()])}><Plus size={14}/>添加{label}</button></div>
     {value.map((item,index)=><div className="api-kv" key={index}>
       <input aria-label={`${label} ${index+1} 启用`} type="checkbox" checked={item.enabled} onChange={e=>onChange(value.map((row,i)=>i===index?{...row,enabled:e.target.checked}:row))}/>
       <input aria-label={`${label} ${index+1} 名称`} value={item.key} placeholder="名称" onChange={e=>onChange(value.map((row,i)=>i===index?{...row,key:e.target.value}:row))}/>
@@ -17,7 +17,7 @@ export function PairsEditor({value,onChange,label}:{value:Pair[];onChange:(value
 export function VariablesEditor({value,onChange}:{value:Variable[];onChange:(value:Variable[])=>void}){
   // Apply a patch to one variable row.
   const update=(index:number,patch:Partial<Variable>)=>onChange(value.map((row,i)=>i===index?{...row,...patch}:row))
-  return <div className="api-fields"><div className="section-title"><strong>变量</strong><button type="button" className="text-button" onClick={()=>onChange([...value,{key:'',value:'',enabled:true,secret:false}])}>添加变量</button></div>
+  return <div className="api-fields"><div className="section-title"><strong>变量</strong><button type="button" className="text-button" onClick={()=>onChange([...value,{key:'',value:'',enabled:true,secret:false}])}><Plus size={14}/>添加变量</button></div>
     {value.map((item,index)=><div className="api-variable" key={index}>
       <input type="checkbox" aria-label={`变量 ${index+1} 启用`} checked={item.enabled} onChange={e=>update(index,{enabled:e.target.checked})}/>
       <input aria-label={`变量 ${index+1} 名称`} value={item.key} placeholder="变量名称" onChange={e=>update(index,{key:e.target.value})}/>

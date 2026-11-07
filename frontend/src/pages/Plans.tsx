@@ -1,5 +1,5 @@
 import { useEffect,useRef,useState } from 'react'
-import { FileText, Globe, Monitor, Pencil, Play, Plus, RotateCcw, Search, Server, ShieldCheck, Smartphone, Workflow, X } from '../components/icons'
+import { FileText, Globe, Monitor, Pencil, Play, Plus, RefreshCw, RotateCcw, Search, Server, ShieldCheck, Smartphone, Workflow, X } from '../components/icons'
 import { api, type AgentExecution,type ProviderConfig,type CaseRecord, type DesktopTarget, type PlanPayload, type PlanRecord, type RunRecord } from '../shared/api'
 import AgentProgress from '../features/runs/AgentProgress'
 import PlanDetails from '../features/plans/PlanDetails'
@@ -217,7 +217,7 @@ export default function Plans({ plans, cases, runs, section, onNavigate, onSave,
         <button className="secondary-button" disabled={connectingAgent} onClick={()=>void connectAgent()} title="连接本机执行器并恢复模型执行状态"><RotateCcw size={14} className={connectingAgent?'spinning':''} />{connectingAgent?'正在恢复…':'恢复执行状态'}</button>
         : <button className="primary-button" onClick={() => openEditor(null)}><Plus size={15} /> 新建计划</button>}
     />
-    <nav className="plan-section-nav" aria-label="测试计划模块导航">
+    <nav className="section-nav" aria-label="测试计划模块导航">
       <a href="#/plans" aria-current={!showingExecutions ? 'page' : undefined} onClick={event => { event.preventDefault(); onNavigate() }}>计划列表</a>
       <a href="#/plans/executions" aria-current={showingExecutions ? 'page' : undefined} onClick={event => { event.preventDefault(); onNavigate('executions') }}>执行状态</a>
     </nav>
@@ -260,15 +260,15 @@ export default function Plans({ plans, cases, runs, section, onNavigate, onSave,
           <label className="field"><span>Android App 包名</span><input className="mono-input" value={androidPackage} onChange={event => setAndroidPackage(event.target.value)} placeholder="com.example.app" /></label>
         </div>
         {hasWeb&&<div className="form-section"><p className="form-section-label">Playwright 浏览器</p>
-          <label className="check-line"><input type="checkbox" checked={webHeadless} onChange={e=>setWebHeadless(e.target.checked)}/>无头运行（关闭后显示独立 Chromium 窗口）</label>
           <div className="field-grid"><label className="field"><span>浏览器视口宽度</span><input type="number" min="320" max="3840" value={viewportWidth} onChange={e=>setViewportWidth(e.target.value)}/></label><label className="field"><span>浏览器视口高度</span><input type="number" min="240" max="2160" value={viewportHeight} onChange={e=>setViewportHeight(e.target.value)}/></label></div>
+          <label className="check-line"><input type="checkbox" checked={webHeadless} onChange={e=>setWebHeadless(e.target.checked)}/>无头运行（关闭后显示独立 Chromium 窗口）</label>
         </div>}
         {hasDesktop&&<div className="form-section"><p className="form-section-label">PyAutoGUI 桌面窗口</p>
-          <button type="button" className="secondary-button" disabled={fetchingWindows} onClick={()=>void connectLocal()}>{fetchingWindows?'读取中…':'连接本地执行并刷新窗口'}</button>
+          <button type="button" className="secondary-button" disabled={fetchingWindows} onClick={()=>void connectLocal()}><RefreshCw size={14} className={fetchingWindows?'spinning':''}/>{fetchingWindows?'读取中…':'连接本地执行并刷新窗口'}</button>
           <div className="field-grid"><label className="field"><span>桌面目标窗口</span><select required value={windowId} onChange={e=>setWindowId(e.target.value)}><option value="">请选择目标窗口</option>{windows.map(w=><option key={w.hwnd} value={w.hwnd}>{w.title} · PID {w.pid} · {w.screen_width}×{w.screen_height}</option>)}</select></label><label className="field"><span>切回窗口准备时间（秒）</span><input type="number" min="0" max="10" value={desktopDelay} onChange={e=>setDesktopDelay(e.target.value)}/></label></div>
           <p className="quiet-note">点击运行后，请在准备时间内切回目标窗口。支持 Windows 主屏；窗口失焦或被遮挡时停止操作。鼠标移至主屏角落可紧急停止。</p>
         </div>}
-        <label className="screenshot-option"><input type="checkbox" checked={hasDesktop||hasAgent&&hasUI||hasUI&&captureScreenshots} disabled={!hasUI||hasDesktop||hasAgent} onChange={event => setCaptureScreenshots(event.target.checked)} />每步截图证据</label>
+        <label className="check-line"><input type="checkbox" checked={hasDesktop||hasAgent&&hasUI||hasUI&&captureScreenshots} disabled={!hasUI||hasDesktop||hasAgent} onChange={event => setCaptureScreenshots(event.target.checked)} />每步截图证据</label>
         <p className="quiet-note">Web / Android / Desktop 每步及后处理保存截图；桌面必须启用。Android 需手机截图许可，截图失败会在报告中明确标出。</p>
       </div>
       <div className="form-section">

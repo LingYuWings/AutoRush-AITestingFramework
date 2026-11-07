@@ -270,7 +270,7 @@ export default function Devices() {
               {adbDevices.map(device => <option key={device.serial} value={device.serial} disabled={device.state !== 'device'}>{device.model || 'Android'} · {device.serial}{device.state === 'device' ? '' : ` · ${device.state === 'unauthorized' ? '请在手机上允许调试' : device.state}`}</option>)}
             </select></label>
             {usbServer && <p className="quiet-note pairing-endpoint">手机连接地址：<code>{usbServer}</code></p>}
-            {adbError && <p className="inline-alert" role="alert">USB 查询失败：{adbError}</p>}
+            {adbError && <p className="inline-alert error" role="alert">USB 查询失败：{adbError}</p>}
           </> : <>
             <label className="field"><span>远程服务方式</span><select value={remoteMode} disabled={Boolean(busy)} onChange={event => {
               const mode = event.target.value as 'lan' | 'external'; setRemoteMode(mode)
@@ -283,7 +283,7 @@ export default function Devices() {
               <button className="secondary-button" disabled={!authorized || Boolean(busy)} onClick={() => void (localServer?.running ? stopLocal() : startLocal())}>{localServer?.running ? '停止本地 WSS 服务' : '启动本地 WSS 服务'}</button>
             </> : <label className="field"><span>WSS 服务器地址</span><input className="mono-input" value={server} disabled={Boolean(busy)} onChange={event => setServer(event.target.value)} autoComplete="off" spellCheck={false} placeholder="wss://your-server/api/v1/devices/ws" /></label>}
           </>}
-          <label className="field"><span>允许测试的 App 包名</span><textarea value={packages} disabled={Boolean(busy)} onChange={event => setPackages(event.target.value)} spellCheck={false} rows={3} placeholder="com.autorush.fixture" /></label>
+          <label className="field"><span>允许测试的 App 包名</span><textarea className="mono-input" value={packages} disabled={Boolean(busy)} onChange={event => setPackages(event.target.value)} spellCheck={false} rows={3} placeholder="com.autorush.fixture" /></label>
           <p className="quiet-note">每行一个包名，最多 10 个，每个不超过 200 字符；只允许操作这些 App。Portal 自身不能加入允许列表。</p>
           <div className="pairing-form-actions"><button className="primary-button" disabled={!authorized || Boolean(busy) || (connection === 'usb' && !serial)} onClick={() => void generate()}><QrCode size={14} />{busy === 'generate' ? '生成中…' : pairing ? '重新生成二维码' : '生成配对二维码'}</button></div>
         </section>
@@ -304,7 +304,7 @@ export default function Devices() {
                 {visibleStatus === 'expired' && <p className="quiet-note">请重新生成二维码，然后在手机再次扫码。</p>}
               </div>
             </div>
-            {pollError && <p className="inline-alert" role="alert">{pollError} 状态查询会自动重试。</p>}
+            {pollError && <p className="inline-alert warn" role="alert">{pollError} 状态查询会自动重试。</p>}
           </> : <EmptyState icon={QrCode} title="等待生成配对二维码" description="先连接本地配对服务，选择设备和允许测试的 App，然后在手机 Portal 扫码。扫码后仍需开启无障碍服务。" />}
         </section>
 

@@ -17,8 +17,6 @@
 
 /* Cases */
 .cases-page { display: flex; flex: 1; flex-direction: column; min-height: 0; }
-.cases-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 20px; }
-.cases-head h1 { margin: 0; font-size: 22px; line-height: 1.3; }
 .cases-layout { display: grid; flex: 1; grid-template-columns: minmax(280px, 340px) minmax(0, 1fr); gap: 16px; align-items: stretch; min-height: 0; }
 .case-list-pane { display: flex; flex-direction: column; min-height: 0; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); }
 .case-list-tools { display: grid; gap: 8px; padding: 12px; border-bottom: 1px solid var(--line); }
@@ -162,5 +160,5 @@
 /* With view transitions available, the per-element entrance animations would play on top of them.
    Kept last so it wins over the entrance animations declared above. */
 @supports (view-transition-name: none) {
-  .main-content, .case-detail, .report-hero, .report-case, .nav-indicator { animation: none; }
+  .main-content, .case-detail, .editor-panel, .report-hero, .report-case, .nav-indicator { animation: none; }
 }

@@ -1,8 +1,8 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Archive, Check, ClipboardList, Pencil, Play, Plus, Search, Trash2, Undo2 } from '../components/icons'
+import { Archive, Check, ClipboardList, FileText, History, Pencil, Play, Plus, Search, Trash2, Undo2 } from '../components/icons'
 import type { CaseRecord, DriverKind, StepSpec } from '../shared/api'
 import { filterCases, platformLabels, platformOf, type CasePlatform } from '../features/cases/platform'
-import { DriverChip, EmptyState, StatusBadge } from '../components/ui'
+import { DriverChip, EmptyState, PageHeader, StatusBadge } from '../components/ui'
 import { date, driversOf, relative, shortId } from '../shared/format'
 import CaseImportDialog from '../features/case-import/CaseImportDialog'
 
@@ -120,13 +120,11 @@ export default function Cases({ cases, selectedId, editor, onSelect, onApprove, 
   }
 
   return <div className="cases-page">
-    <div className="cases-head">
-      <div>
-        <h1>用例管理</h1>
-        <p className="page-description">按执行端管理用例；跨端场景在测试计划中组合。批准后的修改另存为新草稿版本。</p>
-      </div>
-      <div className="debug-actions"><button className="secondary-button" onClick={()=>setImportOpen(true)}>导入用例</button><button className="secondary-button" onClick={onDebugHistory}>调试记录</button><button className="primary-button" onClick={() => onCreate(platform === 'all' || platform === 'mixed' ? 'web' : platform)}><Plus size={15} /> 新建用例</button></div>
-    </div>
+    <PageHeader title="用例管理" description="按执行端管理用例；跨端场景在测试计划中组合。批准后的修改另存为新草稿版本。" actions={<>
+      <button className="secondary-button" onClick={()=>setImportOpen(true)}><FileText size={14} /> 导入用例</button>
+      <button className="secondary-button" onClick={onDebugHistory}><History size={14} /> 调试记录</button>
+      <button className="primary-button" onClick={() => onCreate(platform === 'all' || platform === 'mixed' ? 'web' : platform)}><Plus size={15} /> 新建用例</button>
+    </>} />
     {importOpen&&<CaseImportDialog onClose={()=>setImportOpen(false)} onCreated={onImported} onOpenCase={id=>{
       if(editor&&!window.confirm('当前用例编辑尚未保存，跳转会丢弃这些修改。确认查看导入用例？'))return
       setImportOpen(false);setPlatform('all');setFilter('draft');setArchived(false);setQuery('');onSelect(id)

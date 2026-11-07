@@ -49,6 +49,9 @@ export const ArrowLeft = glyph('ArrowLeft', null, <path d="M19 12H5M11 6l-6 6 6 
 export const ArrowRight = glyph('ArrowRight', null, <path d="M5 12h14M13 6l6 6-6 6" />)
 export const ChevronLeft = glyph('ChevronLeft', null, <path d="M15 5l-7 7 7 7" />)
 export const ChevronRight = glyph('ChevronRight', null, <path d="M9 5l7 7-7 7" />)
+export const History = glyph('History', <circle cx="12" cy="12" r="8" />, <><path d="M4 12a8 8 0 1 0 2.35-5.65" /><path d="M4 4.5V8h3.5" /><path d="M12 8v4l2.75 1.75" /></>)
+export const ChevronUp =glyph('ChevronUp', null, <path d="M5 15l7-7 7 7" />)
+export const ChevronDown = glyph('ChevronDown', null, <path d="M5 9l7 7 7-7" />)
 
 // ── Sections ───────────────────────────────────────────────────────────
 export const LayoutDashboard = glyph('LayoutDashboard',
