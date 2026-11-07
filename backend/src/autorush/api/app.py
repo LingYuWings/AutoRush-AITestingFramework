@@ -25,6 +25,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from autorush.config.settings import Settings
+from autorush.llm.local_runtime import LocalVisionRuntime
 from autorush.domain.models import (
     CaseResult,
     CaseCreate,
@@ -103,6 +104,7 @@ def create_app(
     operator_token = settings.operator_token
     operator_lock = threading.Lock()
     app = FastAPI(title="AutoRush-AITester", version="0.1.0")
+    local_vision = LocalVisionRuntime(settings.local_vision_launcher) if settings.local_vision_launcher else None
     local_server = LocalDeviceServer(app, settings.database_path.parent / 'device-tls', settings.local_device_port)
     app.state.local_device_server = local_server
     # Recover persisted work at startup and close owned services on shutdown.
@@ -116,6 +118,8 @@ def create_app(
         finally:
             await agent_manager.close()
             await debug_manager.close()
+            if local_vision is not None:
+                await local_vision.close()
             await app.state.api_runner.close()
             await adb_screen_hub.close()
             await local_server.stop()
@@ -131,11 +135,14 @@ def create_app(
             check_desktop_target(settings,plan)
         return await DriverSession.create(settings,plan,cases,run_id,web_factory=web_driver_factory,
             desktop_factory=desktop_driver_factory,device_hub=device_hub,api_transport=api_transport)
-    agent_manager=AgentRunManager(settings,store,make_agent_session,
-        model_client_factory or (lambda config,hosts,**kwargs:ModelClient(config,hosts,transport=llm_transport,**kwargs)),event_broker)
+    # Give formal and debug runs the same owned GPU runtime.
+    def make_model_client(config, hosts, **kwargs):
+        return ModelClient(config, hosts, transport=llm_transport, local_runtime=local_vision, **kwargs)
+
+    client_factory = model_client_factory or make_model_client
+    agent_manager=AgentRunManager(settings,store,make_agent_session,client_factory,event_broker)
     app.state.agent_runs=agent_manager
-    debug_manager=DebugRunManager(settings,store,make_agent_session,
-        model_client_factory or (lambda config,hosts,**kwargs:ModelClient(config,hosts,transport=llm_transport,**kwargs)),event_broker,device_hub)
+    debug_manager=DebugRunManager(settings,store,make_agent_session,client_factory,event_broker,device_hub)
     app.state.case_debug=debug_manager
     browser_origins = {
         f"http://127.0.0.1:{settings.frontend_port}",

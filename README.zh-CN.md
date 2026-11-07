@@ -87,6 +87,8 @@ py -3.12 -m venv .venv-dev
 
 Windows 默认启用桌面自动化，需要交互式桌面会话。可用 `-DesktopAutomation:$false` 显式关闭。后端在启动时读取该设置，切换前请先停止正在运行的后端。完成首次安装后，以后启动可以不加 `-Install`。
 
+当已校验的本地 Qwen 运行时与权重安装在 `artifacts/` 下时，Windows 启动脚本会为指向 `http://127.0.0.1:8080/v1` 的 `autorush-vision-2b`、`autorush-vision-4b` 和 `autorush-vision-8b` 配置启用按需加载。端口离线时，计划或单用例调试自动启动框架托管的模型进程。同型号运行可共享进程，最后一个运行结束或取消后释放进程与显存；其他型号需待当前运行结束后再启动。外部已启动服务继续使用其自身生命周期。单独运行 `scripts/start-local-vision.ps1` 时，默认空闲 30 秒卸载权重，可通过 `-IdleSeconds` 调整。
+
 ### Linux 和 macOS
 
 克隆仓库后，在项目根目录创建虚拟环境，再运行对应平台的入口。需要 Bash 和 curl。

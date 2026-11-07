@@ -6,6 +6,7 @@ param(
   [string]$ModelPath='',
   [string]$ProjectorPath='',
   [ValidateRange(1024,65535)][int]$Port=8080,
+  [ValidateRange(-1,3600)][int]$IdleSeconds=30,
   [switch]$CheckOnly
 )
 $ErrorActionPreference='Stop'
@@ -28,7 +29,8 @@ if((Get-Sha256 $weights) -ne $expected.model){throw 'Model checksum mismatch'}
 if((Get-Sha256 $projector) -ne $expected.projector){throw 'Projector checksum mismatch'}
 $alias='autorush-vision-'+$ModelSize.ToLowerInvariant()
 $arguments=@('--model',$weights,'--mmproj',$projector,'--host','127.0.0.1','--port',"$Port",'--ctx-size','8192','--parallel','1','--n-gpu-layers','all','--image-min-tokens','1024','--image-max-tokens','1024','--alias',$alias,'--jinja','--reasoning','off')
-if($CheckOnly){@{host='127.0.0.1';port=$Port;alias=$alias;executable=$executable;model=$weights;projector=$projector;sha256=$expected}|ConvertTo-Json -Depth 4;exit 0}
+if($IdleSeconds -gt 0){$arguments+=@('--sleep-idle-seconds',"$IdleSeconds")}
+if($CheckOnly){@{host='127.0.0.1';port=$Port;alias=$alias;executable=$executable;model=$weights;projector=$projector;sha256=$expected;arguments=$arguments}|ConvertTo-Json -Depth 4;exit 0}
 $listener=[System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback,$Port)
 try{$listener.Start()}catch{throw "Port $Port is occupied; no existing process was changed"}finally{$listener.Stop()}
 $logs=Join-Path $PSScriptRoot '..\artifacts\model-agent';New-Item -ItemType Directory -Path $logs -Force|Out-Null

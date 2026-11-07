@@ -197,6 +197,10 @@ $env:AUTORUSH_FRONTEND_PORT = "$FrontendPort"
 $env:AUTORUSH_BACKEND_PORT = "$BackendPort"
 $env:AUTORUSH_DESKTOP_ENABLED = if ($DesktopAutomation) { '1' } else { '0' }
 $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $workspace ".playwright-browsers"
+if (-not $env:AUTORUSH_LOCAL_VISION_LAUNCHER -and
+    (Test-Path -LiteralPath (Join-Path $workspace 'artifacts/tools/llama-vision-runtime/llama-server.exe'))) {
+    $env:AUTORUSH_LOCAL_VISION_LAUNCHER = Join-Path $workspace 'scripts/start-local-vision.ps1'
+}
 $backendUrl = "http://127.0.0.1:$BackendPort"
 $frontendUrl = "http://127.0.0.1:$FrontendPort"
 
