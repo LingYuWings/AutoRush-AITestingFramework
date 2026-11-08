@@ -323,17 +323,17 @@ export default function Plans({ plans, cases, runs, section, onNavigate, onSave,
         <div className="plan-card-summary">
         <div className="plan-card-main">
           <div className="plan-title-line">
-            <h3>{plan.name}</h3>
+            <h3 title={plan.name}>{plan.name}</h3>
             <StatusBadge status={plan.status} />
           </div>
-          <p className="plan-meta mono">#{shortId(plan.id)} · {plan.environment} · {plan.case_ids.length} 个用例 · v{plan.version}</p>
+          <p className="plan-meta mono" title={plan.environment}>#{shortId(plan.id)} · {plan.environment} · {plan.case_ids.length} 个用例 · v{plan.version}</p>
           <div className="plan-targets">
-            {plan.api_base_url && <span><Server size={12} /> {plan.api_base_url}</span>}
-            {plan.web_base_url && <span><Globe size={12} /> {plan.web_base_url}</span>}
-            {plan.web_base_url && <span>{plan.web_headless===false?'Chromium 有头':'Chromium 无头'}</span>}
-            {plan.desktop_target&&<span><Monitor size={12}/>{plan.desktop_target.title} · 运行后 {plan.desktop_start_delay_seconds} 秒切回目标</span>}
-            {plan.android_device_id && <span><Smartphone size={12} /> {plan.android_package} · {shortId(plan.android_device_id)}</span>}
-            {plan.capture_screenshots && <span>每步截图证据</span>}
+            {plan.api_base_url && <span title={plan.api_base_url}><Server size={12} /><span>{plan.api_base_url}</span></span>}
+            {plan.web_base_url && <span title={plan.web_base_url}><Globe size={12} /><span>{plan.web_base_url}</span></span>}
+            {plan.web_base_url && <span><span>{plan.web_headless===false?'Chromium 有头':'Chromium 无头'}</span></span>}
+            {plan.desktop_target&&<span title={plan.desktop_target.title}><Monitor size={12}/><span>{plan.desktop_target.title} · 运行后 {plan.desktop_start_delay_seconds} 秒切回目标</span></span>}
+            {plan.android_device_id && <span title={plan.android_package ?? undefined}><Smartphone size={12} /><span>{plan.android_package} · {shortId(plan.android_device_id)}</span></span>}
+            {plan.capture_screenshots && <span><span>每步截图证据</span></span>}
           </div>
           {planCases.length > 0 && <p className="plan-cases">{planCases.slice(0, 3).map(item => item.title).join('、')}{planCases.length > 3 && ` 等 ${planCases.length} 个`}</p>}
         </div>

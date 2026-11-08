@@ -516,18 +516,23 @@ tbody tr.selected { background: var(--accent-soft); }
 .case-choice small { color: var(--ink-3); font-size: 12.5px; font-variant-numeric: tabular-nums; }
 
 .card-list { display: grid; gap: 10px; }
-.plan-card-summary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px 24px; }
+/* Reserve the action column before fitting the summary text. */
+.plan-card-summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 16px 24px; }
 .plan-card-main { min-width: 0; }
 .plan-title-line { display: flex; align-items: center; gap: 10px; }
-.plan-title-line h3 { margin: 0; font-size: 15px; }
+.plan-title-line h3 { min-width: 0; margin: 0; font-size: 15px; }
+.plan-title-line .badge { flex-shrink: 0; }
 .plan-meta { margin: 3px 0 0; color: var(--ink-3); font-size: 12px; }
 .plan-targets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.plan-targets span { display: inline-flex; align-items: center; gap: 5px; max-width: 320px; overflow: hidden; padding: 2px 7px; border: 1px solid var(--line); border-radius: 4px; color: var(--ink-2); font: 12px var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
+.plan-targets > span { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: min(320px, 100%); padding: 2px 7px; border: 1px solid var(--line); border-radius: 4px; color: var(--ink-2); font: 12px var(--font-mono); }
 .plan-targets svg { flex-shrink: 0; color: var(--ink-3); }
-.plan-cases { margin: 8px 0 0; overflow: hidden; color: var(--ink-3); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-.plan-side { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; min-width: 0; }
+.plan-title-line h3, .plan-meta, .plan-cases, .plan-targets > span > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plan-cases { margin: 8px 0 0; color: var(--ink-3); font-size: 13px; }
+.plan-side { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 12px 20px; min-width: 0; }
 .plan-last-run { display: grid; gap: 6px; width: 140px; color: var(--ink-3); font-size: 12.5px; }
 .plan-actions, .plan-order-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.plan-actions { justify-content: flex-end; }
+.plan-actions > button:last-child { min-width: 10em; }
 .plan-details { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
 .plan-details h4 { margin: 0 0 8px; font-size: 14px; }
 .plan-detail-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 8px; margin: 0 0 16px; }
@@ -676,7 +681,7 @@ tbody tr.selected { background: var(--accent-soft); }
   .main-content { padding: 20px 16px 64px; }
   .field-grid, .devices-layout { grid-template-columns: 1fr; }
   .page-heading { flex-direction: column; align-items: flex-start; }
-  .plan-card-summary { flex-direction: column; align-items: stretch; }
+  .plan-card-summary { grid-template-columns: minmax(0, 1fr); }
   .boundary-list dl > div { grid-template-columns: 1fr; gap: 2px; }
   .connection { display: none; }
 }
