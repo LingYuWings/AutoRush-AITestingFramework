@@ -111,7 +111,7 @@ export default function ReportPage({id,runs,plans,cases,loaded,onBack,onOpen,onD
     </section>
 
     {error&&<p role="alert" className="inline-alert error page-alert">{error}</p>}
-    {run.termination_reason&&<p role="status" className="inline-alert page-alert">结束原因：{run.termination_reason}</p>}
+    {run.termination_reason&&<p role="status" className="inline-alert warn page-alert">结束原因：{run.termination_reason}</p>}
 
     <div className={run.cases.length>1?'report-body has-index':'report-body'}>
       {run.cases.length>1&&<nav className="report-index" aria-label="用例目录">

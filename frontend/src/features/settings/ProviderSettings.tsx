@@ -1,8 +1,9 @@
 import {useMemo,useRef,useState} from 'react'
-import {ExternalLink,Plus,Radio,Server} from '../../components/icons'
+import {ExternalLink,Plus,Radio,Server,ShieldCheck} from '../../components/icons'
 import {api,type CredentialType,type LocalModelRuntime,type ModelCapability,type ProviderConfig,type ProviderConfigPayload,type ProviderConnectionTest,type ProviderPreflight,type ProviderPreset,type ProviderVisionTest} from '../../shared/api'
 import {applyModelCatalog,catalogKey,finalEndpoint,invalidateModelSelection,type CatalogState} from './model-catalog'
 import ModelCatalogPicker from './ModelCatalogPicker'
+import {EmptyState} from '../../components/ui'
 import './provider-settings.css'
 
 const credentials:Record<CredentialType,string>={api_key:'按量 API Key',token_plan:'Token Plan',coding_plan:'Coding Plan',local:'本地无凭证'}
@@ -89,7 +90,7 @@ export default function ProviderSettings({presets,configs,onCreate,onPreflight}:
       <button className="primary-button" onClick={()=>{choosePreset(presets[0]?.id??'');setName('');setEditing(true)}}><Plus size={16}/>添加模型配置</button></div>
     <section className="surface local-model-discovery"><div><h3>本地模型</h3><p>发现本机已运行的 llama.cpp、Ollama、LM Studio 等服务。</p></div>
       <button className="secondary-button" disabled={discoveryBusy} onClick={()=>void discover()}><Server size={15}/>{discoveryBusy?'发现中…':'发现本地模型'}</button>
-      {discoveryMessage&&<p role="status">{discoveryMessage}</p>}
+      {discoveryMessage&&<p role="status" className="quiet-note">{discoveryMessage}</p>}
       {runtimes.map(runtime=><div className="local-runtime" key={runtime.id}><span><strong>{runtime.name}</strong> · {runtime.base_url}<br/>{runtime.models.join('、')}</span>
         <button className="secondary-button" onClick={()=>useRuntime(runtime)}>使用 {runtime.name}</button></div>)}
     </section>
@@ -103,8 +104,8 @@ export default function ProviderSettings({presets,configs,onCreate,onPreflight}:
         <label className="field"><span>区域</span><select value={endpoint.region} onChange={e=>change({region:e.target.value})}>{preset.regions.map(r=><option key={r}>{r}</option>)}</select></label>
         <label className="field"><span>协议</span><select value={endpoint.protocol} onChange={e=>change({protocol:e.target.value})}>{preset.protocols.map(p=><option key={p} value={p}>{p}{implemented.has(p)?'':'（尚未实现）'}</option>)}</select></label>
         <label className="field"><span>接入方式</span><select value={endpoint.credentialType} onChange={e=>change({credentialType:e.target.value as CredentialType,secretRef:e.target.value==='local'?'':endpoint.secretRef})}>{preset.credential_types.map(c=><option key={c} value={c}>{credentials[c]}</option>)}</select></label>
-        <label className="field"><span>Base URL</span><input required value={endpoint.baseUrl} onChange={e=>change({baseUrl:e.target.value})} placeholder="http://127.0.0.1:8080/v1"/></label>
-        <label className="field"><span>密钥引用</span><input required={endpoint.credentialType!=='local'} disabled={endpoint.credentialType==='local'} value={endpoint.secretRef} onChange={e=>change({secretRef:e.target.value})} placeholder="env:PROVIDER_API_KEY"/></label>
+        <label className="field"><span>Base URL</span><input required className="mono-input" value={endpoint.baseUrl} onChange={e=>change({baseUrl:e.target.value})} placeholder="http://127.0.0.1:8080/v1"/></label>
+        <label className="field"><span>密钥引用</span><input required={endpoint.credentialType!=='local'} disabled={endpoint.credentialType==='local'} className="mono-input" value={endpoint.secretRef} onChange={e=>change({secretRef:e.target.value})} placeholder="env:PROVIDER_API_KEY"/></label>
       </div>
       <p className="quiet-note">最终请求地址：<code>{finalEndpoint(endpoint.baseUrl,endpoint.protocol)||'填写有效地址后显示'}</code></p>
       <ModelCatalogPicker state={endpoint} busy={catalogBusy} error={catalogError} onFetch={()=>void fetchCatalog()} onSelect={modelId=>setEndpoint(old=>({...old,modelId}))}/>
@@ -125,8 +126,8 @@ export default function ProviderSettings({presets,configs,onCreate,onPreflight}:
         {vision&&<p className="quiet-note">{typeof vision==='string'?vision:`${vision.message} ${vision.latency_ms} ms`}</p>}
       </div><div className="provider-actions"><button className="secondary-button" onClick={()=>void onPreflight(config.id).then(result=>{if(result)setChecks(old=>({...old,[config.id]:result}))})}><Server size={15}/>本地预检查</button>
         <button className="secondary-button" disabled={Boolean(probeBusy)||!implemented.has(config.protocol)} onClick={()=>void probe(config)}><Radio size={15}/>{probeBusy===config.id?'测试中…':'测试连接'}</button>
-        <button className="secondary-button" disabled={Boolean(probeBusy)||!connected||!config.capabilities.includes('vision')} onClick={()=>void probe(config,true)}>验证图片识别</button>
+        <button className="secondary-button" disabled={Boolean(probeBusy)||!connected||!config.capabilities.includes('vision')} onClick={()=>void probe(config,true)}><ShieldCheck size={15}/>验证图片识别</button>
       </div></section>
-    }):<div className="surface provider-empty"><h3>尚未配置模型</h3><p>可发现本地服务，或添加在线端点并获取模型列表。</p></div>}</div>
+    }):<section className="surface"><EmptyState icon={Server} title="尚未配置模型" description="可发现本地服务，或添加在线端点并获取模型列表。"/></section>}</div>
   </>
 }

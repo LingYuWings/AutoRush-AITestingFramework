@@ -3,6 +3,8 @@
 .settings-intro p { margin: 2px 0 0; color: var(--ink-3); font-size: 13px; }
 
 .provider-form { margin-bottom: 12px; }
+.provider-form > .field-grid + .quiet-note { margin-top: 12px; }
+.model-catalog-picker > .inline-alert { width: 100%; margin: 0; }
 .capability-picker { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
 .capability-picker > strong { display: block; margin-bottom: 8px; color: var(--ink-2); font-size: 13px; font-weight: 500; }
 .capability-picker > div { display: flex; flex-wrap: wrap; gap: 18px; }
@@ -27,9 +29,6 @@
 .preflight-result { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 13px; }
 .preflight-result.ok { color: var(--pass); }
 .preflight-result.warn { color: var(--warn); }
-.provider-empty { padding: 36px 20px; text-align: center; }
-.provider-empty h3 { margin: 0 0 4px; font-size: 14px; font-weight: 500; }
-.provider-empty p { margin: 0; color: var(--ink-3); font-size: 13px; }
 .provider-actions { display: flex; flex: 0 0 auto; gap: 8px; }
 
 @media (max-width: 900px) {

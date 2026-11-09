@@ -16,7 +16,7 @@ export function DriverChip({ driver }: { driver: DriverKind }) {
 // Give an empty panel a reason and an optional next action.
 export function EmptyState({ icon: Icon, title, description, action }: { icon: Icon; title: string; description: string; action?: ReactNode }) {
   return <div className="empty-state">
-    <Icon size={18} className="empty-icon" />
+    <span className="empty-icon" aria-hidden="true"><Icon size={18} /></span>
     <h3>{title}</h3>
     <p>{description}</p>
     {action}
