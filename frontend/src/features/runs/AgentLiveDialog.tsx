@@ -1,15 +1,19 @@
-// Display a running plan's transient model activity in a filterable modal.
+// Display live or archived model activity in a shared, filterable modal.
 import { uiLanguage, uiText } from '../../shared/i18n.ts'
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { X } from '../../components/icons'
-import { api, ApiRequestError, type AgentLiveEntry, type AgentLiveOutput } from '../../shared/api'
+import { api, ApiRequestError, type AgentLiveEntry, type AgentLiveOutput, type ModelOutputSource } from '../../shared/api'
 
 const labels = { model: uiText("模型状态"), reasoning: uiText("思考"), decision: uiText("决策"), execution: uiText("执行") }
 const filters = ['all', 'reasoning', 'decision', 'execution', 'model'] as const
 const clock = new Intl.DateTimeFormat(uiLanguage, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 
 // Poll only while the dialog is open and keep its final snapshot available for review.
-export default function AgentLiveDialog({ executionId, onClose }: { executionId: string; onClose: () => void }) {
+export default function AgentLiveDialog({ executionId, source = 'plan', onClose }: {
+  executionId: string
+  source?: ModelOutputSource
+  onClose: () => void
+}) {
   const dialog = useRef<HTMLDialogElement>(null)
   const scroll = useRef<HTMLDivElement>(null)
   const follow = useRef(true)
@@ -27,12 +31,17 @@ export default function AgentLiveDialog({ executionId, onClose }: { executionId:
   useEffect(() => {
     const controller = new AbortController()
     let timer: number | undefined
+    let firstSnapshot = true
 
     // Schedule the next read after the previous one finishes to avoid overlapping requests.
     async function poll() {
       try {
-        const value = await api.agentLiveOutput(executionId, controller.signal)
+        const value = await api.agentLiveOutput(executionId, controller.signal, source)
         if (controller.signal.aborted) return
+        if (firstSnapshot) {
+          follow.current = value.active
+          firstSnapshot = false
+        }
         setSnapshot(value)
         setError('')
         if (value.active) timer = window.setTimeout(poll, 750)
@@ -47,7 +56,7 @@ export default function AgentLiveDialog({ executionId, onClose }: { executionId:
       controller.abort()
       window.clearTimeout(timer)
     }
-  }, [executionId])
+  }, [executionId, source])
 
   useLayoutEffect(() => {
     const panel = scroll.current
@@ -55,28 +64,37 @@ export default function AgentLiveDialog({ executionId, onClose }: { executionId:
   }, [snapshot, filter])
 
   const entries = (snapshot?.entries ?? []).filter(entry => filter === 'all' || entry.kind === filter)
-  return <dialog ref={dialog} className="plan-dialog agent-live-dialog" aria-labelledby={titleId} onCancel={event => {
+  return <dialog ref={dialog} className="plan-dialog agent-live-dialog" aria-labelledby={titleId} onKeyDown={event => {
+    if (event.key === 'Escape') event.stopPropagation()
+  }} onCancel={event => {
     event.preventDefault()
     onClose()
   }}>
     <div className="plan-form agent-live-layout">
       <header className="plan-dialog-header">
-        <div><h2 id={titleId}>{uiText("实时模型输出")}</h2><p>{uiText("执行 #")}{executionId.slice(0, 8)} · {snapshot ? snapshot.active ? uiText("实时更新") : uiText("执行已结束") : uiText("正在读取")}</p></div>
-        <button type="button" className="icon-button" aria-label={uiText("关闭实时输出")} onClick={onClose}><X size={18} /></button>
+        <div><h2 id={titleId}>{source === 'report' ? uiText('模型输出') : uiText("实时模型输出")}</h2><p>{uiText("执行 #")}{executionId.slice(0, 8)} · {snapshot ? snapshot.active ? uiText("实时更新") : uiText("执行已结束") : uiText("正在读取")}</p></div>
+        <button type="button" className="icon-button" aria-label={uiText("关闭模型输出")} onClick={onClose}><X size={18} /></button>
       </header>
       <div className="agent-live-filters" role="group" aria-label={uiText("输出分类")}>
         {filters.map(kind => <button key={kind} type="button" className="secondary-button" aria-pressed={filter === kind} onClick={() => {
-          follow.current = true
+          follow.current = snapshot?.active ?? true
+          if (!follow.current && scroll.current) scroll.current.scrollTop = 0
           setFilter(kind)
         }}>{kind === 'all' ? uiText("全部") : labels[kind]}</button>)}
       </div>
       {error && <p className="inline-alert error plan-dialog-error" role="alert">{error}</p>}
+      {snapshot?.from_trace && <p className="quiet-note plan-dialog-error">{uiText('此运行早于模型输出归档功能，以下内容来自已保存的决策轨迹。')}</p>}
+      {snapshot?.truncated && <p className="quiet-note plan-dialog-error">{snapshot.active
+        ? uiText('实时视图显示最新记录，运行结束后可查看保留的历史输出。')
+        : uiText('记录超过保存上限，当前显示最后保留的条目。')}</p>}
       <div className="plan-dialog-content agent-live-content" ref={scroll} onScroll={event => {
         const panel = event.currentTarget
         follow.current = panel.scrollHeight - panel.clientHeight - panel.scrollTop < 32
       }}>
         {entries.length ? <ol className="agent-live-list">{entries.map(entry => <LiveMessage key={entry.id} entry={entry} />)}</ol>
-          : <p className="quiet-note">{filter === 'reasoning' ? uiText("尚无思考内容。这里会显示模型服务提供的思考文本，以及模型随决策给出的简要依据。") : uiText("此分类暂时没有输出。")}</p>}
+          : <p className="quiet-note">{snapshot && !snapshot.active && !snapshot.entries.length
+            ? uiText('这次运行没有可查看的模型输出。')
+            : filter === 'reasoning' ? uiText("尚无思考内容。这里会显示模型服务提供的思考文本，以及模型随决策给出的简要依据。") : uiText("此分类暂时没有输出。")}</p>}
       </div>
     </div>
   </dialog>
@@ -87,7 +105,7 @@ function LiveMessage({ entry }: { entry: AgentLiveEntry }) {
   return <li className={`agent-live-message agent-live-${entry.kind}`}>
     <div><strong>{labels[entry.kind]}</strong>
       {entry.case !== null && <span>{uiText("用例 ")}{entry.case}{entry.step !== null ? uiText(" · 步骤 {0}", entry.step) : ''}</span>}
-      <time dateTime={entry.at}>{clock.format(new Date(entry.at))}</time>
+      {entry.at && <time dateTime={entry.at}>{clock.format(new Date(entry.at))}</time>}
     </div>
     <p>{activityText(entry)}</p>
   </li>

@@ -1,5 +1,12 @@
 // English messages for language preferences and console-generated run activity.
 export default {
+  '模型输出': 'Model Output',
+  '查看模型输出': 'View model output',
+  '关闭模型输出': 'Close model output',
+  '实时视图显示最新记录，运行结束后可查看保留的历史输出。': 'The live view shows recent entries. Review the retained transcript after the run ends.',
+  '记录超过保存上限，当前显示最后保留的条目。': 'The transcript exceeded its storage limit. Showing the most recent retained entries.',
+  '这次运行没有可查看的模型输出。': 'No model output is available for this run.',
+  '此运行早于模型输出归档功能，以下内容来自已保存的决策轨迹。': 'This run predates transcript archiving. The entries below come from its saved decision trace.',
   '界面语言': 'Interface Language',
   '语言偏好保存在此浏览器中，切换时会重新加载当前页面。': 'The language preference is saved in this browser. Switching languages reloads the current page.',
   '语言': 'Language',

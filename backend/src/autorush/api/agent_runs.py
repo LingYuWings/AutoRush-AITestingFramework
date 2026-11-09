@@ -51,8 +51,9 @@ def create_agent_run_router(manager,settings,store,device_hub,require_operator,t
         if record is None: raise HTTPException(404,'agent execution not found')
         return record
 
-    # Read only the selected run's transient log after checking operator authorization.
+    # Read only the selected run's live or archived model output.
     @router.get('/agent-runs/{execution_id}/live-output')
+    @router.get('/runs/{execution_id}/model-output')
     async def live_output(execution_id:UUID,request:Request,x_autorush_operator_token:str|None=Header(default=None)):
         authorize(request,x_autorush_operator_token)
         snapshot=manager.get_live_output(execution_id)

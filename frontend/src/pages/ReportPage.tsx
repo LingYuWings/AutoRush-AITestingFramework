@@ -6,6 +6,7 @@ import {EmptyState,ResultBar,StatusBadge} from '../components/ui'
 import {countStatuses,date,resultOrder,shortId,statusLabel} from '../shared/format'
 import StepScreenshot from '../components/StepScreenshot'
 import AgentTrace from '../features/runs/AgentTrace'
+import AgentLiveDialog from '../features/runs/AgentLiveDialog'
 import {ApiEvidence} from '../features/api-testing/ResponsePanel'
 
 type CaseResult=RunRecord['cases'][number]
@@ -52,6 +53,7 @@ export default function ReportPage({id,runs,plans,cases,loaded,onBack,onOpen,onD
   const [authEpoch,setAuthEpoch]=useState(0)
   const [connecting,setConnecting]=useState(false)
   const [error,setError]=useState('')
+  const [outputId,setOutputId]=useState<string|null>(null)
   const issueSteps=run?run.cases.reduce((sum,item)=>sum+item.steps.filter(step=>step.status!=='passed').length,0):0
   const [onlyIssues,setOnlyIssues]=useState(false)
   const counts=useMemo(()=>countStatuses(run?.cases??[]),[run])
@@ -61,11 +63,11 @@ export default function ReportPage({id,runs,plans,cases,loaded,onBack,onOpen,onD
   useEffect(()=>{
     // Return to the report list on Escape outside editable controls.
     const onKey=(event:KeyboardEvent)=>{
-      if(event.key!=='Escape'||event.defaultPrevented||(event.target as HTMLElement).closest('input,textarea,select,[contenteditable]'))return
+      if(event.key!=='Escape'||event.defaultPrevented||outputId===id||(event.target as HTMLElement).closest('input,textarea,select,[contenteditable]'))return
       onBack()
     }
     window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey)
-  },[onBack])
+  },[id,onBack,outputId])
   // Refresh local authorization and reload evidence that needs operator access.
   const connect=async()=>{setConnecting(true);setError('');try{api.setOperatorToken((await api.operatorSession()).operator_token);setAuthEpoch(v=>v+1)}catch(cause){setError(cause instanceof Error?cause.message:uiText("本地连接失败"))}finally{setConnecting(false)}}
 
@@ -92,6 +94,7 @@ export default function ReportPage({id,runs,plans,cases,loaded,onBack,onOpen,onD
         <h1>{plan?.name??uiText("测试运行")}</h1>
         <div className="report-hero-actions">
           <div className="report-downloads">{(['json','html','junit'] as const).map(format=><button key={format} className="download-chip" onClick={()=>void onDownload(run.id,format)}><Download size={12}/>{format.toUpperCase()}</button>)}</div>
+          <button type="button" className="secondary-button accent" aria-haspopup="dialog" onClick={()=>setOutputId(run.id)}>{uiText('查看模型输出')}</button>
           <button className="text-button" disabled={connecting} onClick={()=>void connect()}><KeyRound size={13}/>{connecting?uiText("连接中…"):authEpoch?uiText("已连接本地执行"):uiText("连接本地执行以查看截图")}</button>
         </div>
       </div>
@@ -101,6 +104,7 @@ export default function ReportPage({id,runs,plans,cases,loaded,onBack,onOpen,onD
         <StatusBadge status={run.status}/>
       </div>
     </header>
+    {outputId===run.id&&<AgentLiveDialog executionId={run.id} source="report" onClose={()=>setOutputId(null)}/>}
 
     <section className="report-stats" aria-label={uiText("结果统计")}>
       <ResultBar items={run.cases}/>

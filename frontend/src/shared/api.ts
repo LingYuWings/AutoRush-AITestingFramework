@@ -72,8 +72,9 @@ export type PlanPayload = Pick<PlanRecord, 'name' | 'environment' | 'case_ids'> 
 export interface AgentOptions {provider_config_id:string;max_rounds_per_step:number;max_rounds_per_case:number;model_timeout_seconds:number;case_timeout_seconds:number}
 export interface AgentTraceRecord {round?:number;operation?:string|null;brief_reason?:string;error?:string;verification_kind?:string;model?:{latency_ms:number;attempts:number};result?:{status:ResultStatus;detail?:string;assertions?:string[];evidence?:Record<string,unknown>};observation?:{screenshot?:ScreenshotEvidence}}
 export interface AgentExecution {id:string;plan_id:string;state:'running'|'stopping'|'finished'|'interrupted';progress:{completed_cases?:{status:ResultStatus;steps:StepResult[]}[];active?:{active_step?:{intent:string;expected_result:string;traces:AgentTraceRecord[]};rounds_used?:number;pending_action?:AgentTraceRecord}};termination_reason:string|null;final_run_id:string|null;created_at:string}
-export interface AgentLiveEntry {id:number;kind:'model'|'reasoning'|'decision'|'execution';text:string;case:number|null;step:number|null;at:string;source?:'provider'|'decision'}
-export interface AgentLiveOutput {active:boolean;entries:AgentLiveEntry[]}
+export interface AgentLiveEntry {id:number;kind:'model'|'reasoning'|'decision'|'execution';text:string;case:number|null;step:number|null;at:string|null;source?:'provider'|'decision'}
+export interface AgentLiveOutput {active:boolean;entries:AgentLiveEntry[];truncated?:boolean;from_trace?:boolean}
+export type ModelOutputSource = 'plan' | 'report' | 'debug'
 
 export interface ScreenshotEvidence {
   file: string
@@ -251,23 +252,23 @@ export type PlatformEvent = EventEnvelope & (
 
 export const API_BASE = window.location.protocol === 'app:' ? 'http://127.0.0.1:8000' : ''
 let operatorToken = ''
-let screenshotAuthorization: Promise<void> | null = null
+let evidenceAuthorization: Promise<void> | null = null
 
 // Stop screenshot work immediately when the requesting view cancels it.
 function checkScreenshotAbort(signal?: AbortSignal) {
   if (signal?.aborted) throw new DOMException('Screenshot request cancelled', 'AbortError')
 }
 
-// Share the authorization refresh across concurrent screenshot requests.
-async function authorizeScreenshot(): Promise<void> {
-  if (!screenshotAuthorization) {
+// Share the local operator refresh across protected evidence requests.
+async function authorizeEvidence(): Promise<void> {
+  if (!evidenceAuthorization) {
     const previous = operatorToken
-    screenshotAuthorization = request<OperatorSession>('/api/v1/devices/operator-session', undefined, false).then(session => {
+    evidenceAuthorization = request<OperatorSession>('/api/v1/devices/operator-session', undefined, false).then(session => {
       if (typeof session.operator_token !== 'string' || !session.operator_token) throw new Error(uiText("本地操作授权不可用"))
       if (operatorToken === previous) api.setOperatorToken(session.operator_token)
-    }).finally(() => { screenshotAuthorization = null })
+    }).finally(() => { evidenceAuthorization = null })
   }
-  await screenshotAuthorization
+  await evidenceAuthorization
 }
 const operatorListeners = new Set<() => void>()
 
@@ -356,7 +357,7 @@ export const api = {
   screenshot: async (path: string, signal?: AbortSignal): Promise<Blob> => {
     if (!/^\/api\/v1\/(?:runs\/[A-Za-z0-9-]+\/(?:screenshots|evidence)|case-debug-runs\/[A-Za-z0-9-]+\/evidence)\/[A-Za-z0-9_-]+\.jpg$/.test(path)) throw new Error(uiText("截图资源地址无效"))
     checkScreenshotAbort(signal)
-    if (!operatorToken) await authorizeScreenshot()
+    if (!operatorToken) await authorizeEvidence()
     checkScreenshotAbort(signal)
     const sentToken = operatorToken
     // Fetch the image using the token available at the time of the attempt.
@@ -364,7 +365,7 @@ export const api = {
     let response = await fetchImage()
     if (response.status === 401 || response.status === 403) {
       checkScreenshotAbort(signal)
-      if (operatorToken === sentToken) await authorizeScreenshot()
+      if (operatorToken === sentToken) await authorizeEvidence()
       checkScreenshotAbort(signal)
       response = await fetchImage()
     }
@@ -427,8 +428,28 @@ export const api = {
   agentRuns:()=>request<AgentExecution[]>('/api/v1/agent-runs'),
   // Fetch one agent execution and its progress.
   agentRun:(id:string)=>request<AgentExecution>(`/api/v1/agent-runs/${id}`),
-  // Read the transient model and execution log for one run.
-  agentLiveOutput:(id:string,signal:AbortSignal)=>request<AgentLiveOutput>(`/api/v1/agent-runs/${id}/live-output`,{signal}),
+  // Read one run's protected transcript, renewing local authorization at most once.
+  async agentLiveOutput(id: string, signal: AbortSignal, source: ModelOutputSource = 'plan'): Promise<AgentLiveOutput> {
+    const ident = encodeURIComponent(id)
+    const path = {
+      plan: `/api/v1/agent-runs/${ident}/live-output`,
+      report: `/api/v1/runs/${ident}/model-output`,
+      debug: `/api/v1/case-debug-runs/${ident}/model-output`,
+    }[source]
+    signal.throwIfAborted()
+    const alreadyAuthorized = Boolean(operatorToken)
+    if (!alreadyAuthorized) await authorizeEvidence()
+    signal.throwIfAborted()
+    const previous = operatorToken
+    try { return await request<AgentLiveOutput>(path, {signal}) }
+    catch (cause) {
+      signal.throwIfAborted()
+      if (!alreadyAuthorized || !(cause instanceof ApiRequestError) || ![401,403,503].includes(cause.status)) throw cause
+      if (operatorToken === previous) await authorizeEvidence()
+      signal.throwIfAborted()
+      return request<AgentLiveOutput>(path, {signal})
+    }
+  },
   // Request cancellation of the specified agent execution.
   cancelAgentRun:(id:string)=>post<AgentExecution>(`/api/v1/agent-runs/${id}/cancel`),
   // List run records used by the reporting views.

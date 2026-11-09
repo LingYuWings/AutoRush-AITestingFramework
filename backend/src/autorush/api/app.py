@@ -56,6 +56,8 @@ from autorush.api.model_catalog import create_model_catalog_router
 from autorush.api.agent_runs import create_agent_run_router
 from autorush.agent.executions import validate_agent_configuration
 from autorush.agent.manager import AgentRunManager
+from autorush.agent.live_output import ModelOutputStore
+from autorush.api_testing.store import ApiStore
 from autorush.case_debug.manager import DebugRunManager
 from autorush.case_debug.router import create_debug_router
 from autorush.llm.client import ModelClient
@@ -140,9 +142,10 @@ def create_app(
         return ModelClient(config, hosts, transport=llm_transport, local_runtime=local_vision, **kwargs)
 
     client_factory = model_client_factory or make_model_client
-    agent_manager=AgentRunManager(settings,store,make_agent_session,client_factory,event_broker)
+    model_output_store=ModelOutputStore(ApiStore(settings.database_path))
+    agent_manager=AgentRunManager(settings,store,make_agent_session,client_factory,event_broker,output_store=model_output_store)
     app.state.agent_runs=agent_manager
-    debug_manager=DebugRunManager(settings,store,make_agent_session,client_factory,event_broker,device_hub)
+    debug_manager=DebugRunManager(settings,store,make_agent_session,client_factory,event_broker,device_hub,output_store=model_output_store)
     app.state.case_debug=debug_manager
     browser_origins = {
         f"http://127.0.0.1:{settings.frontend_port}",

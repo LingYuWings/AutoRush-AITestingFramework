@@ -110,7 +110,7 @@ export default function CaseDebugPanel({open,selection,plans,onClose}:{open:bool
         <label className="check-line"><input type="checkbox" checked={onlyCurrent} disabled={!selection?.read} onChange={e=>setOnlyCurrent(e.target.checked)}/>{uiText("仅当前用例 / 编辑会话")}</label>
         <select className="mini-select" aria-label={uiText("选择调试记录")} value={history.some(h=>h.id===run?.id)?run!.id:''} onChange={e=>{const id=e.target.value;if(!id)return;const token=++viewGeneration.current;void debugClient.get(id).then(value=>{if(token===viewGeneration.current)setRun(value)}).catch(cause=>setError(String(cause)))}}><option value="">{uiText("最近 20 条调试记录")}</option>{history.map(h=><option key={h.id} value={h.id}>{new Date(h.created_at).toLocaleTimeString(uiLanguage)} · {h.title} · {h.status??h.state}</option>)}</select>
       </section>
-      {run&&<CaseDebugResults run={run}/>}
+      {run&&<CaseDebugResults key={run.id} run={run}/>}
     </div>
   </aside>
 }

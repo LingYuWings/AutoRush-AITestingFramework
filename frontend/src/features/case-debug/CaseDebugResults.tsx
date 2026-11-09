@@ -1,16 +1,23 @@
 import { uiLanguage, uiText } from '../../shared/i18n.ts'
+import {useState} from 'react'
 import StepScreenshot from '../../components/StepScreenshot'
 import {StatusBadge} from '../../components/ui'
 import AgentTrace from '../runs/AgentTrace'
+import AgentLiveDialog from '../runs/AgentLiveDialog'
 import {ApiEvidence} from '../api-testing/ResponsePanel'
 import type {DebugRun} from './client'
 
 // Display completed or in-progress debug steps with their evidence.
 export default function CaseDebugResults({run}:{run:DebugRun}){
+  const [showOutput,setShowOutput]=useState(false)
   const active=run.progress.active
   const steps=run.result?.steps??[...(run.progress.completed_cases?.flatMap(c=>c.steps)??[]),...(active?.steps??[])]
   return <section className="debug-results" aria-label={uiText("调试执行结果")}>
-    <div className="section-title"><h3>{run.title}</h3>{run.result&&<StatusBadge status={run.result.status}/>}</div>
+    <div className="section-title"><h3>{run.title}</h3><div className="section-title-actions">
+      {run.result&&<StatusBadge status={run.result.status}/>}
+      {run.execution_mode==='agent'&&<button type="button" className="secondary-button accent" aria-haspopup="dialog" onClick={()=>setShowOutput(true)}>{uiText('查看模型输出')}</button>}
+    </div></div>
+    {showOutput&&<AgentLiveDialog executionId={run.id} source="debug" onClose={()=>setShowOutput(false)}/>}
     <p className="quiet-note">{run.platform} · {run.execution_mode==='agent'?uiText("自然语言"):uiText("结构化")} · {run.unsaved?uiText("未保存内容快照"):uiText("已保存 v{0}", run.source_version??1)} · {new Date(run.created_at).toLocaleString(uiLanguage)} · #{run.id.slice(0,8)}</p>
     <p role="status">{run.state === 'running' && run.execution_mode === 'agent' && !active && !steps.length
       ? uiText("正在准备模型与执行环境，本地模型冷启动可能需要一些时间…")
