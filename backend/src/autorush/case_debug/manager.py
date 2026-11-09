@@ -15,7 +15,7 @@ from autorush.domain.models import CaseRecord, PlanRecord, ResultStatus
 class DebugRunManager(AgentRunManager):
     # Attach debug storage while retaining the shared execution machinery.
     def __init__(self, settings, store, session_factory, client_factory, broker, device_hub):
-        super().__init__(settings, DebugStore(store), session_factory, client_factory, broker)
+        super().__init__(settings, DebugStore(store), session_factory, client_factory, broker, collect_live_output=False)
         self.device_hub = device_hub
 
     # Suppress formal plan events because debug progress is read from storage.

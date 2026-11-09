@@ -1,3 +1,4 @@
+import { uiText } from '../../shared/i18n.ts'
 export type Pair = {key:string; value:string; enabled:boolean}
 export type Variable = {key:string; value:unknown; enabled:boolean; secret:boolean}
 export type BodyField = {key:string; value:string; type:'text'|'file'; filename:string; content_type:string; data_base64:string; enabled:boolean}
@@ -25,7 +26,7 @@ export type ApiExecution = {
 export type CollectionResult = {status:ApiExecution['status']; results:ApiExecution[]; detail?:string}
 export type ImportResult = {collections:CollectionRecord[]; requests:ApiRequestRecord[]; environments:CollectionRecord[];folders?:FolderRecord[]; warnings:string[]}
 // Supply the defaults for an unsaved GET request.
-export const newRequest=():ApiRequest=>({name:'未命名请求',collection_id:null,method:'GET',url:'',query:[],headers:[],
+export const newRequest=():ApiRequest=>({name:uiText("未命名请求"),collection_id:null,method:'GET',url:'',query:[],headers:[],
   auth:{type:'none',username:'',password:'',token:'',key:'X-API-Key',value:'',location:'header'},
   body:{mode:'none',text:'',content_type:'text/plain',fields:[],filename:'upload.bin',data_base64:''},
   variables:[],assertions:[],extractions:[],timeout_ms:10000,follow_redirects:false,proxy:'direct',compatibility_warnings:[]})

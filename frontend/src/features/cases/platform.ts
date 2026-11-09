@@ -1,6 +1,7 @@
+import { uiText } from '../../shared/i18n.ts'
 import type {CaseRecord,DriverKind} from '../../shared/api'
 export type CasePlatform=DriverKind|'mixed'
-export const platformLabels:Record<CasePlatform,string>={web:'Web',android:'Android',desktop:'Desktop',api:'API',mixed:'历史混合'}
+export const platformLabels:Record<CasePlatform,string>={web:'Web',android:'Android',desktop:'Desktop',api:'API',mixed:uiText("历史混合")}
 // Infer the platform for older cases from their drivers when metadata is absent.
 export function platformOf(item:Pick<CaseRecord,'platform'|'steps'|'postconditions'>):CasePlatform {
   if(item.platform)return item.platform

@@ -1,3 +1,4 @@
+import { uiText } from '../../shared/i18n.ts'
 import type { AssertionKind, DriverKind, StepSpec } from '../../shared/api'
 
 export type EditableAssertion = { id:string; kind:AssertionKind; expected:string; path:string }
@@ -23,24 +24,24 @@ export function switchDriver(step:EditableStep,driver:DriverKind):EditableStep {
 // Parse operation parameters and require a JSON object.
 function objectJson(value:string):Record<string,unknown> {
   const parsed=JSON.parse(value)
-  if (!parsed||typeof parsed!=='object'||Array.isArray(parsed)) throw new Error('参数必须是 JSON 对象')
+  if (!parsed||typeof parsed!=='object'||Array.isArray(parsed)) throw new Error(uiText("参数必须是 JSON 对象"))
   return parsed
 }
 // Reject empty and fractional values in integer fields.
 function integer(value:string,label:string):number {
-  if (!value.trim()||!Number.isInteger(Number(value))) throw new Error(`${label}必须是整数`)
+  if (!value.trim()||!Number.isInteger(Number(value))) throw new Error(uiText("{0}必须是整数", label))
   return Number(value)
 }
 // Convert assertion input to the value type expected by the assertion kind.
 function expected(item:EditableAssertion):unknown {
-  if(item.kind==='status_code') return integer(item.expected,'状态码')
+  if(item.kind==='status_code') return integer(item.expected,uiText("状态码"))
   if(item.kind==='element_visible') {
-    if(!['true','false'].includes(item.expected)) throw new Error('可见性预期必须为 true 或 false')
+    if(!['true','false'].includes(item.expected)) throw new Error(uiText("可见性预期必须为 true 或 false"))
     return item.expected==='true'
   }
   if(item.kind==='pixel_rgb_equals') {
     const rgb=JSON.parse(item.expected)
-    if(!Array.isArray(rgb)||rgb.length!==3||rgb.some(x=>!Number.isInteger(x)||x<0||x>255)) throw new Error('RGB 必须为 0..255 的三个整数')
+    if(!Array.isArray(rgb)||rgb.length!==3||rgb.some(x=>!Number.isInteger(x)||x<0||x>255)) throw new Error(uiText("RGB 必须为 0..255 的三个整数"))
     return rgb
   }
   if(item.kind==='json_field_equals') {try{return JSON.parse(item.expected)}catch{return item.expected}}
@@ -58,7 +59,7 @@ export function compileEditableStep(step:EditableStep,index:number):StepSpec {
     if(op==='desktop.write') parameters={text:step.input}
     else if(op==='desktop.hotkey') parameters={keys:step.input.split(',').map(x=>x.trim())}
     else parameters={x:integer(step.x,'X'),y:integer(step.y,'Y'),...(op==='desktop.click'?{button:step.button}:{}),
-      ...(op==='desktop.scroll'?{clicks:integer(step.clicks,'滚轮格数')}:{})}
+      ...(op==='desktop.scroll'?{clicks:integer(step.clicks,uiText("滚轮格数"))}:{})}
   } else if(step.driver==='android') {
     if(op==='android.swipe') parameters=objectJson(step.bodyJson)
     else parameters={...(step.targetValue.trim()&&['android.tap','android.input_text','android.inspect'].includes(op)?{target:{[step.targetBy]:step.targetValue}}:{}),
@@ -66,7 +67,7 @@ export function compileEditableStep(step:EditableStep,index:number):StepSpec {
   } else if(op==='web.open') parameters={path:step.path}
   else parameters={target:step.targetBy==='role'?{role:step.targetValue,...(step.targetName?{name:step.targetName}:{})}:{[step.targetBy]:step.targetValue},
     ...(['web.fill','web.select'].includes(op)?{value:step.input}:{}),...(op==='web.press'?{key:step.input}:{}),
-    ...(op==='web.wait'?{state:step.waitState,timeout_ms:integer(step.timeout,'等待超时')}:{})}
+    ...(op==='web.wait'?{state:step.waitState,timeout_ms:integer(step.timeout,uiText("等待超时"))}:{})}
   return {order:index+1,intent:step.intent.trim(),driver:step.driver,operation:op,parameters,always_run:step.alwaysRun,
     assertions:step.assertions.map(a=>({kind:a.kind,expected:expected(a),...(a.kind==='json_field_equals'?{path:a.path}:{})}))}
 }

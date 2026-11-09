@@ -736,6 +736,20 @@ summary { transition: color var(--dur-1) var(--ease); }
 .report-list .empty-state { border-top: 0; }
 
 .agent-progress { margin-bottom: 12px; }
+.agent-progress-actions, .agent-live-filters { display: flex; flex-wrap: wrap; gap: 8px; }
+.agent-live-dialog { width: min(720px, calc(100% - 32px)); }
+.agent-live-layout { height: min(650px, calc(100dvh - 34px)); }
+.agent-live-filters { padding: 12px 20px; border-bottom: 1px solid var(--line); }
+.agent-live-filters [aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.agent-live-content { flex: 1; }
+.agent-live-list { display: grid; gap: 10px; margin: 0; padding: 14px 0 20px; list-style: none; }
+.agent-live-message { padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-sunken); }
+.agent-live-message > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; color: var(--ink-3); font-size: 12px; }
+.agent-live-message strong { color: var(--ink); }
+.agent-live-message time { margin-inline-start: auto; font-variant-numeric: tabular-nums; }
+.agent-live-message p { margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.agent-live-reasoning strong { color: var(--ink-3); }
+.agent-live-decision strong { color: var(--accent); }
 .agent-trace details { margin: 12px 0; }
 .agent-trace img { max-width: 320px; max-height: 360px; object-fit: contain; border: 1px solid var(--line); border-radius: var(--radius); }
 .editor-panel textarea { min-height: 76px; padding: 10px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface); color: inherit; font: inherit; }

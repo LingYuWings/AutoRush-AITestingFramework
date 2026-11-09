@@ -13,6 +13,7 @@ import httpx
 from autorush.llm.local_runtime import LocalVisionError, LocalVisionRuntime, managed_profile
 from autorush.llm.models import ProviderConfigRecord
 from autorush.llm.protocols import SUPPORTED_PROTOCOLS, build_model_request, is_loopback_url, parse_model_response
+from autorush.llm.streaming import MAX_RESPONSE_BYTES, read_model_stream, response_reasoning
 
 
 # Carry the parsed model response and metadata about the request attempts.
@@ -67,18 +68,32 @@ class ModelClient:
         self._managed = False
         self._endpoint_lock = asyncio.Lock()
         self._closed = False
+        self._live_output = None
+        self._stream_unavailable = False
         self._client = httpx.AsyncClient(headers=headers, timeout=httpx.Timeout(timeout, connect=min(timeout,10)),
                                          follow_redirects=False, trust_env=False, transport=transport)
+
+    # Attach a run-local observer without changing callers that only need JSON.
+    def set_live_output(self, callback):
+        self._live_output = callback
+
+    # Forward provider activity to the current run's in-memory log.
+    def _publish(self, kind, text):
+        if self._live_output:
+            self._live_output(kind, text)
 
     # Request a JSON object, retrying invalid responses when allowed.
     async def generate_json(self, system_prompt, user_prompt, *, images=None, schema=None, on_attempt=None):
         try:
             endpoint, payload, headers = build_model_request(self._config, system_prompt, user_prompt, images or [], schema)
         except ValueError as exc: raise ModelClientError(str(exc)) from exc
+        self._publish('model', '正在连接模型')
         endpoint = await self._resolve_endpoint(endpoint)
         started = time.monotonic()
         stats = []
         last_error = 'model response was not a valid JSON object'
+        streaming = self._live_output is not None and not self._stream_unavailable
+        stream_rejected = False
         for attempt in range(2):
             if on_attempt:
                 result = on_attempt()
@@ -91,29 +106,49 @@ class ModelClient:
                 elif self._config.protocol == 'openai_responses': payload['instructions'] += '\nReturn complete valid JSON only.'
                 else: payload['messages'][0]['content'] += '\nReturn complete valid JSON only, without markdown or reasoning.'
             try:
-                async with self._client.stream('POST', endpoint, json=payload, headers=headers) as response:
-                    if response.status_code in {400,422} and attempt == 0:
+                self._publish('model', f'等待模型输出 · 第 {attempt + 1} 次请求')
+                request_payload = {**payload, 'stream': True} if streaming else payload
+                if streaming and self._config.protocol == 'openai_chat':
+                    request_payload['stream_options'] = {'include_usage': True}
+                async with self._client.stream('POST', endpoint, json=request_payload, headers=headers) as response:
+                    if attempt == 0 and (response.status_code in {400,422} or (streaming and response.status_code in {415,501})):
+                        if streaming:
+                            streaming = False
+                            stream_rejected = True
+                            self._publish('model', '流式请求未被接受，将尝试完整响应')
                         last_error = 'model service rejected structured output format'
                         stats.append({'http_status':response.status_code,'latency_ms':round((time.monotonic()-attempt_start)*1000)})
                         continue
                     response.raise_for_status()
-                    data = bytearray()
-                    async for chunk in response.aiter_bytes():
-                        data.extend(chunk)
-                        if len(data)>2_000_000: raise ModelClientError('model response exceeds limit')
-                    body = json.loads(data)
+                    if 'text/event-stream' in response.headers.get('content-type', '').lower():
+                        body = await read_model_stream(response, self._config.protocol, lambda text: self._publish('reasoning', text))
+                    else:
+                        data = bytearray()
+                        async for chunk in response.aiter_bytes():
+                            data.extend(chunk)
+                            if len(data)>MAX_RESPONSE_BYTES: raise ModelClientError('model response exceeds limit')
+                        body = json.loads(data)
+                        if self._live_output:
+                            for reasoning in response_reasoning(body, self._config.protocol):
+                                self._publish('reasoning', reasoning)
                     text, reason, usage = parse_model_response(body,self._config.protocol)
                     value = json.loads(_strip_code_fence(text))
                     if not isinstance(value,dict): raise ValueError('model response must be a JSON object')
                     stats.append({'latency_ms':round((time.monotonic()-attempt_start)*1000),'usage':usage,'finish_reason':reason})
+                    if stream_rejected:
+                        self._stream_unavailable = True
+                    self._publish('model', '模型响应已通过 JSON 校验')
                     return ModelJsonResponse(value=value,request_id=response.headers.get('x-request-id') or body.get('id'),
                         usage=usage,attempts=attempt+1,latency_ms=round((time.monotonic()-started)*1000),finish_reason=reason,attempt_stats=stats)
             except httpx.HTTPStatusError as exc:
+                self._publish('model', f'模型服务返回 HTTP {exc.response.status_code}')
                 raise ModelClientError(f'model service returned HTTP {exc.response.status_code}') from exc
             except httpx.HTTPError as exc:
+                self._publish('model', '模型服务连接中断')
                 raise ModelClientError(f'model service request failed: {type(exc).__name__}') from exc
             except (ValueError,KeyError,IndexError,TypeError) as exc:
                 last_error = 'model response was truncated or incomplete' if 'truncated' in str(exc) else 'model response was not a valid JSON object'
+                self._publish('model', '模型响应不完整或 JSON 无效')
                 stats.append({'error':last_error,'latency_ms':round((time.monotonic()-attempt_start)*1000)})
         raise ModelClientError(last_error)
 

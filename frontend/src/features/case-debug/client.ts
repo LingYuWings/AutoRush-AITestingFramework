@@ -1,3 +1,4 @@
+import { uiText } from '../../shared/i18n.ts'
 import {api,request,ApiRequestError,type CaseRecord,type PlanPayload,type StepResult,type ResultStatus} from '../../shared/api.ts'
 export type DebugCase=Pick<CaseRecord,'title'|'description'|'execution_mode'|'platform'|'steps'|'postconditions'>
 export type DebugTargets=Omit<PlanPayload,'name'|'environment'|'case_ids'|'capture_screenshots'>
@@ -11,7 +12,7 @@ async function authorize(force=false):Promise<void>{
   if(!force&&api.getOperatorToken())return
   const previous=api.getOperatorToken()
   authorization=api.operatorSession().then(session=>{
-    if(typeof session.operator_token!=='string'||!session.operator_token.trim())throw new Error('本机调试授权不可用')
+    if(typeof session.operator_token!=='string'||!session.operator_token.trim())throw new Error(uiText("本机调试授权不可用"))
     if(api.getOperatorToken()===previous)api.setOperatorToken(session.operator_token)
   }).finally(()=>{authorization=null})
   return authorization

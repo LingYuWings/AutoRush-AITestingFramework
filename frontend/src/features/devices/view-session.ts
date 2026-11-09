@@ -1,3 +1,4 @@
+import { uiText } from '../../shared/i18n.ts'
 import { openAdbH264 } from './h264.ts'
 import { openScreen } from './screen.ts'
 import type { ScreenMode, ScreenUpdate } from './screen.ts'
@@ -30,19 +31,19 @@ export function openDeviceScreen(options: {
     if (closed) return
     source = 'wss'
     if (!online) {
-      emit({ state: 'offline', active: false, frame: null, detail: `${reason ? reason + '；' : ''}Portal 已离线，请先连接手机后使用 WSS 预览` })
+      emit({ state: 'offline', active: false, frame: null, detail: uiText("{0}Portal 已离线，请先连接手机后使用 WSS 预览", reason ? reason + ' · ' : '') })
       return
     }
     try {
       preview = openScreen({ url: options.url, token: options.token, mode: 'preview', /* Forward the screenshot state and include the ADB fallback reason if present. */ onChange: update => {
-        emit({ ...update, detail: reason ? `${reason}；已回退 WSS 截图预览：${update.detail}` : update.detail }, update.frame?.metadata.width, update.frame?.metadata.height)
+        emit({ ...update, detail: reason ? uiText("{0}；已回退 WSS 截图预览：{1}", reason, update.detail) : update.detail }, update.frame?.metadata.width, update.frame?.metadata.height)
       } })
     } catch (error) {
-      emit({ state: 'error', active: false, frame: null, detail: error instanceof Error ? error.message : 'WSS 预览连接失败' })
+      emit({ state: 'error', active: false, frame: null, detail: error instanceof Error ? error.message : uiText("WSS 预览连接失败") })
     }
   }
   if (options.mode === 'preview') startPreview()
-  else if (!options.serial) startPreview('未选择可用的 ADB 手机')
+  else if (!options.serial) startPreview(uiText("未选择可用的 ADB 手机"))
   else {
     source = 'adb'
     try {
@@ -57,11 +58,11 @@ export function openDeviceScreen(options: {
           startPreview(failure.detail)
         },
       })
-    } catch (error) { startPreview(error instanceof Error ? error.message : 'ADB 投屏不可用') }
+    } catch (error) { startPreview(error instanceof Error ? error.message : uiText("ADB 投屏不可用")) }
   }
   return {
     // Stop any active stream and publish a final idle display state.
-    stop: (detail = '已停止查看', state = 'stopped') => {
+    stop: (detail = uiText("已停止查看"), state = 'stopped') => {
       if (closed) return
       closed = true
       video?.stop(); preview?.stop()
@@ -70,7 +71,7 @@ export function openDeviceScreen(options: {
     // Stop WSS preview if its Portal disconnects.
     portalChanged: (connected: boolean) => {
       online = connected
-      if (!online && source === 'wss') preview?.stop('Portal 已离线', 'offline')
+      if (!online && source === 'wss') preview?.stop(uiText("Portal 已离线"), 'offline')
     },
     // Forward a rendered preview image to its acknowledgment handler.
     loaded: (url: string) => preview?.loaded(url),

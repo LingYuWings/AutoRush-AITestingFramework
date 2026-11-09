@@ -1,3 +1,4 @@
+import { uiText } from './i18n.ts'
 export type DriverKind = 'api' | 'web' | 'android' | 'desktop'
 export type ResultStatus = 'passed' | 'failed' | 'error' | 'blocked' | 'skipped'
 export type AssertionKind =
@@ -71,6 +72,8 @@ export type PlanPayload = Pick<PlanRecord, 'name' | 'environment' | 'case_ids'> 
 export interface AgentOptions {provider_config_id:string;max_rounds_per_step:number;max_rounds_per_case:number;model_timeout_seconds:number;case_timeout_seconds:number}
 export interface AgentTraceRecord {round?:number;operation?:string|null;brief_reason?:string;error?:string;verification_kind?:string;model?:{latency_ms:number;attempts:number};result?:{status:ResultStatus;detail?:string;assertions?:string[];evidence?:Record<string,unknown>};observation?:{screenshot?:ScreenshotEvidence}}
 export interface AgentExecution {id:string;plan_id:string;state:'running'|'stopping'|'finished'|'interrupted';progress:{completed_cases?:{status:ResultStatus;steps:StepResult[]}[];active?:{active_step?:{intent:string;expected_result:string;traces:AgentTraceRecord[]};rounds_used?:number;pending_action?:AgentTraceRecord}};termination_reason:string|null;final_run_id:string|null;created_at:string}
+export interface AgentLiveEntry {id:number;kind:'model'|'reasoning'|'decision'|'execution';text:string;case:number|null;step:number|null;at:string;source?:'provider'|'decision'}
+export interface AgentLiveOutput {active:boolean;entries:AgentLiveEntry[]}
 
 export interface ScreenshotEvidence {
   file: string
@@ -260,7 +263,7 @@ async function authorizeScreenshot(): Promise<void> {
   if (!screenshotAuthorization) {
     const previous = operatorToken
     screenshotAuthorization = request<OperatorSession>('/api/v1/devices/operator-session', undefined, false).then(session => {
-      if (typeof session.operator_token !== 'string' || !session.operator_token) throw new Error('本地操作授权不可用')
+      if (typeof session.operator_token !== 'string' || !session.operator_token) throw new Error(uiText("本地操作授权不可用"))
       if (operatorToken === previous) api.setOperatorToken(session.operator_token)
     }).finally(() => { screenshotAuthorization = null })
   }
@@ -292,7 +295,7 @@ export async function request<T>(path: string, init?: RequestInit, authenticated
     })
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') throw error
-    throw new Error('无法连接本地后端，请先启动 127.0.0.1:8000 上的服务。')
+    throw new Error(uiText("无法连接本地后端，请先启动 127.0.0.1:8000 上的服务。"))
   }
   if (!response.ok) {
     let detail = `${response.status} ${response.statusText}`
@@ -302,10 +305,10 @@ export async function request<T>(path: string, init?: RequestInit, authenticated
       else if (Array.isArray(body.detail)) {
         // Validation responses can include the rejected input. Keep only field names and messages.
         detail = body.detail.map((item: { loc?: unknown[]; msg?: unknown }) =>
-          `${Array.isArray(item.loc) ? item.loc.filter(part => typeof part === 'string' || typeof part === 'number').join('.') : '请求'}: ${typeof item.msg === 'string' ? item.msg : '参数无效'}`).join('；')
+          `${Array.isArray(item.loc) ? item.loc.filter(part => typeof part === 'string' || typeof part === 'number').join('.') : uiText("请求")}: ${typeof item.msg === 'string' ? item.msg : uiText("参数无效")}`).join('；')
       }
     } catch { /* use HTTP status */ }
-    if (operatorToken) detail = detail.replaceAll(operatorToken, '[已隐藏]')
+    if (operatorToken) detail = detail.replaceAll(operatorToken, uiText("[已隐藏]"))
     throw new ApiRequestError(detail,response.status)
   }
   if (response.status === 204) return undefined as T
@@ -351,7 +354,7 @@ export const api = {
   adbDevices: () => request<{ devices: AdbDevice[]; error?: string }>('/api/v1/devices/adb'),
   // Fetch a trusted evidence image and renew operator authorization if needed.
   screenshot: async (path: string, signal?: AbortSignal): Promise<Blob> => {
-    if (!/^\/api\/v1\/(?:runs\/[A-Za-z0-9-]+\/(?:screenshots|evidence)|case-debug-runs\/[A-Za-z0-9-]+\/evidence)\/[A-Za-z0-9_-]+\.jpg$/.test(path)) throw new Error('截图资源地址无效')
+    if (!/^\/api\/v1\/(?:runs\/[A-Za-z0-9-]+\/(?:screenshots|evidence)|case-debug-runs\/[A-Za-z0-9-]+\/evidence)\/[A-Za-z0-9_-]+\.jpg$/.test(path)) throw new Error(uiText("截图资源地址无效"))
     checkScreenshotAbort(signal)
     if (!operatorToken) await authorizeScreenshot()
     checkScreenshotAbort(signal)
@@ -365,8 +368,8 @@ export const api = {
       checkScreenshotAbort(signal)
       response = await fetchImage()
     }
-    if (!response.ok) throw new Error(`截图加载失败：${response.status}`)
-    if (response.headers.get('Content-Type')?.split(';')[0].trim() !== 'image/jpeg') throw new Error('截图格式无效')
+    if (!response.ok) throw new Error(uiText("截图加载失败：{0}", response.status))
+    if (response.headers.get('Content-Type')?.split(';')[0].trim() !== 'image/jpeg') throw new Error(uiText("截图格式无效"))
     return response.blob()
   },
   // Request local operator authorization without sending the current token.
@@ -424,6 +427,8 @@ export const api = {
   agentRuns:()=>request<AgentExecution[]>('/api/v1/agent-runs'),
   // Fetch one agent execution and its progress.
   agentRun:(id:string)=>request<AgentExecution>(`/api/v1/agent-runs/${id}`),
+  // Read the transient model and execution log for one run.
+  agentLiveOutput:(id:string,signal:AbortSignal)=>request<AgentLiveOutput>(`/api/v1/agent-runs/${id}/live-output`,{signal}),
   // Request cancellation of the specified agent execution.
   cancelAgentRun:(id:string)=>post<AgentExecution>(`/api/v1/agent-runs/${id}/cancel`),
   // List run records used by the reporting views.
@@ -454,7 +459,7 @@ export const api = {
   // Download an authorized report in the requested format.
   downloadReport: async (id: string, format: 'json' | 'html' | 'junit' = 'json') => {
     const response = await fetch(`${API_BASE}/api/v1/runs/${id}/report/${format}`, { cache: 'no-store', headers: operatorToken ? { 'X-Autorush-Operator-Token': operatorToken } : {} })
-    if (!response.ok) throw new Error(`报告下载失败：${response.status}`)
+    if (!response.ok) throw new Error(uiText("报告下载失败：{0}", response.status))
     const url = URL.createObjectURL(await response.blob())
     const link = document.createElement('a')
     link.href = url
