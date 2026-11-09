@@ -76,6 +76,7 @@
 
 /* Report page */
 .report-page { display: grid; gap: 16px; }
+.report-page > .page-alert { margin: 0; }
 .report-nav { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .report-pager { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-3); font-size: 13px; }
 .report-hero { display: flex; align-items: stretch; justify-content: space-between; gap: 24px; padding: 20px 24px; border: 1px solid var(--line); border-left: 4px solid var(--ink-4); border-radius: var(--radius-lg); background: var(--surface); }

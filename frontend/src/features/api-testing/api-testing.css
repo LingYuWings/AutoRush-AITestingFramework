@@ -105,8 +105,15 @@ textarea.api-code, .api-code { width: 100%; min-height: 160px; font-family: var(
 .api-editor-title { margin: 16px 0 4px; }
 .api-editor-title strong { font-size: 15px; font-weight: 600; }
 .api-editor-title .muted { font: 12px var(--font-mono); }
-.api-save-toolbar { margin-top: 4px; padding-top: 14px; border-top: 1px solid var(--line); }
-.api-save-toolbar .text-button { margin-left: 6px; }
+/* Save bar: grouped actions (save · promote to case · export) separated by hairlines, delete pushed right. */
+.api-save-toolbar { gap: 8px 0; margin-top: 4px; padding-top: 14px; border-top: 1px solid var(--line); }
+.api-action-group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.api-action-group + .api-action-group { margin-left: 14px; padding-left: 14px; border-left: 1px solid var(--line); }
+.api-export-group { gap: 12px; }
+.api-export-group > span { color: var(--ink-4); font-size: 12.5px; }
+.api-export-group .text-button:disabled { opacity: .4; }
+.api-save-toolbar > .text-button.danger { margin-left: auto; }
+.api-save-toolbar + .quiet-note { margin-top: 10px; font-size: 12.5px; }
 
 /* ------------------------------------------------------------------
    Response

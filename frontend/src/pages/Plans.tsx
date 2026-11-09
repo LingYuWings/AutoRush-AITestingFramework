@@ -347,7 +347,7 @@ export default function Plans({ plans, cases, runs, section, onNavigate, onSave,
             <button className="secondary-button" onClick={() => openEditor(plan)}><Pencil size={14} /> 编辑计划</button>
             {plan.status === 'draft'
             ? <button className="secondary-button" disabled={busy === plan.id} onClick={() => void act(plan.id, onReady)}><ShieldCheck size={15} /> 预检查并就绪</button>
-            : <button className="primary-button" disabled={busy === plan.id||executions.some(e=>e.plan_id===plan.id&&['running','stopping'].includes(e.state))} onClick={() => void act(plan.id, run)}><Play size={14} /> {busy === plan.id ? '运行中…' : '运行计划'}</button>}
+            : <button className="secondary-button accent" disabled={busy === plan.id||executions.some(e=>e.plan_id===plan.id&&['running','stopping'].includes(e.state))} onClick={() => void act(plan.id, run)}><Play size={14} /> {busy === plan.id ? '运行中…' : '运行计划'}</button>}
           </div>
         </div>
         </div>

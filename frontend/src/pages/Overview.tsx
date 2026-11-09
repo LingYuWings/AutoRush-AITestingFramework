@@ -37,6 +37,7 @@ export default function Overview({ cases, plans, runs, events, onNavigate, onNew
   return <>
     <PageHeader
       title="工作台"
+      description="用例、计划与最近执行的整体状态。"
       actions={<>
         <button className="secondary-button" onClick={onNewCase}><Plus size={15} /> 新建用例</button>
         <button className="primary-button" onClick={() => onNavigate('plans')}><Play size={14} /> 运行计划</button>

@@ -294,6 +294,9 @@ h1, h2, h3 { font-weight: 600; letter-spacing: -.01em; }
 .primary-button:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 88%, #000); border-color: color-mix(in srgb, var(--accent) 88%, #000); }
 .secondary-button { border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); }
 .secondary-button:hover:not(:disabled) { background: var(--hover); }
+/* Accent secondary: the main action of a repeated row or card, without a wall of solid primaries. */
+.secondary-button.accent { border-color: color-mix(in srgb, var(--accent) 45%, var(--line-strong)); color: var(--accent); }
+.secondary-button.accent:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-soft); }
 .text-button { display: inline-flex; align-items: center; gap: 4px; padding: 2px 0; border: 0; background: transparent; color: var(--ink-3); font-size: 13px; }
 .text-button:hover:not(:disabled) { color: var(--ink); }
 .table-action { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface); font-size: 12.5px; }
@@ -390,10 +393,12 @@ input[type="checkbox"]:disabled { cursor: not-allowed; }
 .seg-blocked { background: var(--warn); }
 .seg-skipped { background: var(--line-strong); }
 
-.empty-state { padding: 40px 20px; text-align: center; }
-.empty-icon { color: var(--ink-4); margin-bottom: 8px; }
+.empty-state { display: flex; flex-direction: column; align-items: center; padding: 44px 20px; text-align: center; animation: fade-in var(--dur-2) var(--ease) both; }
+/* Same round tile as the case detail placeholder, so every empty view reads alike. */
+.empty-icon { display: grid; place-items: center; width: 40px; height: 40px; margin-bottom: 12px; border-radius: 50%; background: var(--surface-sunken); color: var(--ink-3); }
 .empty-state h3 { margin: 0 0 4px; font-size: 14px; font-weight: 500; }
-.empty-state p { margin: 0; color: var(--ink-3); font-size: 13px; }
+.empty-state p { max-width: 420px; margin: 0; color: var(--ink-3); font-size: 13px; line-height: 1.6; }
+.empty-state > :is(button, a):last-child { margin-top: 14px; }
 
 /* ------------------------------------------------------------------
    Tables
@@ -412,6 +417,9 @@ tbody tr.selected { background: var(--accent-soft); }
 .row-id { display: block; margin-top: 1px; color: var(--ink-4); font: 11.5px var(--font-mono); }
 .cell-bar { display: flex; align-items: center; gap: 10px; max-width: 160px; }
 .report-downloads { display: inline-flex; gap: 4px; }
+/* In lists, downloads stay quiet until the row is hovered, focused or selected. */
+:is(.report-card-heading, .report-row) .report-downloads { opacity: .55; transition: opacity var(--dur-1) var(--ease); }
+:is(.report-card-heading, .report-row):is(:hover, :focus-within) .report-downloads, .report-card.selected .report-downloads { opacity: 1; }
 .download-chip { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 7px; border: 1px solid var(--line); border-radius: 4px; background: transparent; color: var(--ink-2); font: 11.5px var(--font-mono); }
 .download-chip:hover { border-color: var(--line-strong); background: var(--hover); color: var(--ink); }
 

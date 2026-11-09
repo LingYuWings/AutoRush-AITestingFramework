@@ -22,8 +22,12 @@
 .debug-step summary { display:flex; justify-content:space-between; gap:10px; cursor:pointer; }
 .debug-step p { overflow-wrap:anywhere; }
 .debug-step .step-screenshot { margin-top:10px; }
-.case-list-row { display:flex; align-items:center; border-radius:var(--radius); transition: background var(--dur-1) var(--ease); }
+/* The whole row (case + debug button) is one selectable surface: hover and selection paint the row, not the inner button. */
+.case-list-row { display:flex; align-items:center; border:1px solid transparent; border-radius:var(--radius); transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease); }
+.case-list-row:hover { background:var(--hover); }
+.case-list-row > .case-item, .case-list-row > .case-item:hover, .case-list-row > .case-item.active { border-color:transparent; background:transparent; }
 .case-list-row > .case-item { flex:1; min-width:0; }
 .case-list-row > .case-debug-button { flex-shrink:0; margin-right:5px; opacity:.7; transition: opacity var(--dur-1) var(--ease), background var(--dur-1) var(--ease), color var(--dur-1) var(--ease); }
 .case-list-row:hover > .case-debug-button, .case-list-row > .case-debug-button:focus-visible, .case-list-row:has(.case-item.active) > .case-debug-button { opacity:1; }
-.case-list-row:has(.case-item.active) { background:var(--accent-soft); }
+.case-list-row:has(.case-item.active) { border-color:color-mix(in srgb, var(--accent) 30%, var(--line)); background:var(--accent-soft); }
+.case-list-row > .case-debug-button:hover:not(:disabled) { background:var(--surface); color:var(--accent); }
