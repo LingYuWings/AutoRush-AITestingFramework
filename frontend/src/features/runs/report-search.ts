@@ -1,5 +1,6 @@
+import { uiText } from '../../shared/i18n.ts'
 import type {PlanRecord,RunRecord} from '../../shared/api'
-const labels:Record<string,string>={passed:'通过',failed:'失败',blocked:'阻塞',error:'错误',skipped:'跳过'}
+const labels:Record<string,string>={passed:uiText("通过"),failed:uiText("失败"),blocked:uiText("阻塞"),error:uiText("错误"),skipped:uiText("跳过")}
 // Filter reports by status and searchable run or plan details.
 export function filterReports(runs:RunRecord[],plans:Pick<PlanRecord,'id'|'name'>[],query:string):RunRecord[] {
   const needle=query.trim().toLocaleLowerCase()

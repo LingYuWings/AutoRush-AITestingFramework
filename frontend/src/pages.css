@@ -163,3 +163,5 @@
 @supports (view-transition-name: none) {
   .main-content, .case-detail, .editor-panel, .report-hero, .report-case, .nav-indicator { animation: none; }
 }
+.language-settings { margin-bottom: 16px; }
+.language-settings .field { max-width: 320px; }

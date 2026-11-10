@@ -1,22 +1,30 @@
 """Single-process background runs with durable checkpoints and explicit cancellation."""
 import asyncio
 import logging
+import os
+from collections import OrderedDict
 from uuid import UUID
 from autorush.agent.executions import AgentExecutionRecord,validate_agent_configuration
+from autorush.agent.live_output import LiveOutput, MAX_ARCHIVE_EVENTS, MAX_EVENTS, output_snapshot, restore_trace_output
 from autorush.agent.runner import AgentRunner
+from autorush.api_testing.variables import secret_strings
 from autorush.domain.models import CaseResult,ResultStatus,RunRecord,StepResult
 from autorush.evidence.report import save_reports
 from autorush.events import PlatformEvent
+from autorush.llm.client import ModelClient
 from autorush.runner.engine import Runner
 
 
 # Manage the lifecycle and persisted progress of agent executions.
 class AgentRunManager:
     # Store execution dependencies and initialize task tracking.
-    def __init__(self,settings,store,session_factory,client_factory,broker):
+    def __init__(self,settings,store,session_factory,client_factory,broker,*,output_store=None,output_scope='plan'):
         self.settings,self.store=settings,store
         self.session_factory,self.client_factory,self.broker=session_factory,client_factory,broker
         self.tasks={};self.cancel_events={};self.started=set();self.start_lock=asyncio.Lock()
+        self.output_store,self.output_scope=output_store,output_scope
+        self.active_output={}
+        self.recent_output=OrderedDict()
 
     # Publish an execution event when a broker is available.
     async def emit(self,event_type,payload):
@@ -25,6 +33,32 @@ class AgentRunManager:
     # Load an execution record by ID.
     def get(self,execution_id):
         return self.store.get_agent_execution(execution_id)
+
+    # Return a snapshot without reloading the plan's checkpoints during every live poll.
+    def get_live_output(self,execution_id):
+        if execution_id in self.active_output:
+            return output_snapshot(self.active_output[execution_id].snapshot(MAX_EVENTS), active=True)
+        if self.output_store:
+            entries=self.output_store.get(self.output_scope,execution_id)
+            if entries is not None:
+                return output_snapshot(entries, active=False)
+        if execution_id in self.recent_output:
+            return output_snapshot(self.recent_output[execution_id], active=False)
+        record=self.get(execution_id)
+        if record is not None and record.state in {'running','stopping'}:
+            return output_snapshot([], active=True)
+        cases=self.output_result_cases(execution_id,record)
+        if cases is None and record is None:
+            return None
+        secrets=secret_strings([case.model_dump(mode='json') for case in record.case_snapshots]) if record else set()
+        secrets.update(secret_strings([case.model_dump(mode='json') for case in cases or []]))
+        entries=restore_trace_output(cases or [],secrets)
+        return {**output_snapshot(entries, active=False), 'from_trace': bool(entries)}
+
+    # Read formal results for historical runs that predate model output archives.
+    def output_result_cases(self,execution_id,record):
+        result=self.store.get_run(execution_id)
+        return result.cases if result else None
 
     # Create or reuse an execution for the supplied idempotency key.
     async def start(self,plan_id,*,idempotency_key):
@@ -46,6 +80,9 @@ class AgentRunManager:
     # Start a background task and register its cancellation signal.
     def _schedule(self, record):
         self.cancel_events[record.id]=asyncio.Event()
+        if any(case.execution_mode=='agent' for case in record.case_snapshots):
+            self.active_output[record.id]=LiveOutput(MAX_ARCHIVE_EVENTS)
+            self.active_output[record.id].publish('execution', '准备执行环境')
         task=asyncio.create_task(self._execute(record));self.tasks[record.id]=task
         # Handle task completion and clear its in-memory tracking.
         def done(completed):
@@ -61,6 +98,11 @@ class AgentRunManager:
                     except Exception:
                         logging.getLogger(__name__).error('Agent failure state could not be persisted')
             self.tasks.pop(record.id,None);self.cancel_events.pop(record.id,None);self.started.discard(record.id)
+            output=self.active_output.pop(record.id,None)
+            if output is not None:
+                self.recent_output[record.id]=output.snapshot(MAX_EVENTS)
+                if len(self.recent_output)>10:
+                    self.recent_output.popitem(last=False)
         task.add_done_callback(done)
         return record
 
@@ -127,11 +169,23 @@ class AgentRunManager:
         self.started.add(record.id)
         session=None;client=None;results=[];reason=None
         event=self.cancel_events[record.id]
+        output=self.active_output.get(record.id)
         try:
             if event.is_set(): raise asyncio.CancelledError()
             config=validate_agent_configuration(self.settings,self.store,record.plan_snapshot,record.case_snapshots) if any(c.execution_mode=='agent' for c in record.case_snapshots) else None
             session=await self.session_factory(record.plan_snapshot,record.case_snapshots,record.id)
             client=self.client_factory(config,set(self.settings.allowed_llm_hosts),timeout=record.plan_snapshot.agent_options.model_timeout_seconds) if config else None
+            if output:
+                for case in record.case_snapshots:
+                    output.secrets.update(secret_strings(case.model_dump(mode='json')))
+                if getattr(config,'secret_ref',None):
+                    token=os.getenv(config.secret_ref.removeprefix('env:'))
+                    if token: output.secrets.add(token)
+                if isinstance(client, ModelClient):
+                    # Merge provider text fragments within each model attempt.
+                    def model_activity(kind,text):
+                        output.publish(kind,text,append=kind in {'reasoning','output'})
+                    client.set_live_output(model_activity)
             await self.emit('run.started',{'run_id':str(record.id),'plan_id':str(record.plan_id),'case_count':len(record.case_snapshots)})
             # Save completed and active case progress and honor cancellation.
             async def checkpoint(value):
@@ -141,18 +195,31 @@ class AgentRunManager:
                 if event.is_set(): raise asyncio.CancelledError()
             for index,case in enumerate(record.case_snapshots,1):
                 if event.is_set(): raise asyncio.CancelledError()
+                api_driver=session.drivers.get('api')
+                if output:
+                    output.case=index;output.step=None
+                    output.secrets.update(getattr(api_driver,'runtime_secrets', ()))
+                    output.publish('execution', '开始用例')
                 if case.execution_mode=='agent':
                     runner=AgentRunner(session.drivers,client,record.plan_snapshot.agent_options,directory=self.settings.report_dir,
-                        run_id=record.id,checkpoint=checkpoint,emit=self.emit,vision_verified=config.vision_verified,cancelled=event.is_set)
+                        run_id=record.id,checkpoint=checkpoint,emit=self.emit,vision_verified=config.vision_verified,cancelled=event.is_set,
+                        live_output=output)
                     result=await runner.run_case(case)
                 else:
                     # Translate structured runner progress into an execution checkpoint.
                     async def structured_progress(steps,current):
+                        if output:
+                            output.secrets.update(getattr(api_driver,'runtime_secrets', ()))
+                            output.step=current.order if current else steps[-1].order
+                            output.publish('execution', f'正在执行 · {current.operation}' if current else f'步骤结果 · {steps[-1].status.value}')
                         await checkpoint({'case_id':str(case.id),'steps':[s.model_dump(mode='json') for s in steps],
                             'active_step':{'order':current.order,'intent':current.intent,'expected_result':'结构化断言','traces':[]} if current else None,
                             'pending_action':{'operation':current.operation,'lifecycle':'pending'} if current else None})
                     result=await Runner(session.drivers).run_case(case,on_progress=structured_progress)
                 results.append(result)
+                if output:
+                    output.step=None
+                    output.publish('execution', f'用例结果 · {result.status.value}')
                 record.progress={'completed_cases':[c.model_dump(mode='json') for c in results]};self.store.update_agent_execution(record)
                 await self.emit('case.completed',{'run_id':str(record.id),'plan_id':str(record.plan_id),'case_id':str(case.id),
                     'status':result.status.value,'completed':index,'total':len(record.case_snapshots)})
@@ -165,6 +232,15 @@ class AgentRunManager:
                     except BaseException as exc:
                         reason=(reason+'; ' if reason else '')+f'resource cleanup failed: {type(exc).__name__}'
         if reason: results=self.interrupted_results(record,results,reason)
+        if output:
+            output.case=output.step=None
+            output.publish('execution', '执行已结束' if reason is None else '执行提前结束，详情见运行卡片')
+            if self.output_store:
+                try:
+                    self.output_store.save(self.output_scope,record.id,output.snapshot())
+                except Exception:
+                    # Keep the report available even if the separate transcript archive fails.
+                    logging.getLogger(__name__).error('Model output archive could not be saved for execution %s',record.id)
         await self.finish(record,results,reason)
 
     # Finalize unfinished executions found in storage after a restart.

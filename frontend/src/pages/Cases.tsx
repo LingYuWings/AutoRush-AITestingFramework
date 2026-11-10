@@ -1,3 +1,4 @@
+import { uiText } from '../shared/i18n.ts'
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Archive, Check, ClipboardList, FileText, History, Pencil, Play, Plus, Search, Trash2, Undo2 } from '../components/icons'
 import type { CaseRecord, DriverKind, StepSpec } from '../shared/api'
@@ -16,7 +17,7 @@ function StepList({ steps, cleanup = false }: { steps: StepSpec[]; cleanup?: boo
       <span className="step-outline-index">{cleanup ? 'C' : ''}{String(step.order).padStart(2, '0')}</span>
       <div>
         <strong>{step.intent}</strong>
-        <p>{step.expected_result?<span>预期：{step.expected_result}</span>:<code>{step.operation}</code>}{step.always_run && <span className="inline-tag">总是执行</span>}</p>
+        <p>{step.expected_result?<span>{uiText("预期：")}{step.expected_result}</span>:<code>{step.operation}</code>}{step.always_run && <span className="inline-tag">{uiText("总是执行")}</span>}</p>
         {step.assertions.length > 0 && <div className="assertion-chips">
           {step.assertions.map((assertion, index) => <span key={index}>
             {assertion.kind}{assertion.path ? ` ${assertion.path}` : ''} = <b>{JSON.stringify(assertion.expected)}</b>
@@ -39,27 +40,27 @@ function CaseDetail({ item, busy, onEdit, onApprove, onArchive, onRestore, onDeb
       </div>
       <div className="case-detail-actions">
         {item.archived_at
-          ? <button className="secondary-button" disabled={busy} onClick={onRestore}><Undo2 size={14} />恢复</button>
+          ? <button className="secondary-button" disabled={busy} onClick={onRestore}><Undo2 size={14} />{uiText("恢复")}</button>
           : <>
-            <button className="secondary-button" disabled={busy} onClick={onDebug}><Play size={14}/>运行调试</button>
-            <button className="icon-button danger" disabled={busy} onClick={onArchive} aria-label={'删除用例 ' + item.title} title="删除（可恢复）"><Trash2 size={16} /></button>
-            <button className="secondary-button" disabled={busy} onClick={onEdit}><Pencil size={14} />编辑</button>
-            {item.status === 'draft' && <button className="primary-button" disabled={busy} onClick={onApprove}><Check size={14} />批准</button>}
+            <button className="secondary-button" disabled={busy} onClick={onDebug}><Play size={14}/>{uiText("运行调试")}</button>
+            <button className="icon-button danger" disabled={busy} onClick={onArchive} aria-label={uiText("删除用例 ") + item.title} title={uiText("删除（可恢复）")}><Trash2 size={16} /></button>
+            <button className="secondary-button" disabled={busy} onClick={onEdit}><Pencil size={14} />{uiText("编辑")}</button>
+            {item.status === 'draft' && <button className="primary-button" disabled={busy} onClick={onApprove}><Check size={14} />{uiText("批准")}</button>}
           </>}
       </div>
     </header>
     <dl className="case-facts">
-      <div><dt>状态</dt><dd><StatusBadge status={item.archived_at ? 'skipped' : item.status} />{item.archived_at && <span className="muted small">已删除</span>}</dd></div>
-      <div><dt>执行端</dt><dd>{platformLabels[platformOf(item)]}</dd></div>
-      <div><dt>执行方式</dt><dd>{item.execution_mode === 'agent' ? '自然语言' : '结构化动作'}</dd></div>
-      <div><dt>规模</dt><dd className="num">{item.steps.length} 步{item.postconditions.length > 0 && ` + ${item.postconditions.length} 后处理`}{assertions > 0 && ` · ${assertions} 断言`}</dd></div>
+      <div><dt>{uiText("状态")}</dt><dd><StatusBadge status={item.archived_at ? 'skipped' : item.status} />{item.archived_at && <span className="muted small">{uiText("已删除")}</span>}</dd></div>
+      <div><dt>{uiText("执行端")}</dt><dd>{platformLabels[platformOf(item)]}</dd></div>
+      <div><dt>{uiText("执行方式")}</dt><dd>{item.execution_mode === 'agent' ? uiText("自然语言") : uiText("结构化动作")}</dd></div>
+      <div><dt>{uiText("规模")}</dt><dd className="num">{item.steps.length}{uiText(" 步")}{item.postconditions.length > 0 && uiText(" + {0} 后处理", item.postconditions.length)}{assertions > 0 && uiText(" · {0} 断言", assertions)}</dd></div>
     </dl>
-    {item.status === 'approved' && !item.archived_at && <p className="quiet-note case-note">已批准版本不可直接修改，编辑后将另存为 v{item.version + 1} 草稿。</p>}
-    {item.source_case_id && <p className="quiet-note case-note">从已批准版本修订而来。</p>}
-    <h3 className="case-section-title">执行步骤</h3>
+    {item.status === 'approved' && !item.archived_at && <p className="quiet-note case-note">{uiText("已批准版本不可直接修改，编辑后将另存为 v")}{item.version + 1}{uiText(" 草稿。")}</p>}
+    {item.source_case_id && <p className="quiet-note case-note">{uiText("从已批准版本修订而来。")}</p>}
+    <h3 className="case-section-title">{uiText("执行步骤")}</h3>
     <StepList steps={item.steps} />
     {item.postconditions.length > 0 && <>
-      <h3 className="case-section-title">后处理</h3>
+      <h3 className="case-section-title">{uiText("后处理")}</h3>
       <StepList steps={item.postconditions} cleanup />
     </>}
   </article>
@@ -96,9 +97,9 @@ export default function Cases({ cases, selectedId, editor, onSelect, onApprove, 
   const approvedCount = scoped.filter(item => item.status === 'approved').length
   const selected = cases.find(item => item.id === selectedId)
   const filters: { key: Filter; label: string; count: number }[] = [
-    { key: 'all', label: '全部', count: scoped.length },
-    { key: 'draft', label: '草稿', count: scoped.length - approvedCount },
-    { key: 'approved', label: '已批准', count: approvedCount },
+    { key: 'all', label: uiText("全部"), count: scoped.length },
+    { key: 'draft', label: uiText("草稿"), count: scoped.length - approvedCount },
+    { key: 'approved', label: uiText("已批准"), count: approvedCount },
   ]
   // Mark one case busy until its requested action finishes.
   const act = async (id: string, fn: (id: string) => Promise<void>) => { setBusy(id); try { await fn(id) } finally { setBusy('') } }
@@ -120,56 +121,56 @@ export default function Cases({ cases, selectedId, editor, onSelect, onApprove, 
   }
 
   return <div className="cases-page">
-    <PageHeader title="用例管理" description="按执行端管理用例；跨端场景在测试计划中组合。批准后的修改另存为新草稿版本。" actions={<>
-      <button className="secondary-button" onClick={()=>setImportOpen(true)}><FileText size={14} /> 导入用例</button>
-      <button className="secondary-button" onClick={onDebugHistory}><History size={14} /> 调试记录</button>
-      <button className="primary-button" onClick={() => onCreate(platform === 'all' || platform === 'mixed' ? 'web' : platform)}><Plus size={15} /> 新建用例</button>
+    <PageHeader title={uiText("用例管理")} description={uiText("按执行端管理用例；跨端场景在测试计划中组合。批准后的修改另存为新草稿版本。")} actions={<>
+      <button className="secondary-button" onClick={()=>setImportOpen(true)}><FileText size={14} />{uiText(" 导入用例")}</button>
+      <button className="secondary-button" onClick={onDebugHistory}><History size={14} />{uiText(" 调试记录")}</button>
+      <button className="primary-button" onClick={() => onCreate(platform === 'all' || platform === 'mixed' ? 'web' : platform)}><Plus size={15} />{uiText(" 新建用例")}</button>
     </>} />
     {importOpen&&<CaseImportDialog onClose={()=>setImportOpen(false)} onCreated={onImported} onOpenCase={id=>{
-      if(editor&&!window.confirm('当前用例编辑尚未保存，跳转会丢弃这些修改。确认查看导入用例？'))return
+      if(editor&&!window.confirm(uiText("当前用例编辑尚未保存，跳转会丢弃这些修改。确认查看导入用例？")))return
       setImportOpen(false);setPlatform('all');setFilter('draft');setArchived(false);setQuery('');onSelect(id)
     }}/>}
 
     <div className="cases-layout">
-      <aside className="case-list-pane" aria-label="用例列表">
+      <aside className="case-list-pane" aria-label={uiText("用例列表")}>
         <div className="case-list-tools">
           <label className="search-field">
             <Search size={15} />
-            <input placeholder="搜索标题、描述或 ID…" value={query} onChange={event => setQuery(event.target.value)} aria-label="搜索用例" />
+            <input placeholder={uiText("搜索标题、描述或 ID…")} value={query} onChange={event => setQuery(event.target.value)} aria-label={uiText("搜索用例")} />
           </label>
           <div className="case-list-filters">
-            <select className="mini-select" aria-label="按执行端分类" value={platform} onChange={event => setPlatform(event.target.value as CasePlatform | 'all')}>
-              {platforms.map(value => <option key={value} value={value}>{value === 'all' ? '全部执行端' : platformLabels[value]} · {platformCounts[value]}</option>)}
+            <select className="mini-select" aria-label={uiText("按执行端分类")} value={platform} onChange={event => setPlatform(event.target.value as CasePlatform | 'all')}>
+              {platforms.map(value => <option key={value} value={value}>{value === 'all' ? uiText("全部执行端") : platformLabels[value]} · {platformCounts[value]}</option>)}
             </select>
-            <button className={archived ? 'icon-button toggled' : 'icon-button'} aria-pressed={archived} onClick={() => setArchived(!archived)} title={archived ? '返回用例列表' : '查看已删除（可恢复）'} aria-label="显示已删除用例"><Archive size={16} /></button>
+            <button className={archived ? 'icon-button toggled' : 'icon-button'} aria-pressed={archived} onClick={() => setArchived(!archived)} title={archived ? uiText("返回用例列表") : uiText("查看已删除（可恢复）")} aria-label={uiText("显示已删除用例")}><Archive size={16} /></button>
           </div>
-          <div className="segmented segmented-fill" role="tablist" aria-label="按状态筛选">
+          <div className="segmented segmented-fill" role="tablist" aria-label={uiText("按状态筛选")}>
             {filters.map(item => <button key={item.key} role="tab" aria-selected={filter === item.key} className={filter === item.key ? 'active' : ''} onClick={() => setFilter(item.key)}>
               {item.label}<span>{item.count}</span>
             </button>)}
           </div>
         </div>
-        {archived && <p className="case-list-banner">正在查看已删除的用例</p>}
-        <div className="case-list" ref={listRef} role="listbox" aria-label="用例" onKeyDown={moveSelection}>
+        {archived && <p className="case-list-banner">{uiText("正在查看已删除的用例")}</p>}
+        <div className="case-list" ref={listRef} role="listbox" aria-label={uiText("用例")} onKeyDown={moveSelection}>
           {filtered.map(item => {
             const active = item.id === selectedId
             return <div key={item.id} className="case-list-row" role="presentation"><button data-id={item.id} role="option" aria-selected={active} tabIndex={active || (!selectedId && item === filtered[0]) ? 0 : -1}
               className={active ? 'case-item active' : 'case-item'} onClick={() => onSelect(item.id)}>
               <span className="case-item-title">
-                <span className={`status-pip pip-${item.status}`} title={item.status === 'draft' ? '草稿' : '已批准'} />
+                <span className={`status-pip pip-${item.status}`} title={item.status === 'draft' ? uiText("草稿") : uiText("已批准")} />
                 <strong>{item.title}</strong>
               </span>
               <span className="case-item-meta">
                 <span className="chip-row">{driversOf([...item.steps, ...item.postconditions]).map(driver => <DriverChip key={driver} driver={driver} />)}</span>
-                <span className="num">{item.steps.length} 步</span>
+                <span className="num">{item.steps.length}{uiText(" 步")}</span>
                 <span className="mono">v{item.version}</span>
                 <time dateTime={item.created_at}>{relative(item.created_at)}</time>
               </span>
-            </button>{!item.archived_at&&<button className="icon-button case-debug-button" aria-label={'运行调试 '+item.title} title="运行调试此用例" onClick={()=>onDebug(item)}><Play size={14}/></button>}</div>
+            </button>{!item.archived_at&&<button className="icon-button case-debug-button" aria-label={uiText("运行调试 ")+item.title} title={uiText("运行调试此用例")} onClick={()=>onDebug(item)}><Play size={14}/></button>}</div>
           })}
-          {!filtered.length && <EmptyState icon={ClipboardList} title={cases.length ? '没有匹配的用例' : '还没有用例'} description={cases.length ? '换个关键词或筛选条件试试。' : '从第一个测试场景开始。'} />}
+          {!filtered.length && <EmptyState icon={ClipboardList} title={cases.length ? uiText("没有匹配的用例") : uiText("还没有用例")} description={cases.length ? uiText("换个关键词或筛选条件试试。") : uiText("从第一个测试场景开始。")} />}
         </div>
-        <footer className="case-list-footer num">{filtered.length} 个用例{filtered.length > 0 && ' · ↑↓ 切换'}</footer>
+        <footer className="case-list-footer num">{filtered.length}{uiText(" 个用例")}{filtered.length > 0 && uiText(" · ↑↓ 切换")}</footer>
       </aside>
 
       <section className={editor ? 'case-pane editing' : 'case-pane'} ref={paneRef} aria-live="polite">
@@ -182,9 +183,9 @@ export default function Cases({ cases, selectedId, editor, onSelect, onApprove, 
               onRestore={() => void act(selected.id, onRestore)} />
           : <div className="case-pane-empty">
               <div className="case-pane-empty-art" aria-hidden="true"><ClipboardList size={22} /></div>
-              <h3>{selectedId ? '找不到这个用例' : '选择一个用例'}</h3>
-              <p>从左侧列表查看步骤与断言，或新建一个测试场景。</p>
-              <button className="secondary-button" onClick={() => onCreate(platform === 'all' || platform === 'mixed' ? 'web' : platform)}><Plus size={15} /> 新建用例</button>
+              <h3>{selectedId ? uiText("找不到这个用例") : uiText("选择一个用例")}</h3>
+              <p>{uiText("从左侧列表查看步骤与断言，或新建一个测试场景。")}</p>
+              <button className="secondary-button" onClick={() => onCreate(platform === 'all' || platform === 'mixed' ? 'web' : platform)}><Plus size={15} />{uiText(" 新建用例")}</button>
             </div>)}
       </section>
     </div>

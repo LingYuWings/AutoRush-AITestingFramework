@@ -72,7 +72,7 @@ def text_content(content):
 
 
 # Normalize provider response text and usage while checking completion status.
-def parse_model_response(body, protocol):
+def parse_model_response(body, protocol, *, on_text=None):
     if not isinstance(body, dict): raise ValueError('model response must be an object')
     if protocol == 'anthropic_messages':
         reason = body.get('stop_reason')
@@ -94,6 +94,8 @@ def parse_model_response(body, protocol):
             raise ValueError('model response did not contain a valid message')
         reason = choice.get('finish_reason')
         content = text_content(message.get('content'))
+    if on_text:
+        on_text(content)
     if reason is not None and not isinstance(reason, str):
         raise ValueError('model response contained an invalid stop reason')
     if reason in {'length', 'abort', 'max_tokens', 'incomplete', 'failed', 'cancelled'}:

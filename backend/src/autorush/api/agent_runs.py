@@ -1,6 +1,7 @@
 """Background natural-language execution, restricted to the local operator."""
 from uuid import UUID
 from fastapi import APIRouter,Header,HTTPException,Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from autorush.api.automation import check_desktop_target
 
@@ -49,6 +50,15 @@ def create_agent_run_router(manager,settings,store,device_hub,require_operator,t
         record=manager.get(execution_id)
         if record is None: raise HTTPException(404,'agent execution not found')
         return record
+
+    # Read only the selected run's live or archived model output.
+    @router.get('/agent-runs/{execution_id}/live-output')
+    @router.get('/runs/{execution_id}/model-output')
+    async def live_output(execution_id:UUID,request:Request,x_autorush_operator_token:str|None=Header(default=None)):
+        authorize(request,x_autorush_operator_token)
+        snapshot=manager.get_live_output(execution_id)
+        if snapshot is None: raise HTTPException(404,'agent execution not found')
+        return JSONResponse(snapshot,headers={'Cache-Control':'no-store'})
 
     # Request cancellation of a background agent execution.
     @router.post('/agent-runs/{execution_id}/cancel')

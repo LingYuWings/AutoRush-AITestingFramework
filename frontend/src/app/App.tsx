@@ -1,3 +1,4 @@
+import { uiText } from '../shared/i18n.ts'
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import {
   Braces, CircleAlert, CircleCheck, ClipboardList, CloudOff, FileText, LayoutDashboard, Moon,
@@ -31,16 +32,16 @@ const Settings = lazy(loadSettings)
 type NavItem = { key: View; label: string; icon: typeof LayoutDashboard }
 // The main group follows the testing flow (write → plan → run → review); tools sit apart from it.
 const navGroups: { label: string; items: NavItem[] }[] = [
-  { label: '测试流程', items: [
-    { key: 'overview', label: '工作台', icon: LayoutDashboard },
-    { key: 'cases', label: '用例管理', icon: ClipboardList },
-    { key: 'plans', label: '测试计划', icon: Workflow },
-    { key: 'reports', label: '运行报告', icon: FileText },
+  { label: uiText("测试流程"), items: [
+    { key: 'overview', label: uiText("工作台"), icon: LayoutDashboard },
+    { key: 'cases', label: uiText("用例管理"), icon: ClipboardList },
+    { key: 'plans', label: uiText("测试计划"), icon: Workflow },
+    { key: 'reports', label: uiText("运行报告"), icon: FileText },
   ] },
-  { label: '工具', items: [
-    { key: 'api-testing', label: 'API 测试', icon: Braces },
-    { key: 'devices', label: 'Android 设备', icon: Smartphone },
-    { key: 'settings', label: '系统设置', icon: Settings2 },
+  { label: uiText("工具"), items: [
+    { key: 'api-testing', label: uiText("API 测试"), icon: Braces },
+    { key: 'devices', label: uiText("Android 设备"), icon: Smartphone },
+    { key: 'settings', label: uiText("系统设置"), icon: Settings2 },
   ] },
 ]
 const navItems = navGroups.flatMap(group => group.items)
@@ -149,7 +150,7 @@ export default function App() {
       ])
       setCases(nextCases); setPlans(nextPlans); setRuns(nextRuns)
       setProviderPresets(nextPresets); setProviderConfigs(nextProviderConfigs); setConnected(true)
-    } catch (error) { setConnected(false); notify(error instanceof Error ? error.message : '加载失败', true) }
+    } catch (error) { setConnected(false); notify(error instanceof Error ? error.message : uiText("加载失败"), true) }
     finally { setLoading(false); setLoaded(true) }
   }, [])
   useEffect(() => { void refresh() }, [refresh])
@@ -162,20 +163,20 @@ export default function App() {
       closeSocket = api.watchEvents(event => {
         if (event.type === 'run.started') {
           setProgress({ runId: event.payload.run_id, completed: 0, total: event.payload.case_count })
-          setNotice({ text: `测试开始：${event.payload.case_count} 个用例`, error: false })
-          pushEvent({ id: event.id, at: event.created_at, tone: 'info', text: `运行 #${shortId(event.payload.run_id)} 开始 · ${event.payload.case_count} 个用例` })
+          setNotice({ text: uiText("测试开始：{0} 个用例", event.payload.case_count), error: false })
+          pushEvent({ id: event.id, at: event.created_at, tone: 'info', text: uiText("运行 #{0} 开始 · {1} 个用例", shortId(event.payload.run_id), event.payload.case_count) })
         } else if (event.type === 'case.completed') {
           const status = statusLabel[event.payload.status] ?? event.payload.status
           setProgress({ runId: event.payload.run_id, completed: event.payload.completed, total: event.payload.total })
-          setNotice({ text: `执行进度 ${event.payload.completed}/${event.payload.total} · ${status}`, error: false })
-          pushEvent({ id: event.id, at: event.created_at, tone: event.payload.status === 'passed' ? 'passed' : 'failed', text: `用例完成 ${event.payload.completed}/${event.payload.total} · ${status}` })
+          setNotice({ text: uiText("执行进度 {0}/{1} · {2}", event.payload.completed, event.payload.total, status), error: false })
+          pushEvent({ id: event.id, at: event.created_at, tone: event.payload.status === 'passed' ? 'passed' : 'failed', text: uiText("用例完成 {0}/{1} · {2}", event.payload.completed, event.payload.total, status) })
         } else if(event.type==='agent.run.failed') {
           setProgress(null)
-          setNotice({text:'模型执行中断，报告未能保存；请恢复执行状态查看原因。',error:true})
+          setNotice({text:uiText("模型执行中断，报告未能保存；请恢复执行状态查看原因。"),error:true})
         } else if (event.type === 'report.ready') {
           setProgress(null)
-          setNotice({ text: `报告 ${shortId(event.payload.run_id)} 已生成`, error: false })
-          pushEvent({ id: event.id, at: event.created_at, tone: event.payload.status === 'passed' ? 'passed' : 'failed', text: `报告 #${shortId(event.payload.run_id)} 已生成 · ${statusLabel[event.payload.status] ?? event.payload.status}` })
+          setNotice({ text: uiText("报告 {0} 已生成", shortId(event.payload.run_id)), error: false })
+          pushEvent({ id: event.id, at: event.created_at, tone: event.payload.status === 'passed' ? 'passed' : 'failed', text: uiText("报告 #{0} 已生成 · {1}", shortId(event.payload.run_id), statusLabel[event.payload.status] ?? event.payload.status) })
           void refresh()
         }
       }, () => {
@@ -194,7 +195,7 @@ export default function App() {
   // Run a mutation, report its outcome, and refresh the shared records on success.
   const action = async (fn: () => Promise<unknown>, success: string): Promise<boolean> => {
     try { await fn(); notify(success); await refresh(); return true }
-    catch (error) { notify(error instanceof Error ? error.message : '操作失败', true); return false }
+    catch (error) { notify(error instanceof Error ? error.message : uiText("操作失败"), true); return false }
   }
   const counts: Partial<Record<View, number>> = {
     cases: activeCases.filter(item => item.status === 'draft').length,
@@ -206,8 +207,8 @@ export default function App() {
   const creatingCase = view === 'cases' && route.id === 'new'
   const crumb = view === 'reports' && route.id ? `#${shortId(route.id)}`
     : view === 'api-testing' ? apiSections.find(([key]) => key === (route.id ?? 'workbench'))?.[1] ?? null
-    : view === 'plans' && route.id === 'executions' ? '执行状态'
-    : creatingCase ? '新建' : editingCase ? '编辑' : null
+    : view === 'plans' && route.id === 'executions' ? uiText("执行状态")
+    : creatingCase ? uiText("新建") : editingCase ? uiText("编辑") : null
 
   const caseEditor = (creatingCase || editingCase) && <CaseEditor
     key={editingCase ? `${editingCase.id}-${editingCase.version}` : `new-${newCasePlatform}`}
@@ -219,7 +220,7 @@ export default function App() {
       const ok = await action(async () => {
         if (editingCase) { await authorizeLocal(); saved = await api.updateCase(editingCase.id, editingCase.version, payload) }
         else saved = await api.createCase(payload)
-      }, editingCase ? '用例已保存为草稿' : '用例草稿已创建')
+      }, editingCase ? uiText("用例已保存为草稿") : uiText("用例草稿已创建"))
       if (ok) go({ view: 'cases', id: saved?.id }, { replace: true })
     }} />
 
@@ -240,7 +241,7 @@ export default function App() {
       <div className="sidebar-bottom">
         <div className={`backend-card ${connected ? 'online' : 'offline'}`}>
           <span className="backend-pulse" />
-          <div><strong>{connected ? '本地后端在线' : '后端未连接'}</strong><span className="mono">127.0.0.1:8000</span></div>
+          <div><strong>{connected ? uiText("本地后端在线") : uiText("后端未连接")}</strong><span className="mono">127.0.0.1:8000</span></div>
         </div>
         <div className="sidebar-version mono">v0.1 · local dev</div>
       </div>
@@ -254,13 +255,13 @@ export default function App() {
           {crumb && <><span>/</span><strong className={view === 'reports' ? 'mono' : undefined}>{crumb}</strong></>}
         </div>
         <div className="topbar-actions">
-          {progress && <div className="run-progress" title={`运行 #${shortId(progress.runId)}`}>
-            <span className="run-progress-label"><span className="live-dot" />运行中 {progress.completed}/{progress.total}</span>
+          {progress && <div className="run-progress" title={uiText("运行 #{0}", shortId(progress.runId))}>
+            <span className="run-progress-label"><span className="live-dot" />{uiText("运行中 ")}{progress.completed}/{progress.total}</span>
             <span className="run-progress-track"><span style={{ transform: `scaleX(${progress.total ? progress.completed / progress.total : 0})` }} /></span>
           </div>}
-          <span className={`connection ${connected ? 'online' : 'offline'}`}>{connected ? <CircleCheck size={14} /> : <CloudOff size={14} />}{connected ? '已连接' : '未连接'}</span>
-          <button className="icon-button" aria-label="切换主题" title={theme === 'dark' ? '浅色模式' : '深色模式'} onClick={toggleTheme}>{theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}</button>
-          <button className="icon-button" aria-label="刷新数据" title="刷新数据" onClick={() => void refresh()} disabled={loading}><RefreshCw size={16} className={loading ? 'spinning' : ''} /></button>
+          <span className={`connection ${connected ? 'online' : 'offline'}`}>{connected ? <CircleCheck size={14} /> : <CloudOff size={14} />}{connected ? uiText("已连接") : uiText("未连接")}</span>
+          <button className="icon-button" aria-label={uiText("切换主题")} title={theme === 'dark' ? uiText("浅色模式") : uiText("深色模式")} onClick={toggleTheme}>{theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}</button>
+          <button className="icon-button" aria-label={uiText("刷新数据")} title={uiText("刷新数据")} onClick={() => void refresh()} disabled={loading}><RefreshCw size={16} className={loading ? 'spinning' : ''} /></button>
         </div>
       </header>
       <div className="main-scroll" id="main-scroll">
@@ -274,29 +275,29 @@ export default function App() {
             onSelect={id => go({ view: 'cases', id: id ?? undefined }, { replace: true })}
             onCreate={platform => { setNewCasePlatform(platform); go({ view: 'cases', id: 'new' }, { replace: true }) }}
             onEdit={item => go({ view: 'cases', id: item.id, edit: true }, { replace: true })}
-            onArchive={async id=>{await action(async()=>{await authorizeLocal();return api.archiveCase(id)},'用例已删除，可在已删除列表恢复')}}
-            onRestore={async id=>{await action(async()=>{await authorizeLocal();return api.restoreCase(id)},'用例已恢复')}}
-            onApprove={async id => { await action(() => api.approveCase(id), '用例已批准') }} />}
+            onArchive={async id=>{await action(async()=>{await authorizeLocal();return api.archiveCase(id)},uiText("用例已删除，可在已删除列表恢复"))}}
+            onRestore={async id=>{await action(async()=>{await authorizeLocal();return api.restoreCase(id)},uiText("用例已恢复"))}}
+            onApprove={async id => { await action(() => api.approveCase(id), uiText("用例已批准")) }} />}
           {view === 'plans' && <Plans plans={plans} cases={cases} runs={runs} section={route.id}
             onNavigate={id => { if (routeRef.current.view === 'plans') go({view:'plans', id}) }}
             onSave={async (plan, payload) => {
               if (plan) await authorizeLocal()
               const saved = plan ? await api.updatePlan(plan.id, plan.version, payload) : await api.createPlan(payload)
               await refresh()
-              notify(!plan ? '计划已创建' : saved.id !== plan.id ? '已创建计划修订草稿' : '计划已保存')
+              notify(!plan ? uiText("计划已创建") : saved.id !== plan.id ? uiText("已创建计划修订草稿") : uiText("计划已保存"))
               return saved
             }}
-            onReady={async id => { await action(async()=>{await authorizeLocal();return api.readyPlan(id)}, '计划已就绪') }}
-            onRun={async id => { await action(async()=>{await authorizeLocal();return api.runPlan(id)}, '运行完成，报告已保存') }} />}
+            onReady={async id => { await action(async()=>{await authorizeLocal();return api.readyPlan(id)}, uiText("计划已就绪")) }}
+            onRun={async id => { await action(async()=>{await authorizeLocal();return api.runPlan(id)}, uiText("运行完成，报告已保存")) }} />}
           {view === 'reports' && (route.id
             ? <ReportPage key={route.id} id={route.id} runs={runs} plans={plans} cases={cases} loaded={loaded}
                 onBack={() => go({ view: 'reports' })}
                 onOpen={id => go({ view: 'reports', id }, { replace: true })}
-                onDownload={async (id, format) => { try { await api.downloadReport(id, format) } catch (error) { notify(error instanceof Error ? error.message : '下载失败', true) } }} />
-            : <Reports runs={runs} plans={plans} onOpen={id => go({ view: 'reports', id })} onDownload={async (id, format) => { try { await api.downloadReport(id, format) } catch (error) { notify(error instanceof Error ? error.message : '下载失败', true) } }} />)}
+                onDownload={async (id, format) => { try { await api.downloadReport(id, format) } catch (error) { notify(error instanceof Error ? error.message : uiText("下载失败"), true) } }} />
+            : <Reports runs={runs} plans={plans} onOpen={id => go({ view: 'reports', id })} onDownload={async (id, format) => { try { await api.downloadReport(id, format) } catch (error) { notify(error instanceof Error ? error.message : uiText("下载失败"), true) } }} />)}
           {view === 'devices' && <Devices />}
           {view === 'api-testing' && <ApiWorkspace section={route.id} onNavigate={id=>go({view:'api-testing',id})} onGuardChange={registerApiGuard} onCaseCreated={async id=>{await refresh();go({view:'cases',id},{bypassApiGuard:true})}}/>}
-          {view === 'settings' && <Settings presets={providerPresets} configs={providerConfigs} onCreate={payload => action(() => api.createProviderConfig(payload), '模型配置已保存')} onPreflight={async id => { try { const result = await api.preflightProvider(id); notify(result.secret_available ? '本地预检查通过，尚未联网' : result.messages.join(' '), !result.secret_available); return result } catch (error) { notify(error instanceof Error ? error.message : '预检查失败', true); return null } }} />}
+          {view === 'settings' && <Settings presets={providerPresets} configs={providerConfigs} onCreate={payload => action(() => api.createProviderConfig(payload), uiText("模型配置已保存"))} onPreflight={async id => { try { const result = await api.preflightProvider(id); notify(result.secret_available ? uiText("本地预检查通过，尚未联网") : result.messages.join(' '), !result.secret_available); return result } catch (error) { notify(error instanceof Error ? error.message : uiText("预检查失败"), true); return null } }} />}
         </Suspense>
       </main>
       </div>
@@ -306,7 +307,7 @@ export default function App() {
       onAnimationEnd={event => { if (event.animationName === 'toast-out') setNotice(null) }}>
       {notice.error ? <CircleAlert size={17} /> : <CircleCheck size={17} />}
       <span>{notice.text}</span>
-      <button onClick={dismissNotice} aria-label="关闭提示"><X size={14} /></button>
+      <button onClick={dismissNotice} aria-label={uiText("关闭提示")}><X size={14} /></button>
     </div>}
   </div>
 }

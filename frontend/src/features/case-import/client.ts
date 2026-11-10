@@ -1,3 +1,4 @@
+import { uiText } from '../../shared/i18n.ts'
 import {api,API_BASE,ApiRequestError,request} from '../../shared/api.ts'
 import {authorizeApi,withApiAuthorization} from '../api-testing/client.ts'
 import type {ImportCommit,ImportOptions,ImportSession,ImportCandidate,ImportResult} from './types'
@@ -39,7 +40,7 @@ export const importClient={
   // Download the Markdown import template using operator authorization.
   template:()=>authorized(async()=>{
     const response=await fetch(API_BASE+prefix+'/template',{cache:'no-store',headers:{'X-Autorush-Operator-Token':api.getOperatorToken()}})
-    if(!response.ok)throw new ApiRequestError('模板下载失败',response.status)
+    if(!response.ok)throw new ApiRequestError(uiText("模板下载失败"),response.status)
     const url=URL.createObjectURL(await response.blob()),link=document.createElement('a')
     link.href=url;link.download='autorush-cases.md';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)
   }),

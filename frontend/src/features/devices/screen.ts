@@ -1,3 +1,4 @@
+import { uiText } from '../../shared/i18n.ts'
 export type ScreenMode = 'preview' | 'smooth'
 export interface FrameMetadata {
   stream_id: string
@@ -17,10 +18,10 @@ export interface ScreenUpdate {
 /** Validate the bounded wire envelope before allocating an image URL. */
 export function parseScreenFrame(data: ArrayBuffer): { metadata: FrameMetadata; jpeg: Uint8Array<ArrayBuffer> } {
   const bytes = new Uint8Array(data)
-  if (bytes.length < 12 || bytes.length > 8 + 2048 + 600000 || bytes[0] !== 65 || bytes[1] !== 82 || bytes[2] !== 70 || bytes[3] !== 49) throw new Error('画面数据格式无效')
+  if (bytes.length < 12 || bytes.length > 8 + 2048 + 600000 || bytes[0] !== 65 || bytes[1] !== 82 || bytes[2] !== 70 || bytes[3] !== 49) throw new Error(uiText("画面数据格式无效"))
   const length = new DataView(data).getUint32(4, false)
   const jpegLength = bytes.length - 8 - length
-  if (length < 1 || length > 2048 || jpegLength < 4 || jpegLength > 600000) throw new Error('画面数据大小无效')
+  if (length < 1 || length > 2048 || jpegLength < 4 || jpegLength > 600000) throw new Error(uiText("画面数据大小无效"))
   const metadata = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(8, 8 + length)))
   const keys = ['stream_id', 'sequence', 'width', 'height', 'package', 'captured_at']
   if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata) || Object.keys(metadata).length !== keys.length || keys.some(key => !(key in metadata))
@@ -29,9 +30,9 @@ export function parseScreenFrame(data: ArrayBuffer): { metadata: FrameMetadata; 
     || !Number.isSafeInteger(metadata.sequence) || metadata.sequence < 1
     || !Number.isSafeInteger(metadata.width) || metadata.width < 1 || metadata.width > 1280
     || !Number.isSafeInteger(metadata.height) || metadata.height < 1 || metadata.height > 1280
-    || !Number.isSafeInteger(metadata.captured_at) || metadata.captured_at < 1) throw new Error('画面元数据无效')
+    || !Number.isSafeInteger(metadata.captured_at) || metadata.captured_at < 1) throw new Error(uiText("画面元数据无效"))
   const jpeg = bytes.slice(8 + length)
-  if (jpeg[0] !== 255 || jpeg[1] !== 216 || jpeg[jpeg.length - 2] !== 255 || jpeg[jpeg.length - 1] !== 217) throw new Error('画面不是 JPEG')
+  if (jpeg[0] !== 255 || jpeg[1] !== 216 || jpeg[jpeg.length - 2] !== 255 || jpeg[jpeg.length - 1] !== 217) throw new Error(uiText("画面不是 JPEG"))
   return { metadata, jpeg }
 }
 
@@ -39,8 +40,8 @@ export function parseScreenFrame(data: ArrayBuffer): { metadata: FrameMetadata; 
 export function openScreen({ url, token, mode, onChange }: {
   url: string; token: string; mode: ScreenMode; onChange: (update: ScreenUpdate) => void
 }) {
-  if (!token) throw new Error('请先连接本地配对服务或启用操作授权')
-  if (document.hidden) throw new Error('请在可见页面开始查看')
+  if (!token) throw new Error(uiText("请先连接本地配对服务或启用操作授权"))
+  if (document.hidden) throw new Error(uiText("请在可见页面开始查看"))
   const socket = new WebSocket(url)
   socket.binaryType = 'arraybuffer'
   let closed = false
@@ -57,7 +58,7 @@ export function openScreen({ url, token, mode, onChange }: {
   // Publish socket status and the current preview frame.
   const emit = (state: string, detail: string) => onChange({ state, detail, active: !closed, frame })
   // Close the preview socket, release its frame, and remove browser listeners.
-  const stop = (detail = '已停止查看', state = 'stopped') => {
+  const stop = (detail = uiText("已停止查看"), state = 'stopped') => {
     if (closed) return
     closed = true
     clearTimeout(handshake)
@@ -69,10 +70,10 @@ export function openScreen({ url, token, mode, onChange }: {
     emit(state, detail)
   }
   // Stop screenshot sharing when the viewer is hidden.
-  const visibility = () => { if (document.hidden) stop('页面已隐藏，已停止共享') }
+  const visibility = () => { if (document.hidden) stop(uiText("页面已隐藏，已停止共享")) }
   // Stop screenshot sharing after the browser goes offline.
-  const offline = () => stop('网络已断开，请重新开始查看', 'offline')
-  const handshake = setTimeout(() => stop('连接画面超时，请检查设备和授权', 'error'), 8000)
+  const offline = () => stop(uiText("网络已断开，请重新开始查看"), 'offline')
+  const handshake = setTimeout(() => stop(uiText("连接画面超时，请检查设备和授权"), 'error'), 8000)
   document.addEventListener('visibilitychange', visibility)
   window.addEventListener('offline', offline)
   socket.onopen = () => {
@@ -82,40 +83,40 @@ export function openScreen({ url, token, mode, onChange }: {
     if (closed) return
     try {
       if (typeof event.data === 'string') {
-        if (event.data.length > 4096) throw new Error('画面状态消息过长')
+        if (event.data.length > 4096) throw new Error(uiText("画面状态消息过长"))
         const message = JSON.parse(event.data)
         if (message.type === 'screen.ready') {
-          if (streamId || message.mode !== mode || typeof message.stream_id !== 'string' || !message.stream_id || message.stream_id.length > 100) throw new Error('画面会话无效')
+          if (streamId || message.mode !== mode || typeof message.stream_id !== 'string' || !message.stream_id || message.stream_id.length > 100) throw new Error(uiText("画面会话无效"))
           streamId = message.stream_id
           clearTimeout(handshake)
-          emit('ready', '已连接，等待手机画面')
+          emit('ready', uiText("已连接，等待手机画面"))
         } else if (message.type === 'screen.status') {
-          if (typeof message.state !== 'string') throw new Error('画面状态无效')
-          const detail = typeof message.detail === 'string' ? message.detail.replaceAll(token, '[已隐藏]') : message.state
+          if (typeof message.state !== 'string') throw new Error(uiText("画面状态无效"))
+          const detail = typeof message.detail === 'string' ? message.detail.replaceAll(token, uiText("[已隐藏]")) : message.state
           if (['starting', 'streaming', 'ready'].includes(message.state)) emit(message.state, detail)
           else if (['blocked', 'permission_required'].includes(message.state)) {
             // Server delivers status only after the previous frame ACK.
-            if (awaitingLoad) throw new Error('画面状态顺序无效')
+            if (awaitingLoad) throw new Error(uiText("画面状态顺序无效"))
             clearFrame()
             emit(message.state, detail)
           }
           else stop(detail, message.state)
-        } else throw new Error('不支持的画面消息')
+        } else throw new Error(uiText("不支持的画面消息"))
         return
       }
-      if (!(event.data instanceof ArrayBuffer)) throw new Error('画面数据无效')
+      if (!(event.data instanceof ArrayBuffer)) throw new Error(uiText("画面数据无效"))
       const parsed = parseScreenFrame(event.data)
-      if (!streamId || parsed.metadata.stream_id !== streamId || parsed.metadata.sequence <= sequence || awaitingLoad) throw new Error('画面顺序无效，请重新连接')
+      if (!streamId || parsed.metadata.stream_id !== streamId || parsed.metadata.sequence <= sequence || awaitingLoad) throw new Error(uiText("画面顺序无效，请重新连接"))
       sequence = parsed.metadata.sequence
       clearFrame()
       frame = { url: URL.createObjectURL(new Blob([parsed.jpeg], { type: 'image/jpeg' })), metadata: parsed.metadata }
       awaitingLoad = true
-      emit('streaming', '正在接收画面')
-    } catch { stop('收到无效画面数据，请重新开始查看', 'error') }
+      emit('streaming', uiText("正在接收画面"))
+    } catch { stop(uiText("收到无效画面数据，请重新开始查看"), 'error') }
   }
-  socket.onerror = () => stop('画面连接失败，请检查设备和操作授权', 'error')
-  socket.onclose = () => stop('画面连接已断开，请重新开始查看', 'offline')
-  emit('connecting', '正在连接设备画面')
+  socket.onerror = () => stop(uiText("画面连接失败，请检查设备和操作授权"), 'error')
+  socket.onclose = () => stop(uiText("画面连接已断开，请重新开始查看"), 'offline')
+  emit('connecting', uiText("正在连接设备画面"))
   return {
     stop,
     // Acknowledge the current image after it has rendered so the stream can advance.
@@ -125,6 +126,6 @@ export function openScreen({ url, token, mode, onChange }: {
       socket.send(JSON.stringify({ type: 'frame.ack', sequence: frame.metadata.sequence }))
     },
     // Stop the preview if the current image fails to decode.
-    failed: (imageUrl: string) => { if (frame?.url === imageUrl) stop('画面解码失败，请重新开始查看', 'error') },
+    failed: (imageUrl: string) => { if (frame?.url === imageUrl) stop(uiText("画面解码失败，请重新开始查看"), 'error') },
   }
 }

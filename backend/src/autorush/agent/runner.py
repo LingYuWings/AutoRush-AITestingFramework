@@ -37,10 +37,11 @@ async def notify(callback,*args):
 class AgentRunner:
     # Set up execution, observation, and progress dependencies.
     def __init__(self,drivers,client,options,*,observer_factory=observer_for,directory=None,run_id=None,
-                 checkpoint=None,emit=None,vision_verified=False,cancelled=lambda:False):
+                 checkpoint=None,emit=None,vision_verified=False,cancelled=lambda:False,live_output=None):
         self.drivers,self.client,self.options=drivers,client,options
         self.observer_factory,self.directory,self.run_id=observer_factory,directory,run_id
         self.checkpoint,self.emit=checkpoint,emit
+        self.live_output=live_output
         self.vision_verified,self.cancelled=vision_verified,cancelled
         self.executor=Runner(drivers);self.results=[];self.active=None;self.case_used=[0]
 
@@ -64,12 +65,12 @@ class AgentRunner:
                 for step in sorted(case.steps,key=lambda s:s.order):
                     self.ensure_running()
                     if failed: self.results.append(StepResult(order=step.order,intent=step.intent,status=ResultStatus.SKIPPED));continue
-                    result=await self.run_step(case,step);self.results.append(result)
+                    result=await self.run_step_with_output(case,step);self.results.append(result)
                     failed=result.status!=ResultStatus.PASSED
                     self.active=None;await self.save(case)
                 for step in sorted(case.postconditions,key=lambda s:s.order):
                     self.ensure_running()
-                    if step.always_run or not failed: self.results.append(await self.run_step(case,step))
+                    if step.always_run or not failed: self.results.append(await self.run_step_with_output(case,step))
                     else: self.results.append(StepResult(order=step.order,intent=step.intent,status=ResultStatus.SKIPPED))
                     self.active=None;await self.save(case)
         except TimeoutError:
@@ -89,6 +90,18 @@ class AgentRunner:
         status=next((status for status in [ResultStatus.ERROR,ResultStatus.BLOCKED,ResultStatus.FAILED]
                      if any(result.status==status for result in self.results)),ResultStatus.PASSED)
         return CaseResult(case_id=case.id,title=case.title,status=status,steps=self.results)
+
+    # Publish the step lifecycle independently of its persisted evidence.
+    async def run_step_with_output(self,case,step):
+        if self.live_output:
+            self.live_output.step=step.order
+            self.live_output.publish('execution', f'开始步骤 · {step.driver}' + (f' · {step.operation}' if step.operation else ''))
+        result=await self.run_step(case,step)
+        if self.live_output:
+            api_driver=self.drivers.get('api')
+            self.live_output.secrets.update(getattr(api_driver,'runtime_secrets', ()))
+            self.live_output.publish('execution', f'步骤结果 · {result.status.value}')
+        return result
 
     # Run one step, including the observation and decision loop for natural steps.
     async def run_step(self,case,step):
@@ -137,6 +150,10 @@ class AgentRunner:
                 async with asyncio.timeout(self.options.model_timeout_seconds):
                     decision,model=await decide(self.client,step,observation,history,budget=budget,feedback=feedback,send_images=self.vision_verified)
                 self.ensure_running()
+                if self.live_output:
+                    action = decision.operation if decision.kind=='action' else {'verify':'核验预期结果','blocked':'无法继续'}[decision.kind]
+                    self.live_output.publish('reasoning', f'决策依据 · {decision.brief_reason}')
+                    self.live_output.publish('decision', action)
                 stats={'request_id':model.request_id,'usage':model.usage,'latency_ms':model.latency_ms,'attempts':model.attempts}
                 trace={'round':budget.step_used,'observation_id':observation.id,'brief_reason':decision.brief_reason,
                        'decision':decision.model_dump(mode='json'),
@@ -145,6 +162,8 @@ class AgentRunner:
                     traces.append(trace);await self.save(case)
                     return finish(ResultStatus.BLOCKED,decision.brief_reason)
                 if decision.kind=='verify':
+                    if self.live_output:
+                        self.live_output.publish('execution', '正在核验预期结果')
                     verification=await verify_expected(decision,step,observation,driver,vision_verified=self.vision_verified,
                         observer=observer,executor=self.executor)
                     async with asyncio.timeout(self.options.model_timeout_seconds):
@@ -155,6 +174,8 @@ class AgentRunner:
                     if goal_model:trace['goal_model']=goal_model
                     trace.update(operation='verify',verification_kind=verification.kind,
                         result={'status':'passed' if verification.passed else 'failed','assertions':verification.messages,'evidence':verification.evidence})
+                    if self.live_output:
+                        self.live_output.publish('execution', '预期结果核验通过' if verification.passed else '预期结果核验未通过')
                     traces.append(trace);await self.save(case)
                     if not verification.passed:
                         failed_verifications+=1
@@ -168,6 +189,8 @@ class AgentRunner:
                 if budget.remaining==0: return finish(ResultStatus.BLOCKED,'last decision round is reserved for verification')
                 reason=action_scope_violation(step,decision)
                 if reason:
+                    if self.live_output:
+                        self.live_output.publish('execution', '动作超出当前步骤授权范围，未执行')
                     trace.update(operation=decision.operation,lifecycle='not_dispatched',result={'status':'blocked','detail':reason})
                     traces.append(trace);await self.save(case)
                     return finish(ResultStatus.BLOCKED,reason)
@@ -181,7 +204,12 @@ class AgentRunner:
                 traces.append(trace)
                 await self.save(case,trace)
                 self.ensure_running()
+                if self.live_output:
+                    self.live_output.publish('execution', f'正在执行 · {decision.operation}')
                 result=await self.executor.execute_step(executable,capture_evidence=False)
+                if self.live_output:
+                    self.live_output.secrets.update(getattr(self.drivers.get('api'),'runtime_secrets', ()))
+                    self.live_output.publish('execution', f'{decision.operation} · {result.status.value}')
                 try:
                     pending_observation=await observer.observe()
                     if pending_observation.screenshot:result.evidence['screenshot']=pending_observation.screenshot
@@ -198,6 +226,8 @@ class AgentRunner:
                     'brief_reason':decision.brief_reason,'result':result.detail,'status':result.status.value})
                 feedback='' if result.status==ResultStatus.PASSED else result.detail
             except ObservationChangedError as exc:
+                if self.live_output:
+                    self.live_output.publish('execution', '目标画面已变化，未执行该动作')
                 feedback=str(exc)
                 trace.update(operation=decision.operation if decision.kind=='action' else 'verify',lifecycle='not_dispatched',
                     result={'status':'blocked','detail':feedback})

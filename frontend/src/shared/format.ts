@@ -1,15 +1,24 @@
+import { uiLanguage, uiText } from './i18n.ts'
 import type { DriverKind, ResultStatus, StepSpec } from './api'
 
-// Format a timestamp for Chinese-language console displays.
-export const date = (value: string) => new Date(value).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+// Format a timestamp for the selected console language.
+export const date = (value: string) => new Date(value).toLocaleString(uiLanguage, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+
+const englishElapsed = new Intl.RelativeTimeFormat('en')
 
 // Display a timestamp as elapsed time from now.
 export const relative = (value: string) => {
   const seconds = Math.round((Date.now() - new Date(value).getTime()) / 1000)
-  if (seconds < 60) return '刚刚'
-  if (seconds < 3600) return `${Math.floor(seconds / 60)} 分钟前`
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)} 小时前`
-  if (seconds < 86400 * 7) return `${Math.floor(seconds / 86400)} 天前`
+  if (seconds < 60) return uiText("刚刚")
+  if (uiLanguage === 'en') {
+    if (seconds < 3600) return englishElapsed.format(-Math.floor(seconds / 60), 'minute')
+    if (seconds < 86400) return englishElapsed.format(-Math.floor(seconds / 3600), 'hour')
+    if (seconds < 86400 * 7) return englishElapsed.format(-Math.floor(seconds / 86400), 'day')
+    return date(value)
+  }
+  if (seconds < 3600) return uiText("{0} 分钟前", Math.floor(seconds / 60))
+  if (seconds < 86400) return uiText("{0} 小时前", Math.floor(seconds / 3600))
+  if (seconds < 86400 * 7) return uiText("{0} 天前", Math.floor(seconds / 86400))
   return date(value)
 }
 
@@ -17,8 +26,8 @@ export const relative = (value: string) => {
 export const shortId = (id: string) => id.slice(0, 8).toUpperCase()
 
 export const statusLabel: Record<string, string> = {
-  draft: '草稿', approved: '已批准', ready: '就绪', passed: '通过', failed: '失败',
-  error: '错误', blocked: '阻塞', skipped: '跳过', unverified: '待验证', verified: '已验证',
+  draft: uiText("草稿"), approved: uiText("已批准"), ready: uiText("就绪"), passed: uiText("通过"), failed: uiText("失败"),
+  error: uiText("错误"), blocked: uiText("阻塞"), skipped: uiText("跳过"), unverified: uiText("待验证"), verified: uiText("已验证"),
 }
 
 export const driverLabel: Record<DriverKind, string> = { api: 'API', web: 'Web', android: 'Android', desktop: 'Desktop' }

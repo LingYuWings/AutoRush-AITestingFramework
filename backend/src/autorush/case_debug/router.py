@@ -1,7 +1,7 @@
 import hashlib
 from uuid import UUID
 from fastapi import APIRouter, Header, HTTPException, Request
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from autorush.case_debug.models import DebugStart
 from autorush.domain.models import CaseResult
 from autorush.evidence.agent_trace import iter_step_screenshots
@@ -41,6 +41,14 @@ def create_debug_router(manager, settings, require_operator, trusted_local_reque
     async def detail(ident: UUID, request: Request, x_autorush_operator_token: str | None = Header(default=None)):
         authorize(request, x_autorush_operator_token)
         return manager.public(find(ident))
+
+    # Return only this debug run's live or archived model output.
+    @router.get('/{ident}/model-output')
+    async def model_output(ident: UUID, request: Request, x_autorush_operator_token: str | None = Header(default=None)):
+        authorize(request, x_autorush_operator_token)
+        snapshot = manager.get_live_output(ident)
+        if snapshot is None: raise HTTPException(404, 'debug run not found')
+        return JSONResponse(snapshot, headers={'Cache-Control': 'no-store'})
 
     # Ask the shared execution machinery to stop a debug run.
     @router.post('/{ident}/cancel')

@@ -1,3 +1,4 @@
+import { uiText } from '../shared/i18n.ts'
 import {useLayoutEffect,useMemo,useState} from 'react'
 import {ChevronRight,Download,FileText,Search} from '../components/icons'
 import type {PlanRecord,RunRecord} from '../shared/api'
@@ -22,14 +23,14 @@ export default function Reports({runs,plans,onOpen,onDownload}:{runs:RunRecord[]
   useLayoutEffect(()=>{ if(memory.scroll) scroller()?.scrollTo({top:memory.scroll}) },[])
   // Remember the current filters, page, and scroll position before opening a report.
   const open=(id:string)=>{Object.assign(memory,{query,status,page:paged.page,scroll:scroller()?.scrollTop??0});onOpen(id)}
-  const filters:{key:StatusFilter;label:string;count:number}[]=[{key:'all',label:'全部',count:runs.length},{key:'passed',label:'通过',count:runs.length-failing},{key:'failed',label:'未通过',count:failing}]
+  const filters:{key:StatusFilter;label:string;count:number}[]=[{key:'all',label:uiText("全部"),count:runs.length},{key:'passed',label:uiText("通过"),count:runs.length-failing},{key:'failed',label:uiText("未通过"),count:failing}]
 
   return <>
-    <PageHeader title="运行报告" description="每个批次都有独立的报告页，包含用例结果、逐步证据与模型决策轨迹。"/>
+    <PageHeader title={uiText("运行报告")} description={uiText("每个批次都有独立的报告页，包含用例结果、逐步证据与模型决策轨迹。")}/>
     <section className="surface table-surface report-list">
       <div className="toolbar">
-        <div className="segmented" role="tablist" aria-label="按结果筛选">{filters.map(item=><button key={item.key} role="tab" aria-selected={status===item.key} className={status===item.key?'active':''} onClick={()=>setStatus(item.key)}>{item.label}<span>{item.count}</span></button>)}</div>
-        <label className="search-field"><Search size={15}/><input aria-label="搜索运行报告" placeholder="搜索批次、计划、用例、结果…" value={query} onChange={e=>setQuery(e.target.value)}/></label>
+        <div className="segmented" role="tablist" aria-label={uiText("按结果筛选")}>{filters.map(item=><button key={item.key} role="tab" aria-selected={status===item.key} className={status===item.key?'active':''} onClick={()=>setStatus(item.key)}>{item.label}<span>{item.count}</span></button>)}</div>
+        <label className="search-field"><Search size={15}/><input aria-label={uiText("搜索运行报告")} placeholder={uiText("搜索批次、计划、用例、结果…")} value={query} onChange={e=>setQuery(e.target.value)}/></label>
       </div>
       {paged.items.map(run=>{
         const counts=countStatuses(run.cases)
@@ -38,17 +39,17 @@ export default function Reports({runs,plans,onOpen,onDownload}:{runs:RunRecord[]
           <a className="report-row-link" href={routeHash({view:'reports',id:run.id})} onClick={event=>{if(event.metaKey||event.ctrlKey||event.shiftKey)return;event.preventDefault();open(run.id)}}>
             <span className={`run-status-dot dot-${run.status}`}/>
             <span className="report-row-main">
-              <strong>{planName.get(run.plan_id)??'测试运行'}</strong>
-              <span className="row-id">#{shortId(run.id)} · <time dateTime={run.created_at} title={date(run.created_at)}>{relative(run.created_at)}</time> · {run.cases.length} 个用例{summary&&<> · {summary}</>}</span>
+              <strong>{planName.get(run.plan_id)??uiText("测试运行")}</strong>
+              <span className="row-id">#{shortId(run.id)} · <time dateTime={run.created_at} title={date(run.created_at)}>{relative(run.created_at)}</time> · {run.cases.length}{uiText(" 个用例")}{summary&&<> · {summary}</>}</span>
             </span>
             <ResultBar items={run.cases} size="sm"/>
             <StatusBadge status={run.status}/>
           </a>
-          <div className="report-downloads">{(['json','html','junit'] as const).map(format=><button key={format} className="download-chip" title={`下载 ${format.toUpperCase()} 报告`} onClick={()=>void onDownload(run.id,format)}><Download size={12}/>{format.toUpperCase()}</button>)}</div>
+          <div className="report-downloads">{(['json','html','junit'] as const).map(format=><button key={format} className="download-chip" title={uiText("下载 {0} 报告", format.toUpperCase())} onClick={()=>void onDownload(run.id,format)}><Download size={12}/>{format.toUpperCase()}</button>)}</div>
           <ChevronRight size={16} className="report-row-chevron" aria-hidden="true"/>
         </article>
       })}
-      {!filtered.length&&<EmptyState icon={FileText} title={runs.length?'没有匹配的报告':'还没有报告'} description={runs.length?'调整搜索词或筛选条件后重试。':'运行计划后报告会显示在这里。'}/>}
+      {!filtered.length&&<EmptyState icon={FileText} title={runs.length?uiText("没有匹配的报告"):uiText("还没有报告")} description={runs.length?uiText("调整搜索词或筛选条件后重试。"):uiText("运行计划后报告会显示在这里。")}/>}
       <Pagination {...paged}/>
     </section>
   </>

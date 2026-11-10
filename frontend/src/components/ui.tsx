@@ -1,3 +1,4 @@
+import { uiText } from '../shared/i18n.ts'
 import { useState, type ReactNode } from 'react'
 import { ChevronLeft, ChevronRight, type Icon } from './icons'
 import type { DriverKind, ResultStatus } from '../shared/api'
@@ -72,12 +73,12 @@ export function usePaged<T>(items: T[], resetKey: string, pageSize = 20, initial
 export function Pagination({ page, pageCount, total, pageSize, setPage }: { page: number; pageCount: number; total: number; pageSize: number; setPage: (page: number) => void }) {
   if (pageCount <= 1) return null
   const start = (page - 1) * pageSize + 1
-  return <nav className="pagination" aria-label="分页">
+  return <nav className="pagination" aria-label={uiText("分页")}>
     <span className="num">{start}–{Math.min(page * pageSize, total)} / {total}</span>
     <div>
-      <button className="icon-button" aria-label="上一页" disabled={page <= 1} onClick={() => setPage(page - 1)}><ChevronLeft size={16} /></button>
+      <button className="icon-button" aria-label={uiText("上一页")} disabled={page <= 1} onClick={() => setPage(page - 1)}><ChevronLeft size={16} /></button>
       <span className="pagination-page num">{page} / {pageCount}</span>
-      <button className="icon-button" aria-label="下一页" disabled={page >= pageCount} onClick={() => setPage(page + 1)}><ChevronRight size={16} /></button>
+      <button className="icon-button" aria-label={uiText("下一页")} disabled={page >= pageCount} onClick={() => setPage(page + 1)}><ChevronRight size={16} /></button>
     </div>
   </nav>
 }
