@@ -72,7 +72,7 @@ export type PlanPayload = Pick<PlanRecord, 'name' | 'environment' | 'case_ids'> 
 export interface AgentOptions {provider_config_id:string;max_rounds_per_step:number;max_rounds_per_case:number;model_timeout_seconds:number;case_timeout_seconds:number}
 export interface AgentTraceRecord {round?:number;operation?:string|null;brief_reason?:string;error?:string;verification_kind?:string;model?:{latency_ms:number;attempts:number};result?:{status:ResultStatus;detail?:string;assertions?:string[];evidence?:Record<string,unknown>};observation?:{screenshot?:ScreenshotEvidence}}
 export interface AgentExecution {id:string;plan_id:string;state:'running'|'stopping'|'finished'|'interrupted';progress:{completed_cases?:{status:ResultStatus;steps:StepResult[]}[];active?:{active_step?:{intent:string;expected_result:string;traces:AgentTraceRecord[]};rounds_used?:number;pending_action?:AgentTraceRecord}};termination_reason:string|null;final_run_id:string|null;created_at:string}
-export interface AgentLiveEntry {id:number;kind:'model'|'reasoning'|'decision'|'execution';text:string;case:number|null;step:number|null;at:string|null;source?:'provider'|'decision'}
+export interface AgentLiveEntry {id:number;kind:'model'|'output'|'reasoning'|'decision'|'execution';text:string;case:number|null;step:number|null;at:string|null;source?:'provider'|'decision';clipped?:boolean}
 export interface AgentLiveOutput {active:boolean;entries:AgentLiveEntry[];truncated?:boolean;from_trace?:boolean}
 export type ModelOutputSource = 'plan' | 'report' | 'debug'
 

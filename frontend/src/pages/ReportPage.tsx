@@ -93,8 +93,8 @@ export default function ReportPage({id,runs,plans,cases,loaded,onBack,onOpen,onD
         <p className="eyebrow mono">#{shortId(run.id)} · {date(run.created_at)}{plan&&<> · {plan.environment}</>}</p>
         <h1>{plan?.name??uiText("测试运行")}</h1>
         <div className="report-hero-actions">
+          <button type="button" className="primary-button" aria-haspopup="dialog" onClick={()=>setOutputId(run.id)}>{uiText('查看模型原文')}</button>
           <div className="report-downloads">{(['json','html','junit'] as const).map(format=><button key={format} className="download-chip" onClick={()=>void onDownload(run.id,format)}><Download size={12}/>{format.toUpperCase()}</button>)}</div>
-          <button type="button" className="secondary-button accent" aria-haspopup="dialog" onClick={()=>setOutputId(run.id)}>{uiText('查看模型输出')}</button>
           <button className="text-button" disabled={connecting} onClick={()=>void connect()}><KeyRound size={13}/>{connecting?uiText("连接中…"):authEpoch?uiText("已连接本地执行"):uiText("连接本地执行以查看截图")}</button>
         </div>
       </div>
@@ -104,7 +104,7 @@ export default function ReportPage({id,runs,plans,cases,loaded,onBack,onOpen,onD
         <StatusBadge status={run.status}/>
       </div>
     </header>
-    {outputId===run.id&&<AgentLiveDialog executionId={run.id} source="report" onClose={()=>setOutputId(null)}/>}
+    {outputId===run.id&&<AgentLiveDialog executionId={run.id} source="report" initialFilter="output" onClose={()=>setOutputId(null)}/>}
 
     <section className="report-stats" aria-label={uiText("结果统计")}>
       <ResultBar items={run.cases}/>

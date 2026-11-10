@@ -3,15 +3,17 @@ import { uiLanguage, uiText } from '../../shared/i18n.ts'
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { X } from '../../components/icons'
 import { api, ApiRequestError, type AgentLiveEntry, type AgentLiveOutput, type ModelOutputSource } from '../../shared/api'
+import ModelOutputPreview from './ModelOutputPreview'
 
-const labels = { model: uiText("模型状态"), reasoning: uiText("思考"), decision: uiText("决策"), execution: uiText("执行") }
-const filters = ['all', 'reasoning', 'decision', 'execution', 'model'] as const
+const labels = { model: uiText("模型状态"), output: uiText('模型原文'), reasoning: uiText("思考"), decision: uiText("决策"), execution: uiText("执行") }
+const filters = ['all', 'output', 'reasoning', 'decision', 'execution', 'model'] as const
 const clock = new Intl.DateTimeFormat(uiLanguage, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 
 // Poll only while the dialog is open and keep its final snapshot available for review.
-export default function AgentLiveDialog({ executionId, source = 'plan', onClose }: {
+export default function AgentLiveDialog({ executionId, source = 'plan', initialFilter = 'all', onClose }: {
   executionId: string
   source?: ModelOutputSource
+  initialFilter?: typeof filters[number]
   onClose: () => void
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
@@ -20,7 +22,7 @@ export default function AgentLiveDialog({ executionId, source = 'plan', onClose 
   const titleId = useId()
   const [snapshot, setSnapshot] = useState<AgentLiveOutput | null>(null)
   const [error, setError] = useState('')
-  const [filter, setFilter] = useState<typeof filters[number]>('all')
+  const [filter, setFilter] = useState<typeof filters[number]>(initialFilter)
 
   useLayoutEffect(() => {
     const panel = dialog.current
@@ -94,20 +96,23 @@ export default function AgentLiveDialog({ executionId, source = 'plan', onClose 
         {entries.length ? <ol className="agent-live-list">{entries.map(entry => <LiveMessage key={entry.id} entry={entry} />)}</ol>
           : <p className="quiet-note">{snapshot && !snapshot.active && !snapshot.entries.length
             ? uiText('这次运行没有可查看的模型输出。')
-            : filter === 'reasoning' ? uiText("尚无思考内容。这里会显示模型服务提供的思考文本，以及模型随决策给出的简要依据。") : uiText("此分类暂时没有输出。")}</p>}
+            : filter === 'output' ? uiText('暂无模型原文。正文会在模型返回时显示。')
+              : filter === 'reasoning' ? uiText("尚无思考内容。这里会显示模型服务提供的思考文本，以及模型随决策给出的简要依据。") : uiText("此分类暂时没有输出。")}</p>}
       </div>
     </div>
   </dialog>
 }
 
-// Render one activity message as plain text with its execution context.
+// Render one activity message with its execution context.
 function LiveMessage({ entry }: { entry: AgentLiveEntry }) {
+  const authoredByModel = entry.kind === 'output' || (entry.kind === 'reasoning' && entry.source === 'provider')
   return <li className={`agent-live-message agent-live-${entry.kind}`}>
     <div><strong>{labels[entry.kind]}</strong>
       {entry.case !== null && <span>{uiText("用例 ")}{entry.case}{entry.step !== null ? uiText(" · 步骤 {0}", entry.step) : ''}</span>}
+      {entry.clipped && <span>{uiText('文本已截断')}</span>}
       {entry.at && <time dateTime={entry.at}>{clock.format(new Date(entry.at))}</time>}
     </div>
-    <p>{activityText(entry)}</p>
+    {authoredByModel ? <ModelOutputPreview text={entry.text} /> : <p>{activityText(entry)}</p>}
   </li>
 }
 

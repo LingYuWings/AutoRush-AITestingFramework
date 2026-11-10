@@ -120,8 +120,18 @@ class ModelClient:
                         stats.append({'http_status':response.status_code,'latency_ms':round((time.monotonic()-attempt_start)*1000)})
                         continue
                     response.raise_for_status()
+                    streamed_text = False
+
+                    # Publish the reply before validation, preserving failed attempts for review.
+                    def publish_text(text):
+                        nonlocal streamed_text
+                        if text:
+                            self._publish('output', text)
+                            streamed_text = True
+
                     if 'text/event-stream' in response.headers.get('content-type', '').lower():
-                        body = await read_model_stream(response, self._config.protocol, lambda text: self._publish('reasoning', text))
+                        body = await read_model_stream(response, self._config.protocol,
+                            lambda text: self._publish('reasoning', text), publish_text)
                     else:
                         data = bytearray()
                         async for chunk in response.aiter_bytes():
@@ -131,7 +141,8 @@ class ModelClient:
                         if self._live_output:
                             for reasoning in response_reasoning(body, self._config.protocol):
                                 self._publish('reasoning', reasoning)
-                    text, reason, usage = parse_model_response(body,self._config.protocol)
+                    text, reason, usage = parse_model_response(body,self._config.protocol,
+                        on_text=publish_text if self._live_output and not streamed_text else None)
                     value = json.loads(_strip_code_fence(text))
                     if not isinstance(value,dict): raise ValueError('model response must be a JSON object')
                     stats.append({'latency_ms':round((time.monotonic()-attempt_start)*1000),'usage':usage,'finish_reason':reason})

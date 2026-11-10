@@ -1,4 +1,4 @@
-"""Read bounded model SSE responses while forwarding provider-visible reasoning."""
+"""Read bounded model SSE responses and forward provider-visible text."""
 import json
 
 
@@ -56,18 +56,21 @@ def response_reasoning(body, protocol):
 
 
 # Assemble the completed response in the same shape used by the JSON protocol adapters.
-async def read_model_stream(response, protocol, on_reasoning):
+async def read_model_stream(response, protocol, on_reasoning, on_text):
     text = []
     usage = {}
     response_id = finish = None
     async for event in _events(response):
         kind = event.get('type')
+        content = None
         if kind in {'error', 'response.failed', 'response.incomplete'} or 'error' in event:
             raise ValueError('model stream was truncated or incomplete')
         if protocol == 'openai_responses':
             if kind == 'response.completed' and isinstance(event.get('response'), dict):
                 return event['response']
             reasoning = event.get('delta') if kind == 'response.reasoning_summary_text.delta' else None
+            if kind == 'response.output_text.delta':
+                content = event.get('delta')
         elif protocol == 'anthropic_messages':
             if kind == 'message_start':
                 message = event.get('message') or {}
@@ -100,6 +103,8 @@ async def read_model_stream(response, protocol, on_reasoning):
             reasoning = delta.get('reasoning_content') or delta.get('reasoning')
         if isinstance(reasoning, str) and reasoning:
             on_reasoning(reasoning)
+        if isinstance(content, str) and content:
+            on_text(content)
     if protocol == 'openai_chat' and finish:
         return {'id': response_id, 'usage': usage,
                 'choices': [{'finish_reason': finish, 'message': {'content': ''.join(text)}}]}

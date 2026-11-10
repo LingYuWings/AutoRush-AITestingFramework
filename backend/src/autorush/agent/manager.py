@@ -182,9 +182,9 @@ class AgentRunManager:
                     token=os.getenv(config.secret_ref.removeprefix('env:'))
                     if token: output.secrets.add(token)
                 if isinstance(client, ModelClient):
-                    # Merge streamed reasoning fragments while keeping decisions as separate entries.
+                    # Merge provider text fragments within each model attempt.
                     def model_activity(kind,text):
-                        output.publish(kind,text,append=kind=='reasoning')
+                        output.publish(kind,text,append=kind in {'reasoning','output'})
                     client.set_live_output(model_activity)
             await self.emit('run.started',{'run_id':str(record.id),'plan_id':str(record.plan_id),'case_count':len(record.case_snapshots)})
             # Save completed and active case progress and honor cancellation.

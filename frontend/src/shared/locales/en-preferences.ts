@@ -1,6 +1,13 @@
 // English messages for language preferences and console-generated run activity.
 export default {
   '模型输出': 'Model Output',
+  '模型原文': 'Model Response',
+  '查看模型原文': 'View Model Response',
+  '查看原始文本': 'View Original Text',
+  '展开原始文本可查看其余内容。': 'Expand the original text to see the remaining content.',
+  '页面元素预览': 'Page Element Preview',
+  '暂无模型原文。正文会在模型返回时显示。': 'No model response yet. Text will appear here as the model returns it.',
+  '文本已截断': 'Text truncated',
   '查看模型输出': 'View model output',
   '关闭模型输出': 'Close model output',
   '实时视图显示最新记录，运行结束后可查看保留的历史输出。': 'The live view shows recent entries. Review the retained transcript after the run ends.',

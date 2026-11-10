@@ -2,13 +2,45 @@
 from collections import deque
 from contextlib import closing
 from datetime import datetime, timezone
+import json
+import re
 
-from autorush.api_testing.variables import redact
+from autorush.api_testing.variables import SENSITIVE, redact
 
 
 MAX_EVENTS = 80
 MAX_ARCHIVE_EVENTS = 800
 MAX_TEXT = 6_000
+_OUTPUT_FIELD = re.compile(r'("(?:\\.|[^"\\])*")\s*:|\b([\w-]+)\s*[:=]')
+
+
+# Preserve clean reply text and mask credential fields even while JSON is incomplete.
+def _display_output(text, secrets):
+    body = text.strip()
+    if body.startswith('```') and body.endswith('```') and '\n' in body:
+        body = body.split('\n', 1)[1][:-3].strip()
+    try:
+        parsed = json.loads(body)
+    except (ValueError, RecursionError):
+        # Until a sensitive value can be parsed safely, withhold the following text.
+        for match in _OUTPUT_FIELD.finditer(text):
+            key = match[2]
+            if key is None:
+                try:
+                    key = json.loads(match[1])
+                except ValueError:
+                    key = match[1]
+            if SENSITIVE.search(key):
+                return text[:match.end()] + ' [redacted]'
+    else:
+        try:
+            sanitized = redact(parsed, secrets)
+        except RecursionError:
+            return '[redacted]'
+        if sanitized != parsed:
+            replacement = json.dumps(sanitized, ensure_ascii=False, indent=2)
+            return text.replace(body, replacement, 1)
+    return text
 
 
 # Collect ordered messages separately from reports and checkpoints.
@@ -21,31 +53,45 @@ class LiveOutput:
         self.step = None
         self.secrets = set()
 
-    # Add an event, coalescing consecutive deltas from a single reasoning response.
+    # Add an event, merging interleaved provider fragments within one request.
     def publish(self, kind, text, *, append=False):
-        previous = self.events[-1] if self.events else None
-        if append and previous and previous['kind'] == kind and (previous['case'], previous['step']) == (self.case, self.step):
-            previous['text'] = (previous['text'] + text)[:MAX_TEXT]
-            return
+        if append:
+            for previous in reversed(self.events):
+                if previous['kind'] == 'model' or (previous['case'], previous['step']) != (self.case, self.step):
+                    break
+                if previous['kind'] == kind and previous['streamed']:
+                    combined = previous['text'] + text
+                    previous['text'] = combined[:MAX_TEXT]
+                    previous['clipped'] |= len(combined) > MAX_TEXT
+                    return
         self.sequence += 1
         self.events.append({'id': self.sequence, 'kind': kind, 'text': text[:MAX_TEXT],
                             'case': self.case, 'step': self.step, 'at': datetime.now(timezone.utc).isoformat(),
-                            'streamed': append})
+                            'streamed': append, 'clipped': len(text) > MAX_TEXT})
 
     # Redact known credentials, including any still-incomplete suffix of a streamed token.
     def snapshot(self, limit=None):
         result = []
         events = list(self.events)
+        encoded_secrets = self.secrets | {json.dumps(secret, ensure_ascii=ascii_only)[1:-1]
+                                         for secret in self.secrets for ascii_only in (False, True)}
         for event in events if limit is None else events[-limit:]:
-            text = redact(event['text'], self.secrets)
+            secrets = encoded_secrets if event['kind'] == 'output' else self.secrets
+            if event['kind'] == 'output':
+                text = _display_output(event['text'], secrets)
+                for secret in sorted(filter(None, secrets), key=len, reverse=True):
+                    text = text.replace(secret, '[redacted]')
+            else:
+                text = redact(event['text'], secrets)
             if event['streamed']:
                 overlap = max((next((length for length in range(min(len(secret) - 1, len(text)), 0, -1)
                                      if text.endswith(secret[:length])), 0)
-                               for secret in self.secrets if secret and secret[0] in text), default=0)
+                               for secret in secrets if secret and secret[0] in text), default=0)
                 if overlap:
                     text = text[:-overlap] + '[redacted]'
             text = text.encode('utf-8', errors='replace').decode('utf-8')
             public = {key: value for key, value in event.items() if key != 'streamed'}
+            public['clipped'] |= len(text) > MAX_TEXT
             if event['kind'] == 'reasoning':
                 public['source'] = 'provider' if event['streamed'] else 'decision'
             result.append({**public, 'text': text[:MAX_TEXT]})
