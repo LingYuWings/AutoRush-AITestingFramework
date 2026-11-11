@@ -736,20 +736,67 @@ summary { transition: color var(--dur-1) var(--ease); }
 .report-list .empty-state { border-top: 0; }
 
 .agent-progress { margin-bottom: 12px; }
-.agent-progress-actions, .agent-live-filters { display: flex; flex-wrap: wrap; gap: 8px; }
-.agent-live-dialog { width: min(720px, calc(100% - 32px)); }
-.agent-live-layout { height: min(650px, calc(100dvh - 34px)); }
-.agent-live-filters { padding: 12px 20px; border-bottom: 1px solid var(--line); }
-.agent-live-filters [aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
-.agent-live-content { flex: 1; }
-.agent-live-list { display: grid; gap: 10px; margin: 0; padding: 14px 0 20px; list-style: none; }
-.agent-live-message { padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-sunken); }
-.agent-live-message > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; color: var(--ink-3); font-size: 12px; }
-.agent-live-message strong { color: var(--ink); }
-.agent-live-message time { margin-inline-start: auto; font-variant-numeric: tabular-nums; }
-.agent-live-message :is(p, pre) { margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-.agent-live-message pre { font: 12.5px/1.5 var(--font-mono); }
-.model-output-preview { display: grid; gap: 8px; margin-top: 8px; overflow-wrap: anywhere; }
+/* ------------------------------------------------------------------
+   Model output viewer: a timeline grouped by case/step. Model replies and provider
+   thinking are cards; status, decision and execution activity are single log lines.
+   ------------------------------------------------------------------ */
+.agent-progress-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.agent-live-dialog { width: min(820px, calc(100% - 32px)); }
+.agent-live-layout { height: min(720px, calc(100dvh - 34px)); }
+.agent-live-status { display: flex; align-items: center; gap: 7px; }
+.agent-live-status .live-dot { color: var(--accent); }
+.agent-live-toolbar { padding: 10px 20px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.segmented.agent-live-filters { flex-wrap: nowrap; }
+.agent-live-filters button { white-space: nowrap; }
+.agent-live-filters button span:empty { display: none; }
+.agent-live-viewport { position: relative; display: flex; flex: 1; min-height: 0; }
+.agent-live-content { flex: 1; padding-bottom: 20px; }
+.agent-live-empty { padding: 24px 0; }
+
+.agent-live-group { margin-top: 4px; }
+.agent-live-group-title {
+  position: sticky; top: 0; z-index: 1;
+  margin: 0 -20px; padding: 10px 20px 6px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  color: var(--ink-2); font-size: 12.5px; font-weight: 600; letter-spacing: .01em;
+}
+.agent-live-list { display: grid; gap: 2px; margin: 0; padding: 0 0 10px; list-style: none; border-bottom: 1px solid var(--line); }
+.agent-live-group:last-child .agent-live-list { border-bottom: 0; }
+.agent-live-list > li { display: grid; grid-template-columns: 64px minmax(0, 1fr); column-gap: 12px; align-items: baseline; animation: rise var(--dur-2) var(--ease) both; }
+.agent-live-list time { color: var(--ink-4); font: 11.5px var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* Log lines: quiet, scannable, outcome coloured. */
+.agent-live-list > .agent-live-line { grid-template-columns: 64px 64px minmax(0, 1fr); padding: 3px 0; font-size: 12.5px; }
+.agent-live-kind { color: var(--ink-4); font-size: 12px; white-space: nowrap; }
+.agent-live-line p { margin: 0; color: var(--ink-3); overflow-wrap: anywhere; }
+.agent-live-line code { color: var(--ink-2); font-size: 12px; }
+.agent-live-line.agent-live-decision .agent-live-kind, .agent-live-line.agent-live-decision code { color: var(--accent); }
+.agent-live-line.agent-live-reasoning p { color: var(--ink-2); }
+.agent-live-outcome { margin-inline-start: 8px; font-weight: 500; }
+.outcome-passed { color: var(--pass); }
+.outcome-failed, .outcome-error { color: var(--fail); }
+.outcome-blocked { color: var(--warn); }
+.outcome-skipped { color: var(--ink-4); }
+
+/* Cards: the model's own words. */
+.agent-live-message { margin: 6px 0; }
+.agent-live-message > time { padding-top: 11px; }
+.agent-live-card { min-width: 0; padding: 10px 14px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.agent-live-output .agent-live-card { border-inline-start: 3px solid var(--accent); }
+.agent-live-reasoning .agent-live-card { border-style: dashed; background: var(--surface-sunken); }
+.agent-live-card-head { display: flex; align-items: baseline; gap: 10px; color: var(--ink-3); font-size: 12px; }
+.agent-live-card-head strong { color: var(--ink-2); font-weight: 600; }
+.agent-live-clipped { padding: 0 6px; border-radius: 4px; background: var(--warn-soft); color: var(--warn); }
+.agent-live-reasoning .model-output-text { color: var(--ink-2); font-style: italic; }
+.agent-live-jump {
+  position: absolute; bottom: 14px; inset-inline: 0; z-index: 2;
+  width: max-content; height: 28px; margin-inline: auto; padding: 0 12px;
+  border-radius: 14px; box-shadow: var(--shadow-overlay); font-size: 12.5px;
+}
+
+.model-output-preview { display: grid; gap: 8px; margin-top: 6px; font-size: 13.5px; overflow-wrap: anywhere; }
+.model-output-preview :is(p, pre) { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.model-output-preview pre { padding: 8px 10px; border-radius: var(--radius); background: var(--surface-sunken); font: 12.5px/1.55 var(--font-mono); }
 .model-output-fields { display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 1fr); gap: 4px 12px; margin: 0; }
 .model-output-fields dt { color: var(--ink-3); max-width: min(22ch, 37vw); }
 .model-output-fields dd { min-width: 0; margin: 0; }
@@ -759,10 +806,37 @@ summary { transition: color var(--dur-1) var(--ease); }
 .model-output-text :is(ul, ol), .model-output-array { padding-inline-start: 1.35em; }
 .model-output-elements { margin: 4px 0; padding: 8px; border: 1px solid var(--line); border-radius: var(--radius); }
 .model-output-element { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 5px; margin: 2px; padding: 2px 6px; border: 1px solid var(--line); border-radius: 4px; }
-.model-output-source { padding-top: 6px; border-top: 1px solid var(--line); color: var(--ink-3); }
-.model-output-source summary { cursor: pointer; }
-.agent-live-reasoning strong { color: var(--ink-3); }
-.agent-live-decision strong { color: var(--accent); }
+.model-output-source { color: var(--ink-3); font-size: 12px; }
+.model-output-source summary { width: fit-content; cursor: pointer; }
+.model-output-source summary:hover { color: var(--ink); }
+.model-output-source pre { margin-top: 6px; max-height: 320px; overflow: auto; }
+
+/* A recognized agent decision: what it did or checked, then why. */
+.model-decision { display: grid; gap: 8px; }
+.model-decision-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.model-decision-kind { padding: 1px 7px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 600; }
+.model-decision-verify .model-decision-kind, .model-decision-verdict .model-decision-kind { background: var(--pass-soft); color: var(--pass); }
+.model-decision-blocked .model-decision-kind { background: var(--warn-soft); color: var(--warn); }
+.model-decision-operation { color: var(--ink); font-size: 13px; font-weight: 600; }
+.model-decision-meta { color: var(--ink-3); font-size: 12px; }
+.model-decision-result { font-size: 12.5px; font-weight: 500; }
+.model-decision-result.pass { color: var(--pass); }
+.model-decision-result.fail { color: var(--fail); }
+.model-decision-params, .model-decision-checks { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.model-decision-params li, .model-decision-checks li { display: inline-flex; align-items: baseline; gap: 6px; max-width: 100%; padding: 2px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface-sunken); font-size: 12px; }
+.model-decision-params li > span { color: var(--ink-3); }
+.model-decision-params code, .model-decision-checks code { color: var(--ink); overflow-wrap: anywhere; }
+.model-decision-checks li > span { color: var(--ink-4); }
+.model-decision-params .model-decision-note { border-style: dashed; background: transparent; color: var(--ink-4); }
+.model-decision-expected { display: flex; gap: 8px; color: var(--ink-2); }
+.model-decision-expected > span { flex-shrink: 0; color: var(--ink-3); font-size: 12px; line-height: 1.9; }
+.model-decision-reason { color: var(--ink); line-height: 1.6; }
+.model-decision-rest { padding: 6px 10px; border-radius: var(--radius); background: var(--surface-sunken); font-size: 12.5px; }
+@media (max-width: 640px) {
+  .agent-live-list > li, .agent-live-list > .agent-live-line { grid-template-columns: minmax(0, 1fr); }
+  .agent-live-list > li > :is(time, span):empty { display: none; }
+  .agent-live-message > time { padding-top: 0; }
+}
 .agent-trace details { margin: 12px 0; }
 .agent-trace img { max-width: 320px; max-height: 360px; object-fit: contain; border: 1px solid var(--line); border-radius: var(--radius); }
 .editor-panel textarea { min-height: 76px; padding: 10px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface); color: inherit; font: inherit; }
