@@ -33,10 +33,13 @@ def bounded_evidence(value, limit=65536):
     if response:
         body = response.get('body')
         text = body if isinstance(body, str) else json.dumps(body, ensure_ascii=False)
-        if len(text.encode()) > limit:
-            response['body'] = text.encode()[:limit].decode(errors='ignore')
+        body_bytes = text.encode()
+        raw_bytes = response.get('text', '').encode()
+        if len(body_bytes) > limit:
+            response['body'] = body_bytes[:limit].decode(errors='ignore')
+        if max(len(body_bytes), len(raw_bytes)) > limit:
             response['history_truncated'] = True
-        response['text'] = response.get('text', '').encode()[:limit].decode(errors='ignore')
+        response['text'] = raw_bytes[:limit].decode(errors='ignore')
     return stored
 
 
@@ -251,7 +254,9 @@ class ApiEngine:
                                 chunks.append(chunk)
                             content = b''.join(chunks)
                             status_code = response.status_code
+                            reason_phrase = response.reason_phrase
                             response_headers = dict(response.headers)
+                            cookie_names = list(dict.fromkeys(cookie.name for cookie in response.cookies.jar))[:100]
                             next_location = response.headers.get('location')
                             encoding = response.encoding or 'utf-8'
                         if spec.follow_redirects and status_code in {301, 302, 303, 307, 308} and next_location:
@@ -277,7 +282,8 @@ class ApiEngine:
             self.secrets.update(secret_strings(response_headers))
             elapsed = (time.perf_counter() - started) * 1000
             output = {'status_code': status_code, 'body': parsed_body, 'text': text,
-                'headers': response_headers, 'elapsed_ms': elapsed, 'bytes': len(content), 'url': str(url)}
+                'reason_phrase': reason_phrase, 'headers': response_headers, 'cookie_names': cookie_names,
+                'elapsed_ms': elapsed, 'bytes': len(content), 'url': str(url)}
             checks = [evaluate_check(check, output) for check in resolved_checks]
             extracted = {}
             for extraction in resolved_extractions:

@@ -20,7 +20,7 @@ export type FolderRecord = RecordOf<Folder>
 export type ApiExecution = {
   id?:string; created_at?:string; request_id?:string|null; name:string; method:string; url:string;
   status:'passed'|'failed'|'error'|'blocked'|'skipped'; detail:string; elapsed_ms:number;
-  request?:Record<string,unknown>; response:{status_code:number; body:unknown; text:string; headers:Record<string,string>; elapsed_ms:number; bytes:number; url:string; history_truncated?:boolean}|null;
+  request?:Record<string,unknown>; response:{status_code:number; reason_phrase?:string; body:unknown; text:string; headers:Record<string,string>; cookie_names?:string[]; elapsed_ms:number; bytes:number; url:string; history_truncated?:boolean}|null;
   assertions:{passed:boolean;detail:string}[]; extracted:Record<string,unknown>
 }
 export type CollectionResult = {status:ApiExecution['status']; results:ApiExecution[]; detail?:string}

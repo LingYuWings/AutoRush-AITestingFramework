@@ -1,7 +1,7 @@
 // Render model replies as readable text, structured fields, and inert element previews.
 import { Fragment, memo, type ReactNode } from 'react'
 import { uiText } from '../../shared/i18n.ts'
-import { decodeModelEntities, decodeModelProse, parseModelPreview } from './model-output-format'
+import { decodeModelEntities, decodeModelProse, formatDecisionValue, parseModelPreview, readDecision, type DecisionView } from './model-output-format'
 
 const htmlTags = /<\/?(?:a|article|b|blockquote|br|button|code|div|em|fieldset|form|h[1-6]|hr|img|input|label|li|ol|option|p|pre|section|select|span|strong|table|tbody|td|textarea|th|thead|tr|ul)(?=[\s/>])/i
 const controls = new Set(['a', 'button', 'img', 'input', 'select', 'textarea'])
@@ -12,14 +12,44 @@ const maxChildren = 60
 // Provide a formatted view by default and keep the exact saved reply available.
 export default memo(function ModelOutputPreview({ text }: { text: string }) {
   const preview = parseModelPreview(text)
+  const decision = preview.kind === 'json' ? readDecision(preview.value) : null
   return <section className="model-output-preview">
-    {preview.kind === 'json' ? <JsonValue value={preview.value} depth={0} /> : <TextPreview text={preview.value} decoded={preview.decoded} />}
+    {decision ? <Decision value={decision} />
+      : preview.kind === 'json' ? <JsonValue value={preview.value} depth={0} /> : <TextPreview text={preview.value} decoded={preview.decoded} />}
     <details className="model-output-source">
       <summary>{uiText('查看原始文本')}</summary>
       <pre>{text}</pre>
     </details>
   </section>
 })
+
+const decisionLabels = { action: uiText('动作'), verify: uiText('核验'), blocked: uiText('无法继续'), verdict: uiText('独立核验') }
+
+// Lead with what the model chose to do or check, then its stated reason; leftover fields stay visible below.
+function Decision({ value }: { value: DecisionView }) {
+  return <div className={`model-decision model-decision-${value.kind}`}>
+    <div className="model-decision-head">
+      <span className="model-decision-kind">{decisionLabels[value.kind]}</span>
+      {value.kind === 'action' && <><code className="model-decision-operation">{value.operation}</code>
+        {value.element && <span className="model-decision-meta">{uiText('元素')} <code>{value.element}</code></span>}</>}
+      {value.kind === 'verify' && value.check?.mode === 'visual' && <span className={`model-decision-result ${value.check.passed === false ? 'fail' : value.check.passed ? 'pass' : ''}`}>
+        {value.check.passed === null ? uiText('视觉核验') : value.check.passed ? uiText('视觉核验通过') : uiText('视觉核验未通过')}</span>}
+      {value.kind === 'verdict' && <span className={`model-decision-result ${value.satisfied ? 'pass' : 'fail'}`}>{value.satisfied ? uiText('符合预期') : uiText('不符合预期')}</span>}
+    </div>
+    {value.kind === 'action' && value.parameters.length > 0 && <ul className="model-decision-params" aria-label={uiText('参数')}>
+      {value.parameters.map(([key, item]) => <li key={key}><span>{key}</span><code>{formatDecisionValue(item)}</code></li>)}
+      {value.coordinates && <li className="model-decision-note">{uiText('坐标按 0–1000 归一化')}</li>}
+    </ul>}
+    {(value.kind === 'verify' || value.kind === 'verdict') && value.expected && <p className="model-decision-expected"><span>{uiText('预期')}</span>{value.expected}</p>}
+    {value.kind === 'verify' && value.check?.mode === 'deterministic' && value.check.assertions.length > 0 && <ul className="model-decision-checks">
+      {value.check.assertions.map((item, index) => <li key={index}><code>{item.kind}{item.path ? ' ' + item.path : ''}</code><span>=</span><code>{formatDecisionValue(item.expected)}</code></li>)}
+    </ul>}
+    {value.kind === 'verify' && value.check?.mode === 'visual' && value.check.explanation && <p className="model-decision-expected"><span>{uiText('证据')}</span>{value.check.explanation}</p>}
+    {value.kind === 'verdict' && value.evidence && <p className="model-decision-reason">{value.evidence}</p>}
+    {value.kind !== 'verdict' && value.reason && <p className="model-decision-reason">{value.reason}</p>}
+    {value.rest.length > 0 && <div className="model-decision-rest"><JsonValue value={Object.fromEntries(value.rest)} depth={1} /></div>}
+  </div>
+}
 
 // Show JSON objects as fields and arrays as lists without escaping text a second time.
 function JsonValue({ value, depth }: { value: unknown; depth: number }) {
