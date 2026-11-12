@@ -51,8 +51,8 @@ class ApiExecution:
     checks: list[tuple[bool, str]]
 
 
-# Validate the URL and enforce the configured host allowlist.
-def validate_url(url, allowed_hosts):
+# Validate the URL and enforce a configured allowlist, or require one for Web preflight.
+def validate_url(url, allowed_hosts, *, require_allowlist=False):
     if not isinstance(url, str): raise ApiBlocked('HTTP URL must be text')
     try:
         parsed = urlsplit(url)
@@ -63,7 +63,7 @@ def validate_url(url, allowed_hosts):
         raise ApiBlocked('URL must be absolute HTTP(S), without user information')
     if parsed.fragment or '\\' in url or any(ord(char) < 32 for char in url):
         raise ApiBlocked('URL cannot contain a fragment, backslash or control characters')
-    if parsed.hostname.lower() not in {host.lower() for host in allowed_hosts}:
+    if (require_allowlist or allowed_hosts) and parsed.hostname.lower() not in {host.lower() for host in allowed_hosts}:
         raise ApiBlocked('API host is not in AUTORUSH_ALLOWED_API_HOSTS')
     return parsed
 

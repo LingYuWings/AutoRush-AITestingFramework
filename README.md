@@ -80,7 +80,6 @@ py -3.12 -m venv .venv-dev
 
 # First run: installs backend, frontend and Chromium, then starts everything.
 .\script\windows\start.ps1 -Install `
-  -ApiHosts "127.0.0.1,localhost" `
   -WebHosts "127.0.0.1,localhost" `
   -LlmHosts "127.0.0.1,localhost"
 ```
@@ -95,7 +94,6 @@ From the cloned repository, create the virtual environment and run the entry poi
 
 ```bash
 python3 -m venv .venv-dev
-export AUTORUSH_ALLOWED_API_HOSTS=127.0.0.1,localhost
 export AUTORUSH_ALLOWED_WEB_HOSTS=127.0.0.1,localhost
 export AUTORUSH_ALLOWED_LLM_HOSTS=127.0.0.1,localhost
 bash script/linux/start.sh --install  # Linux
@@ -112,7 +110,7 @@ On later runs, omit `--install` and open the console URL shown in the terminal. 
 | API docs | <http://127.0.0.1:8000/docs> |
 | Health check | <http://127.0.0.1:8000/health> |
 
-The Windows host options and Linux/macOS environment variables above list the hosts AutoRush is allowed to reach. Add your own test environments there, separated by commas.
+API testing allows any HTTP(S) host by default for the local operator. To restrict it, set `AUTORUSH_ALLOWED_API_HOSTS` to a comma-separated list of hostnames or pass `-ApiHosts` on Windows. The Windows option takes precedence over the environment variable. Restart the backend after changing the list. Configure Web and model hosts separately with the options above.
 
 ### Try it with the demo API
 

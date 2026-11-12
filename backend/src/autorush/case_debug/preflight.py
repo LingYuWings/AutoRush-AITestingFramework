@@ -20,7 +20,7 @@ def check_debug(settings, store, plan, case, device_hub, api_store):
         url = plan.web_base_url or ''
         parsed = urlsplit(url)
         if parsed.path not in {'', '/'}: raise ValueError('Web base URL must be an origin')
-        validate_url(url, set(settings.allowed_web_hosts))
+        validate_url(url, settings.allowed_web_hosts, require_allowlist=True)
     if plan.api_base_url: validate_url(plan.api_base_url, set(settings.allowed_api_hosts))
     if 'desktop' in kinds: check_desktop_target(settings, plan)
     if 'android' in kinds:

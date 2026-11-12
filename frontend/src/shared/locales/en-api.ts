@@ -1,5 +1,7 @@
 // English messages for the API Testing workbench and collection runner.
 export default {
+  '更多请求操作': 'More request actions',
+  '添加行': 'Add row',
   '批量编辑': 'Bulk edit',
   '批量编辑 {0}': 'Bulk edit {0}',
   '每行一组 Key: Value。以 # 加空格开头可禁用该行。': 'Enter one Key: Value pair per line. Start a line with # and a space to disable it.',
@@ -90,7 +92,7 @@ export default {
   "删除请求“{0}”？": "Delete request “{0}”?",
   "删除请求": "Delete request",
   "允许的目标主机：": "Allowed target hosts: ",
-  "尚未配置；请设置 -ApiHosts 后重启后端": "Unconfigured. Set -ApiHosts and restart the backend",
+  "所有 HTTP(S) 主机": "All HTTP(S) hosts",
   "。历史最多保留 200 条，响应与上传上限 1 MiB。": ". History stores up to 200 entries. Responses and uploads are limited to 1 MiB.",
   "已恢复历史请求配置，请核对后手动发送": "Request restored from history. Review it before sending.",
   "恢复历史请求到编辑器": "Restore request to editor",
@@ -322,4 +324,16 @@ export default {
   "预计执行 ": "Estimated total: ",
   " 次请求": " requests",
   "开始运行": "Start run",
+  "尚未发送请求": "No request sent yet",
+  "此范围内没有请求。": "No requests in this scope.",
+  "选择集合后显示可用请求。": "Choose a collection to list its requests.",
+  "选择一个环境": "Choose an environment",
+  "还没有环境": "No environments yet",
+  "新建环境以集中维护变量，运行时会冻结当前值。": "Create an environment to manage variables in one place. Runs freeze its current values.",
+  "暂无集合运行": "No collection runs yet",
+  "换个关键词或状态试试。": "Try a different keyword or status.",
+  "在集合 Runner 中运行后，记录会显示在这里。": "Runs started from the Collection Runner appear here.",
+  "暂无单请求记录": "No request history yet",
+  "换个关键词试试。": "Try a different keyword.",
+  "在请求工作台发送请求后，记录会显示在这里。": "Requests sent from the workbench appear here.",
 }

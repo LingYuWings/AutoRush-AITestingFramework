@@ -330,6 +330,15 @@ h1, h2, h3 { font-weight: 600; letter-spacing: -.01em; }
 .field :is(input, select, textarea):user-invalid:focus,
 .assertion-row :is(input, select):user-invalid:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var(--fail) 18%, transparent); }
 .mono-input { font-family: var(--font-mono) !important; font-size: 13px !important; }
+/* File pickers: the native button becomes a flat segment of the control (import dialog, Runner data, API bodies). */
+:is(.field, .api-file) input[type=file] { padding: 0; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface); color: var(--ink-3); font-size: 12.5px; cursor: pointer; }
+:is(.field, .api-file) input[type=file]::file-selector-button {
+  height: 32px; padding: 0 10px; margin-right: 10px;
+  border: 0; border-right: 1px solid var(--line-strong);
+  background: var(--surface-sunken); color: var(--ink-2); font: inherit; cursor: pointer;
+  transition: background var(--dur-1) var(--ease);
+}
+:is(.field, .api-file) input[type=file]:hover:not(:disabled)::file-selector-button { background: var(--hover); }
 .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
 /* Consistent rhythm for fields stacked in normal flow (containers using `gap` are left alone). */
 :is(.step-card, .editor-panel, .provider-form, .api-request-editor, .api-tab-content, .manual-authorization)

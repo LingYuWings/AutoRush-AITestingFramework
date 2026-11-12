@@ -18,6 +18,9 @@
 .api-node-card input:focus, .api-node-card select:focus, .api-node-card textarea:focus,
 .api-page input:focus, .api-page select:focus, .api-page textarea:focus,
 .api-folder-editor input:focus, .api-folder-editor select:focus, .api-folder-editor textarea:focus { border-color: var(--accent); box-shadow: var(--focus); }
+.api-workbench :is(input:not([type=checkbox]):not([type=file]), select, textarea):hover:not(:disabled):not(:focus),
+.api-page :is(input:not([type=checkbox]):not([type=file]), select, textarea):hover:not(:disabled):not(:focus) { border-color: var(--ink-4); }
+.api-workbench :is(input, select, textarea):user-invalid, .api-page :is(input, select, textarea):user-invalid { border-color: color-mix(in srgb, var(--fail) 70%, var(--line-strong)); }
 .api-workbench input::placeholder, .api-page input::placeholder, .api-workbench textarea::placeholder, .api-page textarea::placeholder { color: var(--ink-4); }
 .api-workbench input[type=file], .api-page input[type=file], .api-node-card input[type=file] { font-size: 12.5px; color: var(--ink-3); }
 .api-request-editor .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
@@ -30,33 +33,46 @@
 .api-workspace [hidden] { display: none !important; }
 .api-section:not([hidden]) { animation: rise var(--dur-2) var(--ease) both; }
 
-/* In the workspace the page header and section nav already introduce the module;
-   the workbench's own tools (import / new / reconnect) share the row with the request tabs. */
-.api-workspace .api-workbench > .api-page-heading { justify-content: flex-end; }
-@media (min-width: 761px) {
-  .api-workspace .api-request-tabs { margin-right: 190px; }
-  .api-workspace .api-workbench > .api-page-heading { align-self: flex-end; margin-top: -44px; }
+.main-content.api-main-content { min-height: 100%; max-width: none; padding: 0; background: var(--surface); }
+.api-workspace {
+  --api-library-width: clamp(194px, 19vw, 270px);
+  /* Selection and primary actions use the console accent, like every other page. */
+  --api-active: var(--accent);
+  display: grid; grid-template-columns: 88px minmax(0, 1fr); min-height: 100%;
 }
-.api-workspace .api-workbench > .api-page-heading > div:first-child,
+.api-workspace-main { min-width: 0; background: var(--surface-sunken); }
+.api-workbench-section { background: var(--surface); }
+.api-workspace-rail { display: flex; flex-direction: column; align-items: stretch; gap: 3px; padding: 5px 0; border-inline-end: 1px solid var(--line); background: var(--surface-sunken); }
+.api-workspace-rail { gap: 2px; padding: 6px; }
+.api-workspace-rail a { position: relative; display: grid; justify-items: center; gap: 4px; padding: 9px 4px; border-radius: var(--radius); color: var(--ink-3); font-size: 11.5px; text-align: center; text-decoration: none !important; transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease); }
+.api-workspace-rail a:hover { background: var(--hover); color: var(--ink); }
+.api-workspace-rail a[aria-current=page] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .api-workspace .api-library > .api-tabs { display: none; }
+.api-workspace-main > .api-section:not(.api-workbench-section) { max-width: 1280px; padding: 24px 28px 48px; }
+.api-workspace-tabbar { display: grid; grid-template-columns: var(--api-library-width) minmax(0, 1fr) minmax(132px, 185px); min-height: 42px; border-bottom: 1px solid var(--line); background: var(--surface-sunken); }
+.api-workspace-tabbar h1 { display: flex; align-items: center; margin: 0; padding: 0 14px; border-inline-end: 1px solid var(--line); font-size: 13.5px; font-weight: 600; }
+.api-active-environment { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 0 10px; border-inline-start: 1px solid var(--line); color: var(--ink-3); }
+.api-active-environment svg { flex: none; }
+.api-active-environment select { width: 100%; min-width: 0; height: 36px; border: 0; background: var(--surface-sunken); color: var(--ink); font: inherit; font-size: 12.5px; text-overflow: ellipsis; }
 
-.api-request-tabs { display: flex; gap: 4px; overflow-x: auto; padding: 0 0 12px; }
-.api-request-tabs > div { display: flex; align-items: center; flex-shrink: 0; max-width: 240px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); animation: rise var(--dur-2) var(--ease) both; transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease); }
-.api-request-tabs > div:hover { border-color: var(--line-strong); }
-.api-request-tabs > div.active { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: var(--accent-soft); }
-.api-request-tabs button { display: inline-flex; align-items: center; gap: 6px; min-width: 0; height: 30px; padding: 0 4px 0 11px; border: 0; background: transparent; color: var(--ink-2); font-size: 13px; }
+.api-request-tabs { display: flex; min-width: 0; overflow-x: auto; scrollbar-width: thin; }
+.api-request-tabs > div { display: flex; align-items: center; flex-shrink: 0; max-width: 224px; border-inline-end: 1px solid var(--line); }
+.api-request-tabs > div:hover { background: var(--hover); }
+.api-request-tabs > div.active { background: var(--surface); box-shadow: inset 0 2px var(--api-active); }
+.api-request-tabs button { display: inline-flex; align-items: center; gap: 6px; min-width: 0; min-height: 40px; padding: 0 5px 0 12px; border: 0; background: transparent; color: var(--ink-2); font-size: 13px; }
 .api-request-tabs button[role=tab] { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .api-request-tabs .api-method { min-width: auto; }
-.api-request-tabs .api-method[data-method=POST] { color: var(--warn); }
-.api-request-tabs .api-method:is([data-method=PUT],[data-method=PATCH]) { color: var(--accent); }
-.api-request-tabs .api-method[data-method=DELETE] { color: var(--fail); }
+.api-method[data-method=POST] { color: var(--warn); }
+.api-method:is([data-method=PUT],[data-method=PATCH]) { color: var(--accent); }
+.api-method[data-method=DELETE] { color: var(--fail); }
+.api-method:is([data-method=HEAD],[data-method=OPTIONS]) { color: var(--ink-3); }
 .api-tab-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .api-request-tabs .api-tab-add { flex-shrink: 0; padding: 0 8px; border-radius: var(--radius); }
 .api-request-tabs .api-tab-add:hover { background: var(--hover); }
-.api-request-tabs > div.active button[role=tab] { color: var(--accent); font-weight: 500; }
-.api-request-tabs .api-tab-close { display: inline-grid; place-items: center; flex-shrink: 0; width: 22px; height: 22px; margin-right: 4px; padding: 0; border-radius: 4px; color: var(--ink-4); }
+.api-request-tabs > div.active button[role=tab] { color: var(--ink); font-weight: 500; }
+.api-request-tabs .api-tab-close { display: inline-grid; place-items: center; flex-shrink: 0; width: 22px; min-height: 22px; margin-right: 5px; padding: 0; border-radius: 4px; color: var(--ink-4); }
 .api-request-tabs .api-tab-close:hover { background: var(--hover); color: var(--ink); }
-.api-tab-dirty { flex-shrink: 0; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); }
+.api-tab-dirty { flex-shrink: 0; width: 6px; height: 6px; border-radius: 50%; background: var(--api-active); }
 .api-tab-busy { color: var(--ink-3); font-weight: 400; }
 
 /* ------------------------------------------------------------------
@@ -165,7 +181,7 @@ textarea.api-code, .api-code { width: 100%; min-height: 160px; font-family: var(
 .api-response-body { min-height: 96px; max-height: 420px; margin: 0; padding: 14px 16px; overflow: auto; color: var(--ink-2); font-size: 12.5px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; animation: fade-in var(--dur-2) var(--ease) both; }
 .api-checks { margin: 0; padding: 12px 16px 12px 32px; font-size: 13px; }
 .api-checks li { margin: 6px 0; }
-.api-empty { padding: 28px 20px; color: var(--ink-3); font-size: 13px; text-align: center; animation: none; }
+.api-empty { padding: 8px 20px; animation: none; }
 
 .api-status-passed { color: var(--pass); }
 .api-status-failed, .api-status-error { color: var(--fail); }
@@ -204,11 +220,28 @@ textarea.api-code, .api-code { width: 100%; min-height: 160px; font-family: var(
    ------------------------------------------------------------------ */
 .api-page { padding: 20px 24px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); }
 .api-page > .api-page-heading { margin-bottom: 16px; }
-.api-page h2 { margin: 0; font-size: 17px; }
+.api-page h2 { margin: 0; font-size: 20px; line-height: 1.35; }
+.api-page-heading > .muted, .api-page-heading > div > .muted { margin: 4px 0 0; font-size: 13.5px; }
+.api-page-search { width: min(360px, 100%); }
+.api-page > .api-page-search { margin: 0 0 4px; }
+.api-history-modes { margin: 0 0 12px; }
+.api-page > .api-toolbar > .api-page-search { flex: 1; max-width: 360px; }
+.api-toolbar > .api-status-filter { flex: 0 0 auto; width: auto; min-width: 128px; }
+/* The shared search field draws the border; its inner input must not get the module's control box. */
+.api-page .search-field input:not([type=checkbox]):not([type=file]), .api-page .search-field input:not([type=checkbox]):not([type=file]):hover { min-height: 0; height: 100%; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.api-placeholder { display: grid; place-items: center; min-height: 220px; border: 1px dashed var(--line-strong); border-radius: var(--radius-lg); }
+.api-placeholder .empty-state { background: transparent; }
+.api-run-summary { display: inline-flex; align-items: center; gap: 10px; }
+.api-history-line { display: inline-flex; align-items: baseline; gap: 10px; min-width: 0; }
+.api-history button.active { background: var(--accent-soft); color: var(--ink); }
+.api-pagination { margin-top: 12px; padding: 8px 4px 0; border-top: 1px solid var(--line); }
+.api-run-actions { margin-top: 20px; }
+.api-run-actions strong { color: var(--ink); }
+.api-select-request .api-method { min-width: 48px; }
+.api-selected-request .icon-button { width: 26px; height: 26px; }
 .api-page h3 { margin: 0 0 8px; color: var(--ink-2); font-size: 13px; font-weight: 600; }
 .api-page > .api-toolbar { margin: 14px 0; }
-.api-page > .api-toolbar > input { flex: 1; max-width: 360px; }
-.api-page > input { width: 100%; max-width: 360px; }
+
 .api-page > .api-error, .api-page > .api-notice { margin-bottom: 12px; }
 .api-page > .api-tabs { margin-bottom: 4px; }
 
@@ -233,8 +266,9 @@ textarea.api-code, .api-code { width: 100%; min-height: 160px; font-family: var(
 .api-tree-request > button.active { background: var(--accent-soft); color: var(--accent); }
 .api-tree-order { display: inline-flex; float: right; gap: 2px; opacity: 0; transition: opacity var(--dur-1) var(--ease); }
 .api-tree-request:hover .api-tree-order, .api-tree summary:hover .api-tree-order, .api-tree-order:focus-within { opacity: 1; }
-.api-tree-order button, .api-tree-actions button, .api-selected-request button { padding: 2px 7px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--ink-3); font-size: 12px; }
-.api-tree-order button:hover:not(:disabled), .api-tree-actions button:hover:not(:disabled), .api-selected-request button:hover:not(:disabled) { border-color: var(--line-strong); color: var(--ink); }
+.api-tree-order button, .api-tree-actions button { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface); color: var(--ink-2); font-size: 12px; transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease); }
+.api-tree-order button { width: 22px; height: 22px; padding: 0; justify-content: center; border-color: var(--line); }
+.api-tree-order button:hover:not(:disabled), .api-tree-actions button:hover:not(:disabled) { background: var(--hover); color: var(--ink); }
 .api-tree-actions { display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 0 6px; }
 .api-folder-editor { margin-top: 12px; padding: 14px 0 0; border-top: 1px solid var(--line); animation: rise var(--dur-2) var(--ease) both; }
 .api-folder-editor h3 { margin: 0; font-size: 14px; }
@@ -273,6 +307,74 @@ textarea.api-code, .api-code { width: 100%; min-height: 160px; font-family: var(
 .api-draft-dialog p { margin: 0 0 12px; color: var(--ink-2); font-size: 13.5px; }
 .api-dialog-actions { flex-direction: row-reverse; justify-content: flex-start; margin-top: 18px; }
 .api-dialog-actions .text-button { margin-right: auto; }
+
+/* The workbench uses connected panes, while embedded API editors keep their card layout. */
+.api-workbench-section .api-layout { grid-template-columns: var(--api-library-width) minmax(0, 1fr); min-height: calc(100dvh - 100px); overflow: visible; border: 0; border-radius: 0; }
+.api-workbench-section .api-library { padding: 0 0 12px; background: var(--surface-sunken); }
+.api-library-head { padding: 8px 10px 4px; }
+.api-library-title, .api-library-search { display: flex; align-items: center; gap: 6px; }
+.api-library-title { justify-content: space-between; min-height: 32px; font-size: 13px; }
+.api-library-title .api-toolbar { gap: 4px; }
+.api-library-search-field { display: flex; flex: 1; align-items: center; gap: 5px; min-width: 0; padding-inline-start: 7px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--ink-3); }
+.api-library-search-field:focus-within { border-color: var(--accent); box-shadow: var(--focus); }
+.api-library-search-field > svg { flex: none; }
+.api-workbench .api-library-search-field > input.api-search { min-width: 0; min-height: 28px; margin: 0; padding: 0 5px 0 0; border: 0; font-size: 12px; box-shadow: none; }
+.api-workbench-section .api-library > .field, .api-workbench-section .api-library > .api-toolbar { margin: 6px 10px 0; }
+.api-workbench-section .api-library select { min-height: 28px; font-size: 12px; }
+.api-workbench-section .api-tree { margin: 6px 0 0; padding: 0 10px; }
+.api-workbench-section .api-tree-list { margin-inline-start: 4px; }
+.api-workbench-section .api-tree-request > button.active { background: var(--hover); color: var(--ink); }
+.api-workbench-section .api-editor-column { padding: 0; }
+.api-workbench-section .api-editor-column > :is(.api-import,.api-config-editor) { margin: 12px; }
+.api-workbench-section .api-workbench { gap: 0; }
+.api-workbench-section .api-workbench > :is(.api-error,.api-notice) { margin: 6px 12px; }
+.api-workbench-section .api-request-heading { min-height: 48px; padding: 7px 14px; border-bottom: 1px solid var(--line); }
+.api-workbench-section .api-editor-title { flex: 1; }
+.api-workbench-section .api-editor-title strong { font-size: 14px; }
+.api-workbench-section .api-execute-toolbar .secondary-button { min-height: 30px; padding: 0 9px; font-size: 12.5px; }
+.api-workbench-section .api-request-editor > :is(.api-error,.api-warning) { margin-inline: 14px; }
+.api-workbench-section .api-url-row { margin: 0; padding: 10px 14px; background: var(--surface-sunken); }
+.api-workbench-section .api-send-button { min-width: 96px; }
+.api-workbench-section .api-request-editor > .api-tabs { padding-inline: 8px; }
+.api-workbench-section .api-tabs button[aria-selected=true] { border-bottom-color: var(--api-active); }
+.api-workbench-section .api-request-editor > .api-tab-content { min-height: 160px; padding: 12px 14px; }
+.api-request-actions { position: relative; }
+.api-request-actions summary { list-style: none; cursor: pointer; }
+.api-request-actions summary::-webkit-details-marker { display: none; }
+.api-request-menu { position: absolute; inset: calc(100% + 4px) 0 auto auto; z-index: 4; width: min(270px, 80vw); padding: 6px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-overlay); }
+.api-request-menu .api-save-toolbar { display: grid; gap: 3px; margin: 0; padding: 0; border: 0; }
+.api-request-menu .api-action-group { display: grid; gap: 3px; }
+.api-request-menu .api-action-group + .api-action-group { margin: 0; padding: 4px 0 0; border: 0; border-top: 1px solid var(--line); }
+.api-request-menu :is(.secondary-button,.text-button) { justify-content: flex-start; min-height: 29px; padding: 0 8px; border: 0; font-size: 12.5px; }
+.api-request-menu .api-menu-run { width: 100%; }
+.api-request-menu .api-export-group > span { padding: 3px 8px 0; }
+.api-request-menu .api-save-toolbar > .danger { margin: 0; }
+.api-request-menu .api-host-note { margin: 4px 0 0; padding: 7px 8px 3px; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+.api-workbench-section .api-response { margin: 0; border: 0; border-top: 2px solid var(--line-strong); border-radius: 0; }
+.api-workbench-section .api-response-heading { background: var(--surface); }
+.api-workbench-section .api-empty { display: grid; place-content: center; min-height: 178px; margin: 0; }
+.api-workbench-section .api-response-body { min-height: 160px; }
+
+@media (min-width: 901px) {
+  .api-workspace-rail { position: sticky; top: 0; align-self: start; min-height: calc(100dvh - 52px); }
+  .api-workspace-tabbar { position: sticky; top: 0; z-index: 5; }
+}
+@media (max-width: 900px) {
+  .api-workspace { grid-template-columns: minmax(0, 1fr); }
+  .api-workspace-rail { flex-direction: row; flex-wrap: wrap; padding: 0; border-inline-end: 0; border-bottom: 1px solid var(--line); }
+  .api-workspace-rail a { display: flex; align-items: center; gap: 5px; padding: 7px 9px; }
+  .api-workspace-rail a svg { width: 15px; height: 15px; }
+  .api-workspace-rail a[aria-current=page] { box-shadow: inset 0 -2px var(--api-active); }
+}
+@media (max-width: 720px) {
+  .api-workspace-tabbar { grid-template-columns: minmax(0, 1fr) minmax(105px, 31%); }
+  .api-workspace-tabbar h1 { display: none; }
+  .api-workbench-section .api-layout { grid-template-columns: minmax(0, 1fr); }
+  .api-workbench-section .api-library { max-height: 245px; overflow: auto; border-inline-end: 0; border-bottom: 1px solid var(--line); }
+  .api-workspace-main > .api-section:not(.api-workbench-section) { padding: 12px; }
+  .api-workbench-section .api-url-row { padding-inline: 9px; }
+  .api-workbench-section .api-send-button { min-width: 60px; padding-inline: 7px; }
+}
 
 @media (max-width: 1050px) {
   .api-layout { grid-template-columns: 230px minmax(0, 1fr); }

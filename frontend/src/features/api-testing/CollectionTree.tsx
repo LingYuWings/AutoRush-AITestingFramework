@@ -1,5 +1,6 @@
 import { uiText } from '../../shared/i18n.ts'
 import {folderPath} from './types'
+import {ChevronDown,ChevronUp} from '../../components/icons'
 import {useState} from 'react'
 import {apiTesting} from './client'
 import {configuration} from './types'
@@ -33,8 +34,8 @@ export default function CollectionTree({collections,folders,requests,collectionI
     const items=entries(cid,parent)
     return <ul className="api-tree-list">{items.filter(matches).map(entry=>{
       const index=items.indexOf(entry),record=entry.record
-      const order=cid&&<span className="api-tree-order"><button type="button" aria-label={uiText("{0} 上移", record.name)} title={uiText("调整保存顺序")} disabled={busy||index===0} onClick={()=>move(items,index,-1,cid,parent)}>↑</button><button type="button" aria-label={uiText("{0} 下移", record.name)} disabled={busy||index===items.length-1} onClick={()=>move(items,index,1,cid,parent)}>↓</button></span>
-      return <li key={record.id}>{entry.kind==='folders'?<details open><summary><span>{record.name}</span>{order}</summary><div className="api-tree-actions"><button type="button" disabled={busy} onClick={()=>setEditing({record:entry.record,collectionId:entry.record.collection_id,parentId:entry.record.parent_id})}>{uiText("编辑")}</button><button type="button" disabled={busy} onClick={()=>setEditing({record:null,collectionId:entry.record.collection_id,parentId:record.id})}>{uiText("添加子文件夹")}</button><button type="button" onClick={()=>onRun({collectionId:entry.record.collection_id,folderId:record.id})}>{uiText("运行文件夹")}</button></div>{branch(entry.record.collection_id,record.id)}</details>:<div className="api-tree-request"><button type="button" className={selectedId===record.id?'active':''} onClick={()=>onOpen(entry.record)}><span className="api-method">{entry.record.method}</span>{record.name}</button>{order}</div>}</li>
+      const order=cid&&<span className="api-tree-order"><button type="button" aria-label={uiText("{0} 上移", record.name)} title={uiText("调整保存顺序")} disabled={busy||index===0} onClick={()=>move(items,index,-1,cid,parent)}><ChevronUp size={13}/></button><button type="button" aria-label={uiText("{0} 下移", record.name)} disabled={busy||index===items.length-1} onClick={()=>move(items,index,1,cid,parent)}><ChevronDown size={13}/></button></span>
+      return <li key={record.id}>{entry.kind==='folders'?<details open><summary><span>{record.name}</span>{order}</summary><div className="api-tree-actions"><button type="button" disabled={busy} onClick={()=>setEditing({record:entry.record,collectionId:entry.record.collection_id,parentId:entry.record.parent_id})}>{uiText("编辑")}</button><button type="button" disabled={busy} onClick={()=>setEditing({record:null,collectionId:entry.record.collection_id,parentId:record.id})}>{uiText("添加子文件夹")}</button><button type="button" onClick={()=>onRun({collectionId:entry.record.collection_id,folderId:record.id})}>{uiText("运行文件夹")}</button></div>{branch(entry.record.collection_id,record.id)}</details>:<div className="api-tree-request"><button type="button" className={selectedId===record.id?'active':''} onClick={()=>onOpen(entry.record)}><span className="api-method" data-method={entry.record.method}>{entry.record.method}</span>{record.name}</button>{order}</div>}</li>
     })}</ul>
   }
   return <section aria-label={uiText("集合请求树")} className="api-tree">

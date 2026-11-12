@@ -12,7 +12,7 @@ from pathlib import Path
 class Settings:
     database_path: Path
     report_dir: Path
-    allowed_api_hosts: frozenset[str]
+    allowed_api_hosts: frozenset[str] = frozenset()  # Empty allows all API hosts for the local operator.
     allowed_web_hosts: frozenset[str] = frozenset()
     allowed_llm_hosts: frozenset[str] = frozenset()
     frontend_port: int = 5173

@@ -765,7 +765,12 @@ def create_app(
             raise HTTPException(409, "plan references an unapproved case")
         all_steps = [step for case in cases if case for step in case.steps + case.postconditions]
         needs_android = any(step.driver == "android" for step in all_steps)
-        if any(step.parameters.get('request_snapshot_id') for step in all_steps) or plan.api_environment_snapshot_id:
+        # Unrestricted API execution must use the same trusted local boundary as the workbench.
+        if not settings.allowed_api_hosts and any(step.driver == 'api' for step in all_steps):
+            require_operator(x_autorush_operator_token)
+            if not trusted_local_request(request):
+                raise HTTPException(403, 'unrestricted API execution requires a trusted local operator')
+        elif any(step.parameters.get('request_snapshot_id') for step in all_steps) or plan.api_environment_snapshot_id:
             authorize_case_change(request, x_autorush_operator_token)
         needs_desktop = any(step.driver=='desktop' for step in all_steps)
         if needs_desktop:
