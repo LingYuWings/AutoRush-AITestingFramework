@@ -1,6 +1,6 @@
 import { uiText } from '../../shared/i18n.ts'
 import {useCallback,useEffect,useRef,useState} from 'react'
-import {X} from '../../components/icons'
+import {Plus,X} from '../../components/icons'
 import ApiWorkbench from './ApiWorkbench'
 import type {TabStatus,WorkbenchController} from './ApiWorkbench'
 import type {ApiRequest,ApiRequestRecord} from './types'
@@ -16,7 +16,7 @@ import './api-testing.css'
 export type ApiNavigationGuard=((proceed:()=>void)=>void)|null
 type Tab={key:string;request?:ApiRequestRecord;draft?:ApiRequest;initialDirty?:boolean;meta:TabStatus}
 // Allocate a tab with a fresh key and untouched draft metadata.
-const blank=():Tab=>({key:crypto.randomUUID(),meta:{name:uiText("未命名请求"),sourceId:null,dirty:false,busy:false}})
+const blank=():Tab=>({key:crypto.randomUUID(),meta:{name:uiText("未命名请求"),method:'GET',sourceId:null,dirty:false,busy:false}})
 export const apiSections=[['workbench',uiText("请求工作台")],['runner',uiText("集合 Runner")],['environments',uiText("环境管理")],['history',uiText("执行历史")]] as const
 const sections=apiSections
 
@@ -54,7 +54,7 @@ export default function ApiWorkspace({section,onNavigate,onCaseCreated,onGuardCh
     const existing=request?tabs.find(tab=>tab.meta.sourceId===request.id):null
     if(existing){setActive(existing.key);onNavigate('workbench');return}
     if(tabs.length>=20){setError(uiText("最多打开 20 个请求标签，请先保存并关闭一些标签。"));return}
-    const tab:Tab=request?{key:crypto.randomUUID(),request,meta:{name:request.name,sourceId:request.id,dirty:false,busy:false}}:draft?{key:crypto.randomUUID(),draft,initialDirty:true,meta:{name:draft.name,sourceId:null,dirty:true,busy:false}}:blank()
+    const tab:Tab=request?{key:crypto.randomUUID(),request,meta:{name:request.name,method:request.method,sourceId:request.id,dirty:false,busy:false}}:draft?{key:crypto.randomUUID(),draft,initialDirty:true,meta:{name:draft.name,method:draft.method,sourceId:null,dirty:true,busy:false}}:blank()
     setTabs(current=>[...current,tab]);setActive(tab.key);onNavigate('workbench')
   }
   // Resolve unsaved edits before disposing of a tab and its active request.
@@ -71,7 +71,13 @@ export default function ApiWorkspace({section,onNavigate,onCaseCreated,onGuardCh
   }catch(cause){setError(cause instanceof Error?cause.message:String(cause))}finally{setSaving(false)}}
   return <div className="api-workspace"><PageHeader title={uiText("API 测试")} description={uiText("调试请求、组织集合与环境，批量运行并复用为自动化用例节点。")}/><nav className="section-nav" aria-label={uiText("API 模块导航")}>{sections.map(([key,label])=><a key={key} href={`#/api-testing/${key}`} aria-current={page===key?'page':undefined} onClick={event=>{event.preventDefault();onNavigate(key)}}>{label}</a>)}</nav>
     {error&&!pending&&<p role="alert" className="api-error">{error}</p>}
-    <div className="api-section" hidden={page!=='workbench'}><div className="api-request-tabs" role="tablist" aria-label={uiText("请求标签")}>{tabs.map(tab=><div key={tab.key} className={tab.key===activeKey?'active':''}><button type="button" role="tab" aria-selected={tab.key===activeKey} onClick={()=>setActive(tab.key)}>{tab.meta.name}{tab.meta.dirty&&<span className="api-tab-dirty" aria-label={uiText("未保存")} title={uiText("未保存")}/>}{tab.meta.busy&&<span className="api-tab-busy">{uiText(" · 处理中")}</span>}</button><button type="button" className="api-tab-close" aria-label={uiText("关闭请求 {0}", tab.meta.name)} title={uiText("关闭标签")} onClick={()=>close(tab)}><X size={13}/></button></div>)}</div>
+    <div className="api-section" hidden={page!=='workbench'}><div className="api-request-tabs" role="tablist" aria-label={uiText("请求标签")}>{tabs.map(tab=><div key={tab.key} className={tab.key===activeKey?'active':''}>
+      <button type="button" role="tab" aria-selected={tab.key===activeKey} onClick={()=>setActive(tab.key)}>
+        <span className="api-method" data-method={tab.meta.method}>{tab.meta.method}</span><span className="api-tab-name">{tab.meta.name}</span>
+        {tab.meta.dirty&&<span className="api-tab-dirty" aria-label={uiText("未保存")} title={uiText("未保存")}/>}{tab.meta.busy&&<span className="api-tab-busy">{uiText(" · 处理中")}</span>}
+      </button><button type="button" className="api-tab-close" aria-label={uiText("关闭请求 {0}", tab.meta.name)} title={uiText("关闭标签")} onClick={()=>close(tab)}><X size={13}/></button></div>)}
+      <button type="button" className="api-tab-add" title={uiText('新建请求')} aria-label={uiText('新建请求')} onClick={()=>open(null)}><Plus size={16}/></button>
+    </div>
       {tabs.map(tab=><div key={tab.key} className="api-tab-panel" hidden={tab.key!==activeKey}><ApiWorkbench workspace resources={resources} refreshResources={refreshResources} initialRequest={tab.request} initialDraft={tab.draft} initialDirty={tab.initialDirty} onStatus={bindings(tab.key).status} onController={bindings(tab.key).controller} epoch={epoch}
         onPrepareCase={create=>guard(()=>{void create().then(id=>{if(id)void onCaseCreated(id)})})} onDeleteRequest={remove=>setPending({keys:[tab.key],proceed:remove,saveAsCopy:true})} onOpenRequest={request=>open(request)} onNewDraft={draft=>open(null,draft)} onRun={scope=>{setPreset(scope);onNavigate('runner')}} onCaseCreated={id=>guard(()=>{void onCaseCreated(id)})}/></div>)}
     </div>

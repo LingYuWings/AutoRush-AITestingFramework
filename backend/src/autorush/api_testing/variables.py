@@ -147,6 +147,9 @@ def redact_execution(value, secrets=()):
     if value.get('response'):
         for key in ['status_code', 'elapsed_ms', 'bytes', 'history_truncated']:
             if key in value['response']: result['response'][key] = value['response'][key]
+        names = value['response'].get('cookie_names')
+        if isinstance(names, list):
+            result['response']['cookie_names'] = redact([name for name in names if isinstance(name, str)], secrets)
     for original, sanitized in zip(value.get('assertions', []), result.get('assertions', [])):
         if isinstance(original, dict) and 'passed' in original: sanitized['passed'] = original['passed']
     return result

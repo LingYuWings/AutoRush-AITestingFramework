@@ -34,7 +34,7 @@
    the workbench's own tools (import / new / reconnect) share the row with the request tabs. */
 .api-workspace .api-workbench > .api-page-heading { justify-content: flex-end; }
 @media (min-width: 761px) {
-  .api-workspace .api-request-tabs { margin-right: 300px; }
+  .api-workspace .api-request-tabs { margin-right: 190px; }
   .api-workspace .api-workbench > .api-page-heading { align-self: flex-end; margin-top: -44px; }
 }
 .api-workspace .api-workbench > .api-page-heading > div:first-child,
@@ -46,6 +46,13 @@
 .api-request-tabs > div.active { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: var(--accent-soft); }
 .api-request-tabs button { display: inline-flex; align-items: center; gap: 6px; min-width: 0; height: 30px; padding: 0 4px 0 11px; border: 0; background: transparent; color: var(--ink-2); font-size: 13px; }
 .api-request-tabs button[role=tab] { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.api-request-tabs .api-method { min-width: auto; }
+.api-request-tabs .api-method[data-method=POST] { color: var(--warn); }
+.api-request-tabs .api-method:is([data-method=PUT],[data-method=PATCH]) { color: var(--accent); }
+.api-request-tabs .api-method[data-method=DELETE] { color: var(--fail); }
+.api-tab-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.api-request-tabs .api-tab-add { flex-shrink: 0; padding: 0 8px; border-radius: var(--radius); }
+.api-request-tabs .api-tab-add:hover { background: var(--hover); }
 .api-request-tabs > div.active button[role=tab] { color: var(--accent); font-weight: 500; }
 .api-request-tabs .api-tab-close { display: inline-grid; place-items: center; flex-shrink: 0; width: 22px; height: 22px; margin-right: 4px; padding: 0; border-radius: 4px; color: var(--ink-4); }
 .api-request-tabs .api-tab-close:hover { background: var(--hover); color: var(--ink); }
@@ -84,6 +91,25 @@
 .api-url-row { display: flex; gap: 8px; margin: 14px 0; }
 .api-url-row > input { flex: 1; min-width: 0; font-family: var(--font-mono) !important; font-size: 13px !important; }
 .api-url-row select { font-family: var(--font-mono) !important; font-weight: 600; }
+.api-request-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; }
+.api-request-heading .api-editor-title { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.api-workbench .api-url-row { gap: 0; }
+.api-workbench .api-url-row select { min-height: 40px; border-radius: var(--radius) 0 0 var(--radius); }
+.api-workbench .api-url-row > input { min-height: 40px; border-inline-start: 0; border-radius: 0 var(--radius) var(--radius) 0; }
+.api-url-row :is(input,select):focus { position: relative; z-index: 1; }
+.api-send-button { min-height: 40px; min-width: 80px; margin-inline-start: 8px; justify-content: center; white-space: nowrap; }
+.api-request-metadata > .field { margin: 8px 0; }
+.api-tab-count { color: var(--pass); }
+.api-pair-table { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.api-pair-grid { display: grid; grid-template-columns: 36px minmax(0, 1fr) minmax(0, 1.6fr) 36px; align-items: stretch; }
+.api-pair-grid + .api-pair-grid { border-top: 1px solid var(--line); }
+.api-pair-grid > * { min-width: 0; }
+.api-pair-grid > :not(:first-child) { border-inline-start: 1px solid var(--line); }
+.api-pair-grid > input[type=checkbox], .api-pair-grid > button { place-self: center; }
+.api-pair-table .api-pair-grid > input:not([type=checkbox]) { border-block: 0; border-inline-end: 0; border-inline-start-color: var(--line); border-radius: 0; }
+.api-pair-table .api-pair-grid > input:not([type=checkbox]):focus { box-shadow: inset var(--focus); }
+.api-pair-heading { background: var(--surface-sunken); color: var(--ink-3); font-size: 12px; }
+.api-pair-heading > span { padding: 6px 10px; }
 .api-kv, .api-variable, .api-assertion, .api-extraction { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
 .api-assertion, .api-extraction, .api-form-field { animation: rise var(--dur-2) var(--ease) both; }
 .api-kv > input:not([type=checkbox]), .api-variable > input:not([type=checkbox]), .api-assertion > input, .api-extraction > input { flex: 1; min-width: 0; }
@@ -119,11 +145,23 @@ textarea.api-code, .api-code { width: 100%; min-height: 160px; font-family: var(
    Response
    ------------------------------------------------------------------ */
 .api-response { margin-top: 20px; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); animation: rise var(--dur-2) var(--ease) both; }
-.api-response-heading { padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--surface-sunken); font-size: 13px; }
+.api-response-heading { justify-content: space-between; padding: 0 12px; border-bottom: 1px solid var(--line); background: var(--surface-sunken); font-size: 13px; }
+.api-response-heading > strong { padding: 10px 2px; }
+.api-response-heading .api-tabs { border-bottom: 0; }
 .api-response-heading .mono { color: var(--ink-3); font-size: 12px; }
-.api-response-heading .text-button { margin-left: auto; }
+.api-response-metrics { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; padding: 8px 0; font-size: 12px; }
+.api-response-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.api-response-search { display: flex; align-items: center; gap: 6px; min-width: 110px; margin-inline-start: auto; color: var(--ink-3); }
+.api-response-search > input { width: clamp(110px, 18vw, 210px); min-height: 28px; padding: 4px 6px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface); color: var(--ink); font: inherit; font-size: 12.5px; }
+.api-response-tools > .mono, .api-response-tools > small { font-size: 12px; color: var(--ink-3); }
+.api-response-body mark { background: var(--warn-soft); color: var(--ink); outline: 1px solid var(--warn); }
+.api-response-headers { margin: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius); }
+.api-response-headers > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); font: 12px/1.5 var(--font-mono); overflow-wrap: anywhere; }
+.api-response-headers > div + div { border-top: 1px solid var(--line); }
+.api-response-headers :is(dt,dd) { margin: 0; padding: 6px 10px; }
+.api-response-headers dd { border-inline-start: 1px solid var(--line); }
+.api-response-cookies { padding: 0 14px; }
 .api-response-detail { margin: 8px 14px 0; color: var(--ink-3); font-size: 12.5px; overflow-wrap: anywhere; }
-.api-response > .api-tabs { margin-top: 8px; padding: 0 8px; }
 .api-response-body { min-height: 96px; max-height: 420px; margin: 0; padding: 14px 16px; overflow: auto; color: var(--ink-2); font-size: 12.5px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; animation: fade-in var(--dur-2) var(--ease) both; }
 .api-checks { margin: 0; padding: 12px 16px 12px 32px; font-size: 13px; }
 .api-checks li { margin: 6px 0; }
