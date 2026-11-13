@@ -86,6 +86,8 @@ py -3.12 -m venv .venv-dev
 
 Windows desktop automation is enabled by default and needs an interactive desktop session. Use `-DesktopAutomation:$false` to disable it. Stop any running backend before changing the desktop setting, which is read at startup. You can drop `-Install` on later runs.
 
+To build the Windows x64 installer, install the development dependencies above, run `.\.venv-dev\Scripts\python.exe -m pip install pyinstaller`, then run `.\script\windows\release.ps1` or `npm --prefix frontend run electron:dist`. The installer in `frontend/release/` includes the Python backend and Playwright Chromium. The installed app starts its own loopback backend on port `18000` and keeps its data under the Electron user-data directory. See `logs/backend.log` in that directory if the backend fails to start. Model weights and Android USB platform tools are configured separately.
+
 When the verified local Qwen runtime and weights are installed under `artifacts/`, the Windows launcher enables on-demand loading for the saved `autorush-vision-2b`, `autorush-vision-4b` and `autorush-vision-8b` configurations at `http://127.0.0.1:8080/v1`. If that endpoint is offline, a plan or case-debug run starts an owned model process. Runs using the same profile share it, and the last run to finish or cancel releases the process and its GPU memory. Finish the current runs before starting a different owned profile. Existing external model servers keep their own lifecycle. The standalone `scripts/start-local-vision.ps1` launcher unloads idle weights after 30 seconds by default, configurable with `-IdleSeconds`.
 
 ### Linux and macOS

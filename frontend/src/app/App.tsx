@@ -19,7 +19,7 @@ import { shortId, statusLabel } from '../shared/format'
 import { parseRoute, routeHash, sameRoute, transition, type Route } from './router'
 import type { LiveEvent, RunProgress, View } from './types'
 import {
-  api, type CaseRecord, type DriverKind, type PlanRecord, type ProviderConfig, type ProviderPreset, type RunRecord,
+  api, LOCAL_BACKEND_ADDRESS, type CaseRecord, type DriverKind, type PlanRecord, type ProviderConfig, type ProviderPreset, type RunRecord,
 } from '../shared/api'
 
 // Heavy, rarely-first pages are split out and warmed up on idle so navigation never waits on a chunk.
@@ -241,7 +241,7 @@ export default function App() {
       <div className="sidebar-bottom">
         <div className={`backend-card ${connected ? 'online' : 'offline'}`}>
           <span className="backend-pulse" />
-          <div><strong>{connected ? uiText("本地后端在线") : uiText("后端未连接")}</strong><span className="mono">127.0.0.1:8000</span></div>
+          <div><strong>{connected ? uiText("本地后端在线") : uiText("后端未连接")}</strong><span className="mono">{LOCAL_BACKEND_ADDRESS}</span></div>
         </div>
         <div className="sidebar-version mono">v0.1 · local dev</div>
       </div>

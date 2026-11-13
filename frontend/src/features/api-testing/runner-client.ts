@@ -1,5 +1,5 @@
 import { uiText } from '../../shared/i18n.ts'
-import {api,ApiRequestError} from '../../shared/api.ts'
+import {api,API_BASE,ApiRequestError} from '../../shared/api.ts'
 import {apiCall,withApiAuthorization} from './client.ts'
 import type {ApiExecution} from './types'
 
@@ -32,7 +32,7 @@ export const runnerApi={
   rerun:(id:string)=>post<ApiRun>(`${path}/${encodeURIComponent(id)}/rerun`,{idempotency_key:crypto.randomUUID()}),
   // Download an authorized run export in the requested format.
   download:(id:string,format:'json'|'html'|'junit')=>withApiAuthorization(async()=>{
-    const base=window.location.protocol==='app:'?'http://127.0.0.1:8000':''
+    const base=API_BASE
     const response=await fetch(`${base}/api/v1/api-testing${path}/${encodeURIComponent(id)}/export?format=${format}`,{cache:'no-store',headers:{'X-Autorush-Operator-Token':api.getOperatorToken()}})
     if(!response.ok)throw new ApiRequestError(uiText("报告下载失败：")+response.status,response.status)
     const url=URL.createObjectURL(await response.blob()),anchor=document.createElement('a');anchor.href=url;anchor.download=`api-run-${id}.${format==='junit'?'xml':format}`;anchor.click();setTimeout(()=>URL.revokeObjectURL(url),1000)

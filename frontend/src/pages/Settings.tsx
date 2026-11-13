@@ -1,11 +1,11 @@
 import { useId, useState } from 'react'
 import { switchUiLanguage, uiLanguage, uiText, type UiLanguage } from '../shared/i18n.ts'
-import type { ProviderConfig, ProviderConfigPayload, ProviderPreflight, ProviderPreset } from '../shared/api'
+import { LOCAL_BACKEND_ADDRESS, type ProviderConfig, type ProviderConfigPayload, type ProviderPreflight, type ProviderPreset } from '../shared/api'
 import { PageHeader } from '../components/ui'
 import ProviderSettings from '../features/settings/ProviderSettings'
 
 const boundaries = [
-  { title: uiText("本地后端"), value: '127.0.0.1:8000', text: uiText("仅适合可信本机开发，尚无用户鉴权、项目隔离及生产密钥管理。") },
+  { title: uiText("本地后端"), value: LOCAL_BACKEND_ADDRESS, text: uiText("仅适合可信本机开发，尚无用户鉴权、项目隔离及生产密钥管理。") },
   { title: 'Android Portal', value: uiText("协议 v1"), text: uiText("设备端需手动启用无障碍服务与包名允许列表，使用配对令牌连接。") },
   { title: uiText("数据与报告"), value: 'SQLite', text: uiText("结果保存在本地数据库，并生成 JSON、HTML 与 JUnit XML 报告。") },
 ]

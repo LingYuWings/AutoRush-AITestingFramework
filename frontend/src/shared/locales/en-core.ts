@@ -356,6 +356,7 @@ export default {
   "当前为本地开发版本，以下边界尚未覆盖生产需求。": "This local development build has the following production limitations.",
   "本地操作授权不可用": "Local operator authorization unavailable",
   "无法连接本地后端，请先启动 127.0.0.1:8000 上的服务。": "Could not connect to the local backend. Start the service on 127.0.0.1:8000 first.",
+  "无法连接 {0} 上的本地后端。": "Could not connect to the local backend at {0}.",
   "请求": "Request",
   "参数无效": "Invalid parameters",
   "截图资源地址无效": "Invalid screenshot URL",
