@@ -5,10 +5,8 @@ from autorush.api.automation import check_desktop_target
 from autorush.api_testing.engine import validate_url
 from autorush.api_testing.nodes import needs_base_url, request_snapshot
 from autorush.api_testing.variables import substitute, variable_values
-from autorush.drivers.android.portal import validate_android_step
 from autorush.drivers.desktop.contracts import validate_desktop_step
 from autorush.drivers.web.validation import validate_web_step
-from autorush.drivers.api.http import legacy_request
 
 
 # Validate the selected drivers, targets and model before a debug run starts.
@@ -20,7 +18,7 @@ def check_debug(settings, store, plan, case, device_hub, api_store):
         url = plan.web_base_url or ''
         parsed = urlsplit(url)
         if parsed.path not in {'', '/'}: raise ValueError('Web base URL must be an origin')
-        validate_url(url, set(settings.allowed_web_hosts))
+        validate_url(url, settings.allowed_web_hosts, require_allowlist=True)
     if plan.api_base_url: validate_url(plan.api_base_url, set(settings.allowed_api_hosts))
     if 'desktop' in kinds: check_desktop_target(settings, plan)
     if 'android' in kinds:
@@ -28,7 +26,11 @@ def check_debug(settings, store, plan, case, device_hub, api_store):
         if str(plan.android_device_id) not in device_hub.list_devices(): raise ValueError('Android device is offline')
     if case.execution_mode == 'agent': validate_agent_configuration(settings, store, plan, [case])
     else:
-        validators = {'web': validate_web_step, 'desktop': validate_desktop_step, 'android': validate_android_step}
+        validators = {'web': validate_web_step, 'desktop': validate_desktop_step}
+        if 'android' in kinds:
+            from autorush.drivers.android.portal import validate_android_step
+
+            validators['android'] = validate_android_step
         for step in steps:
             if step.driver in validators: validators[step.driver](step)
             elif step.operation != 'api.request': raise ValueError('unsupported API operation')
@@ -36,7 +38,10 @@ def check_debug(settings, store, plan, case, device_hub, api_store):
         if step.driver != 'api': continue
         if needs_base_url(step, api_store) and not plan.api_base_url: raise ValueError('relative API nodes require an API base URL')
         spec, inherited = request_snapshot(step, api_store)
-        if spec is None: spec = legacy_request(step, plan.api_base_url)
+        if spec is None:
+            from autorush.drivers.api.http import legacy_request
+
+            spec = legacy_request(step, plan.api_base_url)
         if spec:
             values = variable_values(inherited)[0]
             if plan.api_environment_snapshot_id:

@@ -25,7 +25,6 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from autorush.config.settings import Settings
-from autorush.llm.local_runtime import LocalVisionRuntime
 from autorush.domain.models import (
     CaseResult,
     CaseCreate,
@@ -44,13 +43,9 @@ from autorush.devices.screen import ScreenHub, serve_viewer
 from autorush.devices.adb_screen import AdbScreenHub, serve_adb_viewer
 from contextlib import asynccontextmanager, closing
 from autorush.devices.pairing import PairingClaim, PairingCreate, PairingStore, validate_wss_url
-from autorush.drivers.api.http import HttpApiDriver
-from autorush.drivers.android.portal import AndroidPortalDriver, validate_android_step
 from autorush.drivers.base import Driver
-from autorush.drivers.web.playwright import PlaywrightWebDriver
 from autorush.drivers.web.validation import validate_web_step
 from autorush.drivers.desktop.contracts import validate_desktop_step
-from autorush.drivers.desktop.process import DesktopProcessDriver
 from autorush.api.automation import create_automation_router, check_desktop_target
 from autorush.api.model_catalog import create_model_catalog_router
 from autorush.api.agent_runs import create_agent_run_router
@@ -60,20 +55,31 @@ from autorush.agent.live_output import ModelOutputStore
 from autorush.api_testing.store import ApiStore
 from autorush.case_debug.manager import DebugRunManager
 from autorush.case_debug.router import create_debug_router
-from autorush.llm.client import ModelClient
 from autorush.runner.factory import DriverSession
 from autorush.evidence.report import save_reports
 from autorush.evidence.agent_trace import iter_run_screenshots
 from autorush.evidence.screenshot import evidence_path
 from autorush.events import EventBroker, PlatformEvent
-from autorush.llm.client import ModelClientError
-from autorush.llm.compiler import compile_case
 from autorush.llm.models import ProviderConfigCreate, ProviderConfigRecord, ProviderConnectionTest, ProviderPreflight, ProviderPreset
 from autorush.llm.models import CaseCompileRequest, CaseCompileResult
 from autorush.llm.presets import PROVIDER_PRESETS
 from autorush.llm.service import preflight_provider, test_provider_connection, validate_provider_config
 from autorush.runner.engine import Runner
 from autorush.storage.sqlite import SqliteStore
+
+
+# Load the browser adapter only when a session needs Web automation.
+async def create_web_driver(*args, **options):
+    from autorush.drivers.web.playwright import PlaywrightWebDriver
+
+    return await PlaywrightWebDriver.create(*args, **options)
+
+
+# Load the desktop adapter only when a session needs a desktop worker.
+async def create_desktop_driver(*args, **options):
+    from autorush.drivers.desktop.process import DesktopProcessDriver
+
+    return await DesktopProcessDriver.create(*args, **options)
 
 
 # Defines the allowed command envelope sent to an online Portal.
@@ -98,15 +104,15 @@ def create_app(
 ) -> FastAPI:
     settings = settings or Settings.from_env()
     store = SqliteStore(settings.database_path)
-    web_driver_factory = web_driver_factory or PlaywrightWebDriver.create
-    desktop_driver_factory = desktop_driver_factory or DesktopProcessDriver.create
+    web_driver_factory = web_driver_factory or create_web_driver
+    desktop_driver_factory = desktop_driver_factory or create_desktop_driver
     event_broker = event_broker or EventBroker()
     device_hub = DeviceHub()
     pairing_store = PairingStore(settings.database_path)
     operator_token = settings.operator_token
     operator_lock = threading.Lock()
     app = FastAPI(title="AutoRush-AITester", version="0.1.0")
-    local_vision = LocalVisionRuntime(settings.local_vision_launcher) if settings.local_vision_launcher else None
+    local_vision = None
     local_server = LocalDeviceServer(app, settings.database_path.parent / 'device-tls', settings.local_device_port)
     app.state.local_device_server = local_server
     # Recover persisted work at startup and close owned services on shutdown.
@@ -139,6 +145,13 @@ def create_app(
             desktop_factory=desktop_driver_factory,device_hub=device_hub,api_transport=api_transport)
     # Give formal and debug runs the same owned GPU runtime.
     def make_model_client(config, hosts, **kwargs):
+        from autorush.llm.client import ModelClient
+
+        nonlocal local_vision
+        if local_vision is None and settings.local_vision_launcher:
+            from autorush.llm.local_runtime import LocalVisionRuntime
+
+            local_vision = LocalVisionRuntime(settings.local_vision_launcher)
         return ModelClient(config, hosts, transport=llm_transport, local_runtime=local_vision, **kwargs)
 
     client_factory = model_client_factory or make_model_client
@@ -513,6 +526,9 @@ def create_app(
         config = store.get_provider_config(payload.provider_config_id)
         if config is None:
             raise HTTPException(404, "provider config not found")
+        from autorush.llm.client import ModelClientError
+        from autorush.llm.compiler import compile_case
+
         try:
             return await compile_case(payload, config, set(settings.allowed_llm_hosts), transport=llm_transport)
         except ModelClientError as exc:
@@ -524,6 +540,8 @@ def create_app(
         config = store.get_provider_config(config_id)
         if config is None:
             raise HTTPException(404, "provider config not found")
+        from autorush.llm.client import ModelClientError
+
         try:
             result = await test_provider_connection(
                 config, set(settings.allowed_llm_hosts), transport=llm_transport,
@@ -625,6 +643,8 @@ def create_app(
             if not step.operation or not step.operation.startswith(f"{step.driver}."):
                 raise HTTPException(409, "all steps need a namespaced compiled operation")
             if step.driver == "android":
+                from autorush.drivers.android.portal import validate_android_step
+
                 try:
                     validate_android_step(step)
                 except ValueError as exc:
@@ -765,7 +785,12 @@ def create_app(
             raise HTTPException(409, "plan references an unapproved case")
         all_steps = [step for case in cases if case for step in case.steps + case.postconditions]
         needs_android = any(step.driver == "android" for step in all_steps)
-        if any(step.parameters.get('request_snapshot_id') for step in all_steps) or plan.api_environment_snapshot_id:
+        # Unrestricted API execution must use the same trusted local boundary as the workbench.
+        if not settings.allowed_api_hosts and any(step.driver == 'api' for step in all_steps):
+            require_operator(x_autorush_operator_token)
+            if not trusted_local_request(request):
+                raise HTTPException(403, 'unrestricted API execution requires a trusted local operator')
+        elif any(step.parameters.get('request_snapshot_id') for step in all_steps) or plan.api_environment_snapshot_id:
             authorize_case_change(request, x_autorush_operator_token)
         needs_desktop = any(step.driver=='desktop' for step in all_steps)
         if needs_desktop:

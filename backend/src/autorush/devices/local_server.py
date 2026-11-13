@@ -9,10 +9,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import uvicorn
-from cryptography import x509
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.x509.oid import NameOID
 
 
 # List the host's private IPv4 addresses for LAN pairing.
@@ -27,6 +23,11 @@ def local_addresses() -> list[str]:
 
 # Load or generate a certificate for the host and return its fingerprint.
 def certificate(directory: Path, host: str) -> tuple[Path, Path, str]:
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID
+
     directory.mkdir(parents=True, exist_ok=True)
     cert_path, key_path = directory / f'{host}.pem', directory / f'{host}.key'
     now = datetime.now(timezone.utc)

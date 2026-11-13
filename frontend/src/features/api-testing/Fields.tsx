@@ -19,7 +19,7 @@ export function PairsEditor({value,onChange,label}:{value:Pair[];onChange:(value
   }
   return <div className="api-fields"><div className="section-title"><strong>{label}</strong>{bulk===null&&<div className="api-toolbar">
       <button type="button" className="text-button" onClick={()=>setBulk(formatPairs(value))}>{uiText('批量编辑')}</button>
-      <button type="button" className="text-button" disabled={value.length>=100} onClick={()=>onChange([...value,newPair()])}><Plus size={14}/>{uiText("添加")}{label}</button>
+      <button type="button" className="text-button" disabled={value.length>=100} onClick={()=>onChange([...value,newPair()])}><Plus size={14}/>{uiText('添加行')}</button>
     </div>}</div>
     {bulk!==null?<><textarea className="api-code" value={bulk} aria-label={uiText('批量编辑 {0}',label)} onChange={e=>{setBulk(e.target.value);setInvalidLine(null)}}/>
       <p className="quiet-note">{uiText('每行一组 Key: Value。以 # 加空格开头可禁用该行。')}</p>

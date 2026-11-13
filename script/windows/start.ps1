@@ -190,7 +190,9 @@ Write-Step "Environment check passed (mode: $Mode)"
 if ($CheckOnly) { return }
 
 New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
-$env:AUTORUSH_ALLOWED_API_HOSTS = $ApiHosts
+if ($PSBoundParameters.ContainsKey('ApiHosts')) {
+    $env:AUTORUSH_ALLOWED_API_HOSTS = $ApiHosts
+}
 $env:AUTORUSH_ALLOWED_WEB_HOSTS = $WebHosts
 $env:AUTORUSH_ALLOWED_LLM_HOSTS = $LlmHosts
 $env:AUTORUSH_FRONTEND_PORT = "$FrontendPort"
@@ -211,7 +213,7 @@ try {
             throw 'An existing backend is running. Stop it before starting -AndroidBridge so configured pairing secrets can take effect.'
         }
         Write-Step "Reusing the healthy backend at $backendUrl"
-        if ($ApiHosts -or $WebHosts -or $LlmHosts) {
+        if ($PSBoundParameters.ContainsKey('ApiHosts') -or $env:AUTORUSH_ALLOWED_API_HOSTS -or $WebHosts -or $LlmHosts) {
             Write-Warning "The reused backend keeps its existing host allowlists; command-line allowlists only apply to a newly started backend."
         }
     }

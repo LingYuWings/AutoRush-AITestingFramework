@@ -6,12 +6,10 @@ from collections import OrderedDict
 from uuid import UUID
 from autorush.agent.executions import AgentExecutionRecord,validate_agent_configuration
 from autorush.agent.live_output import LiveOutput, MAX_ARCHIVE_EVENTS, MAX_EVENTS, output_snapshot, restore_trace_output
-from autorush.agent.runner import AgentRunner
 from autorush.api_testing.variables import secret_strings
 from autorush.domain.models import CaseResult,ResultStatus,RunRecord,StepResult
 from autorush.evidence.report import save_reports
 from autorush.events import PlatformEvent
-from autorush.llm.client import ModelClient
 from autorush.runner.engine import Runner
 
 
@@ -86,6 +84,7 @@ class AgentRunManager:
         task=asyncio.create_task(self._execute(record));self.tasks[record.id]=task
         # Handle task completion and clear its in-memory tracking.
         def done(completed):
+            archived=False
             if not completed.cancelled():
                 error=completed.exception()
                 if error:
@@ -97,9 +96,11 @@ class AgentRunManager:
                             self.store.update_agent_execution(saved)
                     except Exception:
                         logging.getLogger(__name__).error('Agent failure state could not be persisted')
+                else:
+                    archived=completed.result() is True
             self.tasks.pop(record.id,None);self.cancel_events.pop(record.id,None);self.started.discard(record.id)
             output=self.active_output.pop(record.id,None)
-            if output is not None:
+            if output is not None and not archived:
                 self.recent_output[record.id]=output.snapshot(MAX_EVENTS)
                 if len(self.recent_output)>10:
                     self.recent_output.popitem(last=False)
@@ -175,13 +176,16 @@ class AgentRunManager:
             config=validate_agent_configuration(self.settings,self.store,record.plan_snapshot,record.case_snapshots) if any(c.execution_mode=='agent' for c in record.case_snapshots) else None
             session=await self.session_factory(record.plan_snapshot,record.case_snapshots,record.id)
             client=self.client_factory(config,set(self.settings.allowed_llm_hosts),timeout=record.plan_snapshot.agent_options.model_timeout_seconds) if config else None
+            if config:
+                from autorush.llm.client import ModelClient
+
             if output:
                 for case in record.case_snapshots:
                     output.secrets.update(secret_strings(case.model_dump(mode='json')))
                 if getattr(config,'secret_ref',None):
                     token=os.getenv(config.secret_ref.removeprefix('env:'))
                     if token: output.secrets.add(token)
-                if isinstance(client, ModelClient):
+                if config and isinstance(client, ModelClient):
                     # Merge provider text fragments within each model attempt.
                     def model_activity(kind,text):
                         output.publish(kind,text,append=kind in {'reasoning','output'})
@@ -201,6 +205,8 @@ class AgentRunManager:
                     output.secrets.update(getattr(api_driver,'runtime_secrets', ()))
                     output.publish('execution', '开始用例')
                 if case.execution_mode=='agent':
+                    from autorush.agent.runner import AgentRunner
+
                     runner=AgentRunner(session.drivers,client,record.plan_snapshot.agent_options,directory=self.settings.report_dir,
                         run_id=record.id,checkpoint=checkpoint,emit=self.emit,vision_verified=config.vision_verified,cancelled=event.is_set,
                         live_output=output)
@@ -232,16 +238,19 @@ class AgentRunManager:
                     except BaseException as exc:
                         reason=(reason+'; ' if reason else '')+f'resource cleanup failed: {type(exc).__name__}'
         if reason: results=self.interrupted_results(record,results,reason)
+        archived=False
         if output:
             output.case=output.step=None
             output.publish('execution', '执行已结束' if reason is None else '执行提前结束，详情见运行卡片')
             if self.output_store:
                 try:
                     self.output_store.save(self.output_scope,record.id,output.snapshot())
+                    archived=True
                 except Exception:
                     # Keep the report available even if the separate transcript archive fails.
                     logging.getLogger(__name__).error('Model output archive could not be saved for execution %s',record.id)
         await self.finish(record,results,reason)
+        return archived
 
     # Finalize unfinished executions found in storage after a restart.
     async def recover_interrupted(self):

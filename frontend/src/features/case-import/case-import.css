@@ -30,14 +30,6 @@
 .case-import-config > .quiet-note, .case-import-actions { grid-column: 1 / -1; }
 .case-import-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
 .case-import-actions .text-button { margin-left: 6px; }
-.case-import-dialog .field input[type=file] { padding: 0; color: var(--ink-3); font-size: 12.5px; cursor: pointer; }
-.case-import-dialog input[type=file]::file-selector-button {
-  height: 32px; padding: 0 10px; margin-right: 10px;
-  border: 0; border-right: 1px solid var(--line-strong);
-  background: var(--surface-sunken); color: var(--ink-2); font: inherit; cursor: pointer;
-  transition: background var(--dur-1) var(--ease);
-}
-.case-import-dialog input[type=file]:hover:not(:disabled)::file-selector-button { background: var(--hover); }
 .case-import-dialog input[type=checkbox] { flex-shrink: 0; }
 .case-import-summary {
   display: flex; align-items: center; gap: 12px 20px; flex-wrap: wrap;

@@ -8,7 +8,6 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from autorush.llm.client import OpenAICompatibleClient
 from autorush.llm.models import CredentialType, ModelCapability, ProviderConfigCreate, ProviderConfigRecord, ProviderConnectionTest, ProviderPreflight
 from autorush.llm.presets import PRESETS_BY_ID
 from autorush.llm.protocols import is_loopback_url
@@ -61,6 +60,8 @@ async def test_provider_connection(
 ) -> ProviderConnectionTest:
     if ModelCapability.STRUCTURED_OUTPUT not in config.capabilities:
         raise ValueError("connection test requires structured_output capability")
+    from autorush.llm.client import OpenAICompatibleClient
+
     client = OpenAICompatibleClient(config, allowed_hosts, transport=transport)
     started = perf_counter()
     try:

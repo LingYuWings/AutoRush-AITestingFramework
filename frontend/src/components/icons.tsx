@@ -30,6 +30,8 @@ function glyph(_name: string, tint: ReactNode, body: ReactNode): Icon {
 // ── Actions ────────────────────────────────────────────────────────────
 export const Plus = glyph('Plus', null, <path d="M12 5v14M5 12h14" />)
 export const X = glyph('X', null, <path d="M6.5 6.5l11 11M17.5 6.5l-11 11" />)
+// Indicate that a compact toolbar has additional actions.
+export const MoreHorizontal = glyph('MoreHorizontal', null, <path d="M5 12h.01M12 12h.01M19 12h.01" strokeWidth={3}/>)
 export const Check = glyph('Check', null, <path d="M5 12.5l4.5 4.5L19 7.5" />)
 export const Search = glyph('Search', <circle cx="10.5" cy="10.5" r="6.5" />, <><circle cx="10.5" cy="10.5" r="6.5" /><path d="M15.5 15.5L20 20" /></>)
 export const Pencil = glyph('Pencil', <path d="M4 20v-4L15.5 4.5a2 2 0 0 1 2.8 0l1.2 1.2a2 2 0 0 1 0 2.8L8 20z" />, <><path d="M4 20v-4L15.5 4.5a2 2 0 0 1 2.8 0l1.2 1.2a2 2 0 0 1 0 2.8L8 20z" /><path d="M13.5 6.5l4 4" /></>)

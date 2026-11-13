@@ -1,7 +1,8 @@
 // Present HTTP results in tabs shared by the workbench, Runner and execution reports.
 import { uiLanguage, uiText } from '../../shared/i18n.ts'
 import {useEffect,useMemo,useRef,useState} from 'react'
-import {Copy,Download,Search} from '../../components/icons'
+import {Braces,Copy,Download,Search} from '../../components/icons'
+import {EmptyState} from '../../components/ui'
 import {statusLabel} from '../../shared/format'
 import type {ApiExecution} from './types'
 import {downloadText} from './client'
@@ -25,7 +26,7 @@ export default function ResponsePanel({value}:{value:ApiExecution|null}){
   useEffect(()=>{mark.current?.scrollIntoView({block:'nearest'})},[offset,query,tab,mode])
   if(!value)return <section className="api-response" aria-label={uiText('API 响应')}>
     <div className="api-response-heading"><strong>{uiText('响应')}</strong></div>
-    <p className="api-empty">{uiText('发送请求后，在此查看响应、耗时、断言和提取结果。')}</p>
+    <div className="api-empty"><EmptyState icon={Braces} title={uiText('尚未发送请求')} description={uiText('发送请求后，在此查看响应、耗时、断言和提取结果。')}/></div>
   </section>
   const headers=Object.entries(response?.headers??{})
   const cookies=Array.isArray(response?.cookie_names)?response.cookie_names:[]

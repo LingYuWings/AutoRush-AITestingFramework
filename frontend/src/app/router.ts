@@ -42,7 +42,9 @@ export function navKind(from: Route, to: Route) {
 export function transition(from: Route, to: Route, update: () => void) {
   const root = document.documentElement
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  if (!document.startViewTransition || reduced || document.visibilityState !== 'visible') { update(); return }
+  // Keep the API tool rail interactive while its individual sections switch.
+  const insideApiWorkspace = from.view === 'api-testing' && to.view === 'api-testing'
+  if (!document.startViewTransition || reduced || insideApiWorkspace || document.visibilityState !== 'visible') { update(); return }
   const token = ++transitionToken
   root.dataset.nav = navKind(from, to)
   const vt = document.startViewTransition(() => flushSync(update))

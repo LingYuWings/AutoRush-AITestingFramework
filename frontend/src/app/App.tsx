@@ -265,7 +265,7 @@ export default function App() {
         </div>
       </header>
       <div className="main-scroll" id="main-scroll">
-      <main key={view} className={view === 'cases' ? 'main-content fill' : 'main-content'}>
+      <main key={view} className={view === 'cases' ? 'main-content fill' : view === 'api-testing' ? 'main-content api-main-content' : 'main-content'}>
         <Suspense fallback={<div className="page-loading" aria-busy="true" />}>
           {view === 'overview' && <Overview cases={activeCases} plans={plans} runs={runs} events={events} onNavigate={navigate} onNewCase={() => { setNewCasePlatform('web'); go({ view: 'cases', id: 'new' }) }} onOpenRun={id => go({ view: 'reports', id })} />}
           {view === 'cases' && <Cases cases={cases} selectedId={creatingCase ? null : route.id ?? null} editor={caseEditor || null}

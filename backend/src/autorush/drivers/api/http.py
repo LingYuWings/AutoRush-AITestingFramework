@@ -44,7 +44,7 @@ class HttpApiDriver:
             parsed = urlsplit(base_url)
             if parsed.scheme not in {'http', 'https'} or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
                 raise ValueError('api_base_url must be an absolute HTTP(S) URL without credentials, query or fragment')
-            if parsed.hostname.lower() not in {host.lower() for host in allowed_hosts}:
+            if allowed_hosts and parsed.hostname.lower() not in {host.lower() for host in allowed_hosts}:
                 raise PermissionError('API host is not in AUTORUSH_ALLOWED_API_HOSTS')
             validate_url(base_url, allowed_hosts)
         self._base_url, self._store = base_url, store
