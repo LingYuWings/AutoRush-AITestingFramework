@@ -1,8 +1,6 @@
 """Own a complete driver set, including partially initialized cancellation cleanup."""
 import asyncio
 from uuid import UUID
-from autorush.drivers.android.portal import AndroidPortalDriver
-from autorush.drivers.api.http import HttpApiDriver
 from autorush.runner.engine import Runner
 
 
@@ -21,11 +19,15 @@ class DriverSession:
                 drivers['desktop']=await desktop_factory(plan.desktop_target,capture_screenshots=True,evidence_directory=settings.report_dir,
                     run_id=run_id,start_delay_seconds=plan.desktop_start_delay_seconds)
             if 'android' in kinds:
+                from autorush.drivers.android.portal import AndroidPortalDriver
+
                 drivers['android']=await AndroidPortalDriver.create(device_hub,plan.android_device_id,plan.android_package,
                     capture_screenshots=plan.capture_screenshots,evidence_directory=settings.report_dir,run_id=run_id)
             if 'api' in kinds:
                 from autorush.api_testing.store import ApiStore
                 from autorush.api_testing.variables import variable_values
+                from autorush.drivers.api.http import HttpApiDriver
+
                 api_store = ApiStore(settings.database_path)
                 seed, secret_values = {}, set()
                 if plan.api_environment_snapshot_id:

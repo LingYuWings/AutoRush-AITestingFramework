@@ -3,8 +3,6 @@ import io
 import secrets
 from uuid import UUID
 from fastapi import APIRouter,Header,HTTPException,Request
-from autorush.llm.client import ModelClient,ModelClientError
-from autorush.llm.discovery import discover_local_models,fetch_model_catalog
 from autorush.llm.models import ModelCatalogRequest,ProviderConfigCreate,ProviderConfigRecord,ProviderVisionTest
 from autorush.llm.service import validate_provider_config
 
@@ -21,12 +19,17 @@ def create_model_catalog_router(settings,store,require_operator,trusted_local_re
     @router.get('/local-models')
     async def discover(request:Request,x_autorush_operator_token:str|None=Header(default=None)):
         authorize(request,x_autorush_operator_token)
+        from autorush.llm.discovery import discover_local_models
+
         return await discover_local_models()
 
     # Fetch models using the submitted endpoint configuration.
     @router.post('/model-catalog')
     async def catalog(payload:ModelCatalogRequest,request:Request,x_autorush_operator_token:str|None=Header(default=None)):
         authorize(request,x_autorush_operator_token)
+        from autorush.llm.client import ModelClientError
+        from autorush.llm.discovery import fetch_model_catalog
+
         try:
             config=ProviderConfigCreate(name='catalog',model_id='__catalog__',capabilities={'structured_output'},**payload.model_dump())
             validate_provider_config(config)
@@ -42,6 +45,8 @@ def create_model_catalog_router(settings,store,require_operator,trusted_local_re
         if config.status!='verified': raise HTTPException(409,'verify text connection first')
         if 'vision' not in config.capabilities: raise HTTPException(409,'model configuration does not declare vision')
         from PIL import Image,ImageDraw
+        from autorush.llm.client import ModelClient,ModelClientError
+
         colors={'red':(240,20,20),'blue':(20,40,240),'green':(20,180,40)}
         color=secrets.choice(list(colors));side=secrets.choice(['left','right'])
         image=Image.new('RGB',(512,384),'white');draw=ImageDraw.Draw(image)
