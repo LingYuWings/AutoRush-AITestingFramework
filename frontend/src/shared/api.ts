@@ -250,9 +250,10 @@ export type PlatformEvent = EventEnvelope & (
   | { type: 'agent.action.completed'; payload: {case_id:string;step:number;round:number;operation:string;status:ResultStatus} }
 )
 
-export const API_BASE = window.location.protocol === 'app:'
-  ? `http://127.0.0.1:${new URLSearchParams(window.location.search).get('backendPort') === '18000' ? 18000 : 8000}` : ''
-export const LOCAL_BACKEND_ADDRESS = API_BASE ? new URL(API_BASE).host : '127.0.0.1:8000'
+const desktopPort = Number((globalThis as { autorushDesktop?: { backendPort: string } }).autorushDesktop?.backendPort
+  ?? new URLSearchParams(window.location.search).get('backendPort'))
+export const LOCAL_BACKEND_ADDRESS = `127.0.0.1:${Number.isInteger(desktopPort) && desktopPort >= 1024 && desktopPort <= 65535 ? desktopPort : 8000}`
+export const API_BASE = window.location.protocol === 'app:' ? `http://${LOCAL_BACKEND_ADDRESS}` : ''
 let operatorToken = ''
 let evidenceAuthorization: Promise<void> | null = null
 

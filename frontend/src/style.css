@@ -177,6 +177,26 @@ h1, h2, h3 { font-weight: 600; letter-spacing: -.01em; }
   -webkit-app-region: drag;
 }
 .topbar a, .topbar button, .topbar .run-progress { -webkit-app-region: no-drag; }
+
+/* ------------------------------------------------------------------
+   Desktop shell (Electron; `data-desktop` is the OS platform).
+   The window has no native title bar: the sidebar brand and the top bar are the drag
+   regions, and Windows/Linux draw native caption buttons over the top bar's right end.
+   ------------------------------------------------------------------ */
+/* Reserve the caption-button area (3 × 46px) even if the window-controls-overlay env() values are unavailable. */
+:root:is([data-desktop="win32"], [data-desktop="linux"]) .topbar {
+  padding-right: max(150px, calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 16px));
+}
+/* macOS keeps inset traffic lights at the top-left of the sidebar. */
+:root[data-desktop="darwin"] .sidebar { padding-top: 46px; }
+:root[data-desktop="darwin"] .sidebar::before { content: ""; position: absolute; inset: 0 0 auto; height: 46px; -webkit-app-region: drag; }
+:root[data-desktop="darwin"] .sidebar { position: relative; }
+/* Native controls use the arrow cursor; the hand stays for real links in content. */
+:root[data-desktop] :is(button, select, summary, label, [role="tab"], [role="option"], .nav-item, .back-link, .case-choice, input[type="checkbox"]) { cursor: default; }
+/* Dragging links or images out of the window would create stray shortcuts. */
+:root[data-desktop] :is(a, img, svg) { -webkit-user-drag: none; }
+/* Chrome text is not selectable in a desktop window, including the brand and version in the drag regions. */
+:root[data-desktop] :is(.sidebar, .topbar) { -webkit-user-select: none; user-select: none; }
 .breadcrumbs { display: flex; align-items: center; gap: 8px; color: var(--ink-3); font-size: 13px; }
 .breadcrumbs strong { color: var(--ink); font-weight: 500; }
 .breadcrumbs span { color: var(--ink-4); }

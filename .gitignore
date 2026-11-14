@@ -29,6 +29,7 @@ frontend/release/
 frontend/.vite/
 frontend/.cache/
 /release/
+/autorush.settings.json
 *.tsbuildinfo
 android/**/.gradle/
 android/**/.kotlin/

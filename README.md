@@ -86,6 +86,8 @@ py -3.12 -m venv .venv-dev
 
 Windows desktop automation is enabled by default and needs an interactive desktop session. Use `-DesktopAutomation:$false` to disable it. Stop any running backend before changing the desktop setting, which is read at startup. You can drop `-Install` on later runs.
 
+For Electron development on Windows, run `.\script\windows\start-electron.ps1`. It starts the backend, Vite hot reload, and the desktop window with renderer DevTools. Use `-NoDevTools` to leave them closed, `-MainInspectorPort 9229` to attach a Node debugger to the Electron main process on `127.0.0.1:9229`, or `-CheckOnly` to verify dependencies without starting. If the default ports are occupied, pass `-FrontendPort 5174 -BackendPort 8001`. The launcher prints the log directory and stops its services when you close the app.
+
 To build the Windows x64 installer, install the development dependencies above, run `.\.venv-dev\Scripts\python.exe -m pip install pyinstaller`, then run `.\script\windows\release.ps1` or `npm --prefix frontend run electron:dist`. The installer in `frontend/release/` includes the Python backend and Playwright Chromium. The installed app starts its own loopback backend on port `18000` and keeps its data under the Electron user-data directory. See `logs/backend.log` in that directory if the backend fails to start. Model weights and Android USB platform tools are configured separately.
 
 When the verified local Qwen runtime and weights are installed under `artifacts/`, the Windows launcher enables on-demand loading for the saved `autorush-vision-2b`, `autorush-vision-4b` and `autorush-vision-8b` configurations at `http://127.0.0.1:8080/v1`. If that endpoint is offline, a plan or case-debug run starts an owned model process. Runs using the same profile share it, and the last run to finish or cancel releases the process and its GPU memory. Finish the current runs before starting a different owned profile. Existing external model servers keep their own lifecycle. The standalone `scripts/start-local-vision.ps1` launcher unloads idle weights after 30 seconds by default, configurable with `-IdleSeconds`.
@@ -112,7 +114,9 @@ On later runs, omit `--install` and open the console URL shown in the terminal. 
 | API docs | <http://127.0.0.1:8000/docs> |
 | Health check | <http://127.0.0.1:8000/health> |
 
-API testing allows any HTTP(S) host by default for the local operator. To restrict it, set `AUTORUSH_ALLOWED_API_HOSTS` to a comma-separated list of hostnames or pass `-ApiHosts` on Windows. The Windows option takes precedence over the environment variable. Restart the backend after changing the list. Configure Web and model hosts separately with the options above.
+API testing allows any HTTP(S) host by default for the local operator. To restrict it, enter a comma-separated list in **System Settings → Network → API host allowlist**, set `AUTORUSH_ALLOWED_API_HOSTS`, or pass `-ApiHosts` on Windows. Restart the backend to apply the list. Web and model hosts have separate allowlists.
+
+System Settings groups network access, local storage and logs, execution, models, and integrations. Saved startup settings apply the next time the project launcher or bundled Electron backend starts. Explicit launcher arguments and environment variables take precedence. Source launchers store overrides in the ignored `autorush.settings.json` at the workspace root, and bundled Electron uses its user-data directory. `AUTORUSH_CONFIG_PATH` can select a different file. Secrets remain in the launch environment.
 
 ### Try it with the demo API
 

@@ -925,6 +925,8 @@ def create_app(
     app.include_router(create_model_catalog_router(settings,store,require_operator,trusted_local_request))
     app.include_router(create_agent_run_router(agent_manager,settings,store,device_hub,require_operator,trusted_local_request))
     app.include_router(create_debug_router(debug_manager,settings,require_operator,trusted_local_request))
+    from autorush.api.runtime_settings import create_runtime_settings_router
+    app.include_router(create_runtime_settings_router(settings, require_operator, trusted_local_request))
     from autorush.case_imports.router import create_import_router
     app.include_router(create_import_router(settings,require_operator,trusted_local_request))
     return app

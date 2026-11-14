@@ -41,6 +41,13 @@ command -v "$python" >/dev/null || fail 'Python environment is missing. Run pyth
 command -v node >/dev/null || fail 'Node.js is required.'
 command -v curl >/dev/null || fail 'curl is required.'
 
+export AUTORUSH_CONFIG_PATH=${AUTORUSH_CONFIG_PATH:-"$workspace/autorush.settings.json"}
+export AUTORUSH_LAUNCH_MODE=unix
+settings_lines=$("$python" "$workspace/backend/src/autorush/config/runtime.py" --lines) || fail 'Could not read AutoRush runtime settings.'
+while IFS='=' read -r key value; do
+    if [[ -n "$key" ]] && ! printenv "$key" >/dev/null; then export "$key=$value"; fi
+done <<< "$settings_lines"
+
 export AUTORUSH_BACKEND_PORT=${AUTORUSH_BACKEND_PORT:-8000}
 export AUTORUSH_FRONTEND_PORT=${AUTORUSH_FRONTEND_PORT:-5173}
 for port in "$AUTORUSH_BACKEND_PORT" "$AUTORUSH_FRONTEND_PORT"; do
@@ -51,7 +58,7 @@ done
 [[ "$AUTORUSH_BACKEND_PORT" != "$AUTORUSH_FRONTEND_PORT" ]] || fail 'Backend and frontend ports must differ.'
 
 export AUTORUSH_DESKTOP_ENABLED=0
-export PLAYWRIGHT_BROWSERS_PATH="$workspace/.playwright-browsers"
+export PLAYWRIGHT_BROWSERS_PATH=${PLAYWRIGHT_BROWSERS_PATH:-"$workspace/.playwright-browsers"}
 if "$install"; then
     command -v npm >/dev/null || fail 'npm is required to install frontend dependencies.'
     "$python" -m pip install -e "$workspace/backend[dev,web]"
@@ -70,7 +77,8 @@ fi
 
 backend_url="http://127.0.0.1:$AUTORUSH_BACKEND_PORT"
 frontend_url="http://127.0.0.1:$AUTORUSH_FRONTEND_PORT"
-log_dir="$workspace/artifacts/dev-logs"
+log_dir=${AUTORUSH_LOG_DIR:-"$workspace/artifacts/dev-logs"}
+export AUTORUSH_LOG_DIR="$log_dir"
 mkdir -p "$log_dir"
 backend_pid=
 frontend_pid=
