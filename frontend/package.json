@@ -11,7 +11,7 @@
     "preview": "vite preview --host 127.0.0.1",
     "electron:dev": "concurrently -k \"npm:dev\" \"wait-on http://127.0.0.1:5173 && electron .\"",
     "electron:package": "npm run build && electron-builder --dir",
-    "electron:dist": "npm run build && electron-builder --win nsis"
+    "electron:dist": "powershell.exe -NoProfile -File ../script/windows/release.ps1"
   },
   "dependencies": {
     "qrcode.react": "4.2.0",

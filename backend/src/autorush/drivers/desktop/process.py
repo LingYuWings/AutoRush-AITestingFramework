@@ -23,8 +23,9 @@ class DesktopProcessDriver:
     async def create(cls,target,*,capture_screenshots,evidence_directory,run_id,start_delay_seconds=3):
         env=dict(os.environ)
         env['PYTHONPATH']=os.pathsep.join(p for p in sys.path if p)
-        spawning=asyncio.create_task(asyncio.create_subprocess_exec(getattr(sys,'_base_executable',sys.executable),
-            '-m','autorush.drivers.desktop.worker',stdin=asyncio.subprocess.PIPE,stdout=asyncio.subprocess.PIPE,
+        command = ([sys.executable, '--desktop-worker'] if getattr(sys, 'frozen', False) else
+                   [getattr(sys, '_base_executable', sys.executable), '-m', 'autorush.drivers.desktop.worker'])
+        spawning=asyncio.create_task(asyncio.create_subprocess_exec(*command,stdin=asyncio.subprocess.PIPE,stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,limit=1_500_000,env=env,
             creationflags=subprocess.CREATE_NO_WINDOW if sys.platform=='win32' else 0))
         driver=None
