@@ -1,0 +1,14 @@
+/* Align runtime inputs, native path controls and startup metadata. */
+.settings-preferences { margin-bottom: 12px; }
+.settings-preferences .field + .field { margin-top: 12px; }
+.runtime-settings-note { margin: 0 0 12px; }
+.runtime-settings-panel { padding-block: 0; }
+.runtime-setting { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; padding: 13px 0; }
+.runtime-setting + .runtime-setting, .runtime-token-status { border-top: 1px solid var(--line); }
+.runtime-setting-actions { display: flex; align-items: center; gap: 6px; align-self: start; padding-top: 22px; }
+.runtime-setting-meta { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 3px 0 0; color: var(--ink-3); font-size: 12px; overflow-wrap: anywhere; }
+.runtime-token-status { padding-block: 8px 13px; font-size: 13px; }
+.runtime-token-status dl > div { display: flex; gap: 8px; flex-wrap: wrap; padding-block: 4px; }
+.runtime-token-status dd { margin: 0; overflow-wrap: anywhere; }
+.runtime-savebar { position: sticky; z-index: 2; bottom: 8px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; padding: 10px 14px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-overlay); }
+.runtime-savebar > span { margin-inline-end: auto; color: var(--ink-3); font-size: 13px; }

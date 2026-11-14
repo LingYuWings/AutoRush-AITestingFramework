@@ -15,11 +15,12 @@ import ReportPage from '../pages/ReportPage'
 import ApiWorkspace,{apiSections,type ApiNavigationGuard} from '../features/api-testing/ApiWorkspace'
 import { BrandMark } from '../components/ui'
 import { scroller } from '../shared/scroll'
+import { desktop, syncDesktopTheme } from '../shared/desktop.ts'
 import { shortId, statusLabel } from '../shared/format'
 import { parseRoute, routeHash, sameRoute, transition, type Route } from './router'
 import type { LiveEvent, RunProgress, View } from './types'
 import {
-  api, type CaseRecord, type DriverKind, type PlanRecord, type ProviderConfig, type ProviderPreset, type RunRecord,
+  api, LOCAL_BACKEND_ADDRESS, type CaseRecord, type DriverKind, type PlanRecord, type ProviderConfig, type ProviderPreset, type RunRecord,
 } from '../shared/api'
 
 // Heavy, rarely-first pages are split out and warmed up on idle so navigation never waits on a chunk.
@@ -131,10 +132,11 @@ export default function App() {
   useEffect(() => {
     document.documentElement.dataset.theme = theme
     localStorage.setItem('autorush-theme', theme)
+    syncDesktopTheme(theme)
   }, [theme])
   // Switch color schemes with an optional view transition.
-  const toggleTheme = () => {
-    const next = theme === 'dark' ? 'light' : 'dark'
+  const changeTheme = (next: Theme) => {
+    if (next === theme) return
     if (!document.startViewTransition || window.matchMedia('(prefers-reduced-motion: reduce)').matches) { setTheme(next); return }
     document.documentElement.dataset.nav = 'theme'
     void document.startViewTransition(() => { document.documentElement.dataset.theme = next; setTheme(next) }).finished.finally(() => { delete document.documentElement.dataset.nav })
@@ -210,6 +212,30 @@ export default function App() {
     : view === 'plans' && route.id === 'executions' ? uiText("执行状态")
     : creatingCase ? uiText("新建") : editingCase ? uiText("编辑") : null
 
+  // Name the window after the current page so the taskbar and Alt+Tab show where the console is.
+  useEffect(() => {
+    document.title = [crumb, page, 'AutoRush AITester'].filter(Boolean).join(' · ')
+  }, [crumb, page])
+
+  // Desktop shortcuts: F5 / Ctrl+R refresh data instead of reloading the page; Ctrl+, opens settings.
+  const shortcuts = useRef({ refresh, navigate })
+  shortcuts.current = { refresh, navigate }
+  useEffect(() => {
+    if (!desktop) return
+    const onKey = (event: KeyboardEvent) => {
+      const accel = event.ctrlKey || event.metaKey
+      if (event.key === 'F5' || (accel && !event.shiftKey && event.key.toLowerCase() === 'r')) {
+        event.preventDefault()
+        void shortcuts.current.refresh()
+      } else if (accel && event.key === ',') {
+        event.preventDefault()
+        shortcuts.current.navigate('settings')
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   const caseEditor = (creatingCase || editingCase) && <CaseEditor
     key={editingCase ? `${editingCase.id}-${editingCase.version}` : `new-${newCasePlatform}`}
     initial={editingCase} initialPlatform={newCasePlatform} providers={providerConfigs}
@@ -241,9 +267,9 @@ export default function App() {
       <div className="sidebar-bottom">
         <div className={`backend-card ${connected ? 'online' : 'offline'}`}>
           <span className="backend-pulse" />
-          <div><strong>{connected ? uiText("本地后端在线") : uiText("后端未连接")}</strong><span className="mono">127.0.0.1:8000</span></div>
+          <div><strong>{connected ? uiText("本地后端在线") : uiText("后端未连接")}</strong><span className="mono">{LOCAL_BACKEND_ADDRESS}</span></div>
         </div>
-        <div className="sidebar-version mono">v0.1 · local dev</div>
+        <div className="sidebar-version mono">{desktop?.version ? uiText('v{0} · 桌面版', desktop.version) : 'v0.1 · local dev'}</div>
       </div>
     </aside>
 
@@ -260,7 +286,7 @@ export default function App() {
             <span className="run-progress-track"><span style={{ transform: `scaleX(${progress.total ? progress.completed / progress.total : 0})` }} /></span>
           </div>}
           <span className={`connection ${connected ? 'online' : 'offline'}`}>{connected ? <CircleCheck size={14} /> : <CloudOff size={14} />}{connected ? uiText("已连接") : uiText("未连接")}</span>
-          <button className="icon-button" aria-label={uiText("切换主题")} title={theme === 'dark' ? uiText("浅色模式") : uiText("深色模式")} onClick={toggleTheme}>{theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}</button>
+          <button className="icon-button" aria-label={uiText("切换主题")} title={theme === 'dark' ? uiText("浅色模式") : uiText("深色模式")} onClick={() => changeTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}</button>
           <button className="icon-button" aria-label={uiText("刷新数据")} title={uiText("刷新数据")} onClick={() => void refresh()} disabled={loading}><RefreshCw size={16} className={loading ? 'spinning' : ''} /></button>
         </div>
       </header>
@@ -297,7 +323,7 @@ export default function App() {
             : <Reports runs={runs} plans={plans} onOpen={id => go({ view: 'reports', id })} onDownload={async (id, format) => { try { await api.downloadReport(id, format) } catch (error) { notify(error instanceof Error ? error.message : uiText("下载失败"), true) } }} />)}
           {view === 'devices' && <Devices />}
           {view === 'api-testing' && <ApiWorkspace section={route.id} onNavigate={id=>go({view:'api-testing',id})} onGuardChange={registerApiGuard} onCaseCreated={async id=>{await refresh();go({view:'cases',id},{bypassApiGuard:true})}}/>}
-          {view === 'settings' && <Settings presets={providerPresets} configs={providerConfigs} onCreate={payload => action(() => api.createProviderConfig(payload), uiText("模型配置已保存"))} onPreflight={async id => { try { const result = await api.preflightProvider(id); notify(result.secret_available ? uiText("本地预检查通过，尚未联网") : result.messages.join(' '), !result.secret_available); return result } catch (error) { notify(error instanceof Error ? error.message : uiText("预检查失败"), true); return null } }} />}
+          {view === 'settings' && <Settings section={route.id} onSection={id => go({ view: 'settings', id })} theme={theme} onTheme={changeTheme} presets={providerPresets} configs={providerConfigs} onCreate={payload => action(() => api.createProviderConfig(payload), uiText("模型配置已保存"))} onPreflight={async id => { try { const result = await api.preflightProvider(id); notify(result.secret_available ? uiText("本地预检查通过，尚未联网") : result.messages.join(' '), !result.secret_available); return result } catch (error) { notify(error instanceof Error ? error.message : uiText("预检查失败"), true); return null } }} />}
         </Suspense>
       </main>
       </div>

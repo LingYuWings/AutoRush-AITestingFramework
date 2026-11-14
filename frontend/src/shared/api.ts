@@ -250,7 +250,10 @@ export type PlatformEvent = EventEnvelope & (
   | { type: 'agent.action.completed'; payload: {case_id:string;step:number;round:number;operation:string;status:ResultStatus} }
 )
 
-export const API_BASE = window.location.protocol === 'app:' ? 'http://127.0.0.1:8000' : ''
+const desktopPort = Number((globalThis as { autorushDesktop?: { backendPort: string } }).autorushDesktop?.backendPort
+  ?? new URLSearchParams(window.location.search).get('backendPort'))
+export const LOCAL_BACKEND_ADDRESS = `127.0.0.1:${Number.isInteger(desktopPort) && desktopPort >= 1024 && desktopPort <= 65535 ? desktopPort : 8000}`
+export const API_BASE = window.location.protocol === 'app:' ? `http://${LOCAL_BACKEND_ADDRESS}` : ''
 let operatorToken = ''
 let evidenceAuthorization: Promise<void> | null = null
 
@@ -274,7 +277,7 @@ const operatorListeners = new Set<() => void>()
 
 // Select the WebSocket origin for Electron or a browser page.
 function socketBase() {
-  return window.location.protocol === 'app:' ? 'ws://127.0.0.1:8000'
+  return API_BASE ? API_BASE.replace(/^http:/, 'ws:')
     : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`
 }
 
@@ -296,7 +299,7 @@ export async function request<T>(path: string, init?: RequestInit, authenticated
     })
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') throw error
-    throw new Error(uiText("无法连接本地后端，请先启动 127.0.0.1:8000 上的服务。"))
+    throw new Error(uiText("无法连接 {0} 上的本地后端。", LOCAL_BACKEND_ADDRESS))
   }
   if (!response.ok) {
     let detail = `${response.status} ${response.statusText}`
@@ -466,9 +469,7 @@ export const api = {
   testProviderConnection: (id: string) => post<ProviderConnectionTest>(`/api/v1/providers/configs/${id}/test-connection`),
   // Subscribe to backend events and return a function that closes the socket.
   watchEvents: (onEvent: (event: PlatformEvent) => void, onClosed: () => void) => {
-    const base = window.location.protocol === 'app:'
-      ? 'ws://127.0.0.1:8000'
-      : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`
+    const base = socketBase()
     const socket = new WebSocket(`${base}/api/v1/events/ws`)
     socket.onmessage = message => {
       try { onEvent(JSON.parse(message.data) as PlatformEvent) }
