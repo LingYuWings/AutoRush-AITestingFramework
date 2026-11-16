@@ -234,9 +234,8 @@ h1, h2, h3 { font-weight: 600; letter-spacing: -.01em; }
 
 /* ------------------------------------------------------------------
    View transitions
-   Navigation runs inside document.startViewTransition (app/router.ts), which sets
-   `data-nav` to the kind of move. Only the page area animates; the sidebar and top bar
-   stay still, and the active-page marker glides between nav items.
+   In-page navigation sets `data-nav` for the corresponding view transition.
+   Sidebar navigation replaces the visible page directly.
    ------------------------------------------------------------------ */
 .main-scroll { view-transition-name: page; }
 .breadcrumbs { view-transition-name: crumbs; }
@@ -250,9 +249,6 @@ h1, h2, h3 { font-weight: 600; letter-spacing: -.01em; }
 ::view-transition-old(crumbs) { animation: var(--dur-1) var(--ease) both vt-fade-out; }
 ::view-transition-new(crumbs) { animation: var(--dur-2) var(--ease) both fade-in; }
 
-/* Another sidebar page: the old page fades away quickly, the new one settles up into place. */
-:root[data-nav="switch"]::view-transition-old(page) { animation: var(--dur-1) var(--ease) both vt-fade-out; }
-:root[data-nav="switch"]::view-transition-new(page) { animation: var(--dur-3) var(--ease) both vt-rise-in; }
 /* Into a record (list → report) and back out: horizontal, so the direction is legible. */
 :root[data-nav="forward"]::view-transition-old(page) { animation: var(--dur-2) var(--ease) both vt-out-left; }
 :root[data-nav="forward"]::view-transition-new(page) { animation: var(--dur-3) var(--ease) both vt-in-right; }

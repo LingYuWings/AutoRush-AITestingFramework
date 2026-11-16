@@ -10,14 +10,12 @@ import RunnerPage,{presetFromRun} from './RunnerPage'
 import type {RunnerPreset} from './RunnerPage'
 import type {ApiRun} from './runner-client'
 import {loadApiResources,type ApiResources} from './resources'
+import {apiSections as sections,type ApiNavigationGuard} from './navigation'
 import './api-testing.css'
 
-export type ApiNavigationGuard=((proceed:()=>void)=>void)|null
 type Tab={key:string;request?:ApiRequestRecord;draft?:ApiRequest;initialDirty?:boolean;meta:TabStatus}
 // Allocate a tab with a fresh key and untouched draft metadata.
 const blank=():Tab=>({key:crypto.randomUUID(),meta:{name:uiText("未命名请求"),method:'GET',sourceId:null,dirty:false,busy:false}})
-export const apiSections=[['workbench',uiText("请求工作台")],['runner',uiText("集合 Runner")],['environments',uiText("环境管理")],['history',uiText("执行历史")]] as const
-const sections=apiSections
 const sectionIcons={workbench:Archive,runner:Play,environments:Server,history:History}
 
 // Keep request tabs and shared resources available across API workspace sections.

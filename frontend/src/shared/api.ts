@@ -99,13 +99,17 @@ export interface StepResult {
   evidence: Record<string, unknown>
 }
 
-export interface RunRecord {
+export interface RunSummary {
   termination_reason?: string | null
   id: string
   plan_id: string
   status: ResultStatus
-  cases: { case_id: string; title: string; status: ResultStatus; steps: StepResult[] }[]
+  cases: { case_id: string; title: string; status: ResultStatus }[]
   created_at: string
+}
+
+export interface RunRecord extends RunSummary {
+  cases: (RunSummary['cases'][number] & { steps: StepResult[] })[]
   report_path: string | null
   report_paths: Record<string, string>
 }
@@ -455,8 +459,10 @@ export const api = {
   },
   // Request cancellation of the specified agent execution.
   cancelAgentRun:(id:string)=>post<AgentExecution>(`/api/v1/agent-runs/${id}/cancel`),
-  // List run records used by the reporting views.
-  runs: () => request<RunRecord[]>('/api/v1/runs'),
+  // List report summaries without loading each run's step evidence.
+  runSummaries: () => request<RunSummary[]>('/api/v1/run-summaries'),
+  // Fetch a report's full evidence only when the user opens it.
+  run: (id: string, signal: AbortSignal) => request<RunRecord>(`/api/v1/runs/${encodeURIComponent(id)}`, { signal }),
   // Fetch provider presets for the settings form.
   providerPresets: () => request<ProviderPreset[]>('/api/v1/providers/presets'),
   // List saved model provider configurations.

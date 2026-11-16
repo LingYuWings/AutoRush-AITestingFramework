@@ -1,5 +1,5 @@
 import { uiText } from '../shared/i18n.ts'
-import { useState, type ReactNode } from 'react'
+import { memo, useState, type ReactNode } from 'react'
 import { ChevronLeft, ChevronRight, type Icon } from './icons'
 import type { DriverKind, ResultStatus } from '../shared/api'
 import { countStatuses, driverLabel, resultOrder, statusLabel } from '../shared/format'
@@ -36,14 +36,14 @@ export function PageHeader({ title, description, actions }: { title: string; des
 }
 
 /** Proportional bar of result statuses, e.g. the cases inside one run. */
-export function ResultBar({ items, size = 'md' }: { items: { status: ResultStatus }[]; size?: 'sm' | 'md' }) {
+export const ResultBar = memo(function ResultBar({ items, size = 'md' }: { items: { status: ResultStatus }[]; size?: 'sm' | 'md' }) {
   const counts = countStatuses(items)
   const total = items.length
   if (!total) return <div className={`result-bar result-bar-${size} empty`} />
   return <div className={`result-bar result-bar-${size}`} title={resultOrder.filter(key => counts[key]).map(key => `${statusLabel[key]} ${counts[key]}`).join(' · ')}>
     {resultOrder.filter(key => counts[key]).map(key => <span key={key} className={`seg-${key}`} style={{ flexGrow: counts[key] }} />)}
   </div>
-}
+})
 
 // Draw the console logo at the requested size.
 export function BrandMark({ size = 30 }: { size?: number }) {

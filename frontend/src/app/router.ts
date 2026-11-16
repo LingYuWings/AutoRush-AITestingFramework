@@ -1,3 +1,4 @@
+import { startTransition } from 'react'
 import { flushSync } from 'react-dom'
 import type { View } from './types'
 
@@ -25,7 +26,7 @@ export const sameRoute = (a: Route, b: Route) => routeHash(a) === routeHash(b)
 
 /**
  * How a navigation should animate (styled in style.css under "View transitions"):
- * - `switch`  another sidebar page: the page area fades up, chrome stays put
+ * - `switch`  another sidebar page: keep the current page visible while its destination loads
  * - `forward` / `back`  drilling into / out of a record: the page slides horizontally
  * - `swap`    sibling record at the same depth (report pager): quick crossfade
  * - `detail`  master–detail pages (cases): only the detail pane changes, the list stays still
@@ -42,9 +43,10 @@ export function navKind(from: Route, to: Route) {
 export function transition(from: Route, to: Route, update: () => void) {
   const root = document.documentElement
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  // Keep the API tool rail interactive while its individual sections switch.
-  const insideApiWorkspace = from.view === 'api-testing' && to.view === 'api-testing'
-  if (!document.startViewTransition || reduced || insideApiWorkspace || document.visibilityState !== 'visible') { update(); return }
+  // Keep the previous page visible until its replacement can render, without capturing a snapshot.
+  if (from.view !== to.view) { startTransition(update); return }
+  const immediate = to.view === 'api-testing' || to.view === 'settings'
+  if (!document.startViewTransition || reduced || immediate || document.visibilityState !== 'visible') { update(); return }
   const token = ++transitionToken
   root.dataset.nav = navKind(from, to)
   const vt = document.startViewTransition(() => flushSync(update))
