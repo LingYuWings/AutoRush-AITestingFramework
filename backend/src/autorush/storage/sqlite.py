@@ -7,7 +7,7 @@ from contextlib import closing, nullcontext
 from pathlib import Path
 from uuid import UUID
 
-from autorush.domain.models import CaseRecord, CaseStatus, PlanRecord, RunRecord
+from autorush.domain.models import CaseRecord, CaseStatus, PlanRecord, RunRecord, RunSummary
 from autorush.llm.models import ProviderConfigRecord
 
 
@@ -145,6 +145,12 @@ class SqliteStore:
         with self._connect() as connection:
             rows = connection.execute("SELECT payload FROM runs ORDER BY rowid DESC").fetchall()
         return [RunRecord.model_validate_json(row[0]) for row in rows]
+
+    # Read the display and search fields without validating nested step evidence.
+    def list_run_summaries(self) -> list[RunSummary]:
+        with closing(self._connect()) as connection:
+            rows = connection.execute("SELECT payload FROM runs ORDER BY rowid DESC")
+            return [RunSummary.model_validate_json(payload) for (payload,) in rows]
 
     # Insert a provider configuration for subsequent connection checks.
     def save_provider_config(self, config: ProviderConfigRecord) -> None:

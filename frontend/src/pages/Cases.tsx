@@ -93,7 +93,16 @@ export default function Cases({ cases, selectedId, editor, onSelect, onApprove, 
 
   const scoped = useMemo(() => filterCases(cases, { platform, status: 'all', query: '', archived }), [cases, platform, archived])
   const filtered = useMemo(() => filterCases(cases, { platform, status: filter, query: deferredQuery, archived }), [cases, platform, filter, deferredQuery, archived])
-  const platformCounts = useMemo(() => Object.fromEntries(platforms.map(value => [value, filterCases(cases, { platform: value, status: 'all', query: '', archived }).length])), [cases, archived])
+  // Build all platform badge counts with one scan of the current archive scope.
+  const platformCounts = useMemo(() => {
+    const counts = { all: 0, web: 0, android: 0, desktop: 0, api: 0, mixed: 0 }
+    for (const item of cases) {
+      if (Boolean(item.archived_at) !== archived) continue
+      counts.all += 1
+      counts[platformOf(item)] += 1
+    }
+    return counts
+  }, [cases, archived])
   const approvedCount = scoped.filter(item => item.status === 'approved').length
   const selected = cases.find(item => item.id === selectedId)
   const filters: { key: Filter; label: string; count: number }[] = [

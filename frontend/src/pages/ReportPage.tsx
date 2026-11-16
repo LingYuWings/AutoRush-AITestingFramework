@@ -1,15 +1,16 @@
 import { uiText } from '../shared/i18n.ts'
-import {useEffect,useMemo,useState} from 'react'
+import {lazy,memo,Suspense,useEffect,useMemo,useState} from 'react'
 import {ArrowLeft,ChevronLeft,ChevronRight,Download,FileText,KeyRound} from '../components/icons'
-import {api,type CaseRecord,type PlanRecord,type ResultStatus,type RunRecord} from '../shared/api'
+import {api,ApiRequestError,type CaseRecord,type PlanRecord,type ResultStatus,type RunRecord,type RunSummary} from '../shared/api'
 import {EmptyState,ResultBar,StatusBadge} from '../components/ui'
 import {countStatuses,date,resultOrder,shortId,statusLabel} from '../shared/format'
 import StepScreenshot from '../components/StepScreenshot'
 import AgentTrace from '../features/runs/AgentTrace'
-import AgentLiveDialog from '../features/runs/AgentLiveDialog'
 import {ApiEvidence} from '../features/api-testing/ResponsePanel'
 
 type CaseResult=RunRecord['cases'][number]
+// Load the model output viewer only when a report's transcript is requested.
+const AgentLiveDialog = lazy(() => import('../features/runs/AgentLiveDialog'))
 
 // Render the raw step evidence only while its disclosure is open.
 function RawEvidence({value}:{value:unknown}) {
@@ -18,9 +19,10 @@ function RawEvidence({value}:{value:unknown}) {
 }
 
 // Show a case result and optionally limit its visible steps to issues.
-function CaseSection({item,index,title,authEpoch,onlyIssues}:{item:CaseResult;index:number;title:string;authEpoch:number;onlyIssues:boolean}) {
-  const steps=onlyIssues?item.steps.filter(step=>step.status!=='passed'):item.steps
-  const issues=item.steps.filter(step=>step.status!=='passed').length
+const CaseSection = memo(function CaseSection({item,index,title,authEpoch,onlyIssues}:{item:CaseResult;index:number;title:string;authEpoch:number;onlyIssues:boolean}) {
+  const issueSteps=item.steps.filter(step=>step.status!=='passed')
+  const steps=onlyIssues?issueSteps:item.steps
+  const issues=issueSteps.length
   return <section className={`report-case report-case-${item.status}`} id={`case-${index}`}>
     <header className="report-case-heading">
       <span className="report-case-index mono">{String(index+1).padStart(2,'0')}</span>
@@ -40,26 +42,48 @@ function CaseSection({item,index,title,authEpoch,onlyIssues}:{item:CaseResult;in
       </div>
     </li>)}</ol>:<p className="quiet-note report-case-empty">{uiText("所有步骤均已通过。")}</p>}
   </section>
-}
+})
 
 // Display a run report with per-case evidence, filters, and export actions.
-export default function ReportPage({id,runs,plans,cases,loaded,onBack,onOpen,onDownload}:{
-  id:string;runs:RunRecord[];plans:PlanRecord[];cases:CaseRecord[];loaded:boolean
+export default function ReportPage({id,runs,plans,cases,onBack,onOpen,onDownload}:{
+  id:string;runs:RunSummary[];plans:PlanRecord[];cases:CaseRecord[]
   onBack:()=>void;onOpen:(id:string)=>void;onDownload:(id:string,format:'json'|'html'|'junit')=>Promise<void>
 }) {
   const index=runs.findIndex(run=>run.id===id)
-  const run=runs[index] as RunRecord|undefined
+  const [run,setRun]=useState<RunRecord|null>(null)
+  const [loadState,setLoadState]=useState<'loading'|'missing'|'error'|'ready'>('loading')
+  const [loadError,setLoadError]=useState('')
+  const [attempt,setAttempt]=useState(0)
   const plan=plans.find(item=>item.id===run?.plan_id)
   const [authEpoch,setAuthEpoch]=useState(0)
   const [connecting,setConnecting]=useState(false)
   const [error,setError]=useState('')
   const [outputId,setOutputId]=useState<string|null>(null)
-  const issueSteps=run?run.cases.reduce((sum,item)=>sum+item.steps.filter(step=>step.status!=='passed').length,0):0
   const [onlyIssues,setOnlyIssues]=useState(false)
-  const counts=useMemo(()=>countStatuses(run?.cases??[]),[run])
-  const stepTotal=run?run.cases.reduce((sum,item)=>sum+item.steps.length,0):0
+  const {counts, issueSteps, stepTotal}=useMemo(()=>{
+    let issues=0, total=0
+    for (const item of run?.cases??[]) {
+      total+=item.steps.length
+      for (const step of item.steps) if (step.status!=='passed') issues+=1
+    }
+    return {counts:countStatuses(run?.cases??[]),issueSteps:issues,stepTotal:total}
+  },[run])
+  const caseTitles=useMemo(()=>new Map(cases.map(item=>[item.id,item.title])),[cases])
   // Prefer the recorded title, then fall back to the saved case or its short ID.
-  const caseTitle=(item:CaseResult)=>item.title||cases.find(testCase=>testCase.id===item.case_id)?.title||shortId(item.case_id)
+  const caseTitle=(item:CaseResult)=>item.title||caseTitles.get(item.case_id)||shortId(item.case_id)
+  useEffect(()=>{
+    const abort=new AbortController()
+    void api.run(id,abort.signal).then(value=>{
+      if (abort.signal.aborted) return
+      setRun(value)
+      setLoadState('ready')
+    }).catch(cause=>{
+      if (abort.signal.aborted) return
+      setLoadError(cause instanceof Error ? cause.message : String(cause))
+      setLoadState(cause instanceof ApiRequestError && cause.status===404 ? 'missing' : 'error')
+    })
+    return ()=>abort.abort()
+  },[id,attempt])
   useEffect(()=>{
     // Return to the report list on Escape outside editable controls.
     const onKey=(event:KeyboardEvent)=>{
@@ -72,20 +96,21 @@ export default function ReportPage({id,runs,plans,cases,loaded,onBack,onOpen,onD
   const connect=async()=>{setConnecting(true);setError('');try{api.setOperatorToken((await api.operatorSession()).operator_token);setAuthEpoch(v=>v+1)}catch(cause){setError(cause instanceof Error?cause.message:uiText("本地连接失败"))}finally{setConnecting(false)}}
 
   const back=<button className="back-link" onClick={onBack}><ArrowLeft size={15}/>{uiText("运行报告")}</button>
-  if(!run) return <div className="report-page">{back}<section className="surface">{loaded
+  if(!run) return <div className="report-page">{back}<section className="surface">{loadState==='missing'
     ?<EmptyState icon={FileText} title={uiText("找不到这份报告")} description={uiText("批次 #{0} 不存在或已被清理。", shortId(id))}/>
+    :loadState==='error' ? <p role="alert" className="inline-alert error">{loadError} <button type="button" className="text-button" onClick={()=>{setLoadState('loading');setAttempt(value=>value+1)}}>{uiText('重试')}</button></p>
     :<div className="page-loading" aria-busy="true"/>}</section></div>
 
   const passRate=run.cases.length?Math.round(counts.passed/run.cases.length*100):0
-  const newer=runs[index-1],older=runs[index+1]
+  const newer=runs[index-1],older=index<0?undefined:runs[index+1]
   return <div className="report-page">
     <div className="report-nav">
       {back}
-      <div className="report-pager">
+      {index>=0&&<div className="report-pager">
         <button className="icon-button" disabled={!newer} onClick={()=>newer&&onOpen(newer.id)} aria-label={uiText("较新的报告")} title={uiText("较新的报告")}><ChevronLeft size={16}/></button>
         <span className="num">{index+1} / {runs.length}</span>
         <button className="icon-button" disabled={!older} onClick={()=>older&&onOpen(older.id)} aria-label={uiText("较早的报告")} title={uiText("较早的报告")}><ChevronRight size={16}/></button>
-      </div>
+      </div>}
     </div>
 
     <header className={`report-hero hero-${run.status}`}>
@@ -104,7 +129,7 @@ export default function ReportPage({id,runs,plans,cases,loaded,onBack,onOpen,onD
         <StatusBadge status={run.status}/>
       </div>
     </header>
-    {outputId===run.id&&<AgentLiveDialog executionId={run.id} source="report" initialFilter="output" onClose={()=>setOutputId(null)}/>}
+    {outputId===run.id&&<Suspense fallback={null}><AgentLiveDialog executionId={run.id} source="report" initialFilter="output" onClose={()=>setOutputId(null)}/></Suspense>}
 
     <section className="report-stats" aria-label={uiText("结果统计")}>
       <ResultBar items={run.cases}/>
