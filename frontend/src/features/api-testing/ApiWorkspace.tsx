@@ -94,7 +94,7 @@ export default function ApiWorkspace({section,onNavigate,onCaseCreated,onGuardCh
     })}</nav>
     <div className="api-workspace-main">
     {error&&!pending&&<p role="alert" className="api-error">{error}</p>}
-    <div className="api-section api-workbench-section" hidden={page!=='workbench'}>
+    <div className="api-section api-workbench-section" data-route-section hidden={page!=='workbench'}>
       <header className="api-workspace-tabbar">
       <h1>{uiText('API 测试')}</h1>
       <div ref={tabStrip} className="api-request-tabs" role="tablist" aria-label={uiText("请求标签")}>{tabs.map(tab=><div key={tab.key} className={tab.key===activeKey?'active':''}>
@@ -112,9 +112,9 @@ export default function ApiWorkspace({section,onNavigate,onCaseCreated,onGuardCh
         activeEnvironment={environmentIds[tab.key]??''} onEnvironmentChange={value=>setEnvironmentIds(current=>({...current,[tab.key]:value}))}
         onPrepareCase={create=>guard(()=>{void create().then(id=>{if(id)void onCaseCreated(id)})})} onDeleteRequest={remove=>setPending({keys:[tab.key],proceed:remove,saveAsCopy:true})} onOpenRequest={request=>open(request)} onNewDraft={draft=>open(null,draft)} onRun={scope=>{setPreset(scope);onNavigate('runner')}} onCaseCreated={id=>guard(()=>{void onCaseCreated(id)})}/></div>)}
     </div>
-    <div className="api-section" hidden={page!=='runner'}><RunnerPage refreshResources={refreshResources} active={page==='runner'} preset={preset} onLatest={latest}/></div>
-    <div className="api-section" hidden={page!=='environments'}><EnvironmentPage active={page==='environments'} onChange={()=>setEpoch(current=>current+1)}/></div>
-    <div className="api-section" hidden={page!=='history'}><HistoryPage active={page==='history'} onRestore={draft=>open(null,draft)} onLatest={latest}/></div>
+    <div className="api-section" data-route-section hidden={page!=='runner'}><RunnerPage refreshResources={refreshResources} active={page==='runner'} preset={preset} onLatest={latest}/></div>
+    <div className="api-section" data-route-section hidden={page!=='environments'}><EnvironmentPage active={page==='environments'} onChange={()=>setEpoch(current=>current+1)}/></div>
+    <div className="api-section" data-route-section hidden={page!=='history'}><HistoryPage active={page==='history'} onRestore={draft=>open(null,draft)} onLatest={latest}/></div>
     </div>
     {pending&&<div className="api-dialog-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget&&!saving){setPending(null);setError('')}}}><section className="api-draft-dialog" role="dialog" aria-modal="true" aria-label={uiText("未保存的请求")} onKeyDown={event=>{if(event.key==='Escape'&&!saving){event.preventDefault();setPending(null);setError('')}}}><h2>{uiText("保留未保存的更改")}</h2><p>{pending.saveAsCopy?uiText("删除原请求前，可将当前修改保留为新请求。放弃并删除会丢弃本次编辑。"):uiText("有 {0} 个请求尚未保存。保存后继续，或放弃本次编辑。", pending.keys.length)}</p>{error&&<p role="alert" className="api-error">{error}</p>}<div className="api-toolbar api-dialog-actions"><button type="button" className="primary-button" autoFocus disabled={saving} onClick={()=>void choose(true)}>{pending.saveAsCopy?uiText("保留为新请求"):uiText("保存更改")}</button><button type="button" className="secondary-button" disabled={saving} onClick={()=>void choose(false)}>{pending.saveAsCopy?uiText("放弃并删除"):uiText("放弃更改")}</button><button type="button" className="text-button" disabled={saving} onClick={()=>{setPending(null);setError('')}}>{uiText("取消")}</button></div></section></div>}
   </div>

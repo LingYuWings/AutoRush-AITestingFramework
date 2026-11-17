@@ -73,6 +73,8 @@ export default function App() {
   const [debugOpen,setDebugOpen]=useState<boolean | null>(null)
   const [route, setRoute] = useState<Route>(() => parseRoute(location.hash))
   const routeRef = useRef(route)
+  const renderedRoute = useRef(route)
+  const pageContent = useRef<HTMLElement>(null)
   const scrollTarget = useRef<Route | null>(null)
   const apiGuard=useRef<ApiNavigationGuard>(null)
   const navigationIndex=useRef<number>(typeof history.state?.autorushIndex==='number'?history.state.autorushIndex:0)
@@ -131,6 +133,20 @@ export default function App() {
     if (scrollTarget.current !== route) return
     scrollTarget.current = null
     if (route.view !== 'reports' || route.id) scroller()?.scrollTo({ top: 0 })
+  }, [route])
+  useLayoutEffect(() => {
+    const previous = renderedRoute.current
+    renderedRoute.current = route
+    const switchedPage = previous.view !== route.view
+    const switchedSection = previous.id !== route.id && (route.view === 'api-testing' || route.view === 'settings')
+    if ((!switchedPage && !switchedSection) || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    // Animate the committed content so loading and rendering can finish before the entrance starts.
+    const target = switchedPage ? pageContent.current : pageContent.current?.querySelector('[data-route-section]:not([hidden])')
+    const entrance = target?.animate?.([
+      { opacity: 0.72, translate: '0 4px' },
+      { opacity: 1, translate: 'none' },
+    ], { id: 'page-entrance', duration: 160, easing: 'cubic-bezier(.2, .7, .2, 1)' })
+    return () => entrance?.cancel()
   }, [route])
   useEffect(() => {
     if (!location.hash) history.replaceState({autorushIndex:navigationIndex.current}, '', routeHash(routeRef.current))
@@ -318,7 +334,7 @@ export default function App() {
         </div>
       </header>
       <div className="main-scroll" id="main-scroll">
-      <main className={view === 'cases' ? 'main-content fill' : view === 'api-testing' ? 'main-content api-main-content' : 'main-content'}>
+      <main ref={pageContent} className={view === 'cases' ? 'main-content fill' : view === 'api-testing' ? 'main-content api-main-content' : 'main-content'}>
         <Suspense fallback={<div className="page-loading" aria-busy="true" />}>
           {view === 'overview' && <Overview cases={activeCases} plans={plans} runs={runs} events={events} onNavigate={navigate} onNewCase={() => { setNewCasePlatform('web'); go({ view: 'cases', id: 'new' }) }} onOpenRun={id => go({ view: 'reports', id })} />}
           {view === 'cases' && <Cases cases={cases} selectedId={creatingCase ? null : route.id ?? null} editor={caseEditor || null}

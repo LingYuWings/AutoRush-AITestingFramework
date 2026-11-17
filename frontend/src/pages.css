@@ -11,8 +11,7 @@
 .status-pip { flex-shrink: 0; width: 8px; height: 8px; border-radius: 50%; background: var(--ink-4); }
 .pip-approved { background: var(--accent); }
 .pip-draft { background: transparent; box-shadow: inset 0 0 0 1.5px var(--ink-4); }
-.mini-select { height: 32px; min-width: 0; flex: 1; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface); color: var(--ink); font-size: 13px; outline: none; }
-.mini-select:focus { border-color: var(--accent); box-shadow: var(--focus); }
+.mini-select { block-size: 32px; flex: 1; padding-inline: 8px; font-size: 13px; }
 .icon-button.toggled { background: var(--accent-soft); color: var(--accent); }
 
 /* Cases */
@@ -167,7 +166,7 @@
 /* With view transitions available, the per-element entrance animations would play on top of them.
    Kept last so it wins over the entrance animations declared above. */
 @supports (view-transition-name: none) {
-  .main-content, .case-detail, .editor-panel, .report-hero, .report-case, .nav-indicator { animation: none; }
+  .main-content, .case-detail, .editor-panel, .report-hero, .report-case, :root[data-nav] .nav-indicator { animation: none; }
 }
 .language-settings { margin-bottom: 16px; }
 .language-settings .field { max-width: 320px; }

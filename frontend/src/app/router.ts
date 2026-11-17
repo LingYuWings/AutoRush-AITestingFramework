@@ -30,12 +30,12 @@ export const sameRoute = (a: Route, b: Route) => routeHash(a) === routeHash(b)
  * - `forward` / `back`  drilling into / out of a record: the page slides horizontally
  * - `swap`    sibling record at the same depth (report pager): quick crossfade
  * - `detail`  master–detail pages (cases): only the detail pane changes, the list stays still
- * - `tab`     in-page section tabs (API testing and plans): quick crossfade
+ * - `tab`     in-page plan tabs: quick crossfade
  */
 export function navKind(from: Route, to: Route) {
   if (from.view !== to.view) return 'switch'
   if (to.view === 'cases') return 'detail'
-  if (to.view === 'api-testing' || to.view === 'plans') return 'tab'
+  if (to.view === 'plans') return 'tab'
   return depth(to) > depth(from) ? 'forward' : depth(to) < depth(from) ? 'back' : 'swap'
 }
 
@@ -43,14 +43,27 @@ export function navKind(from: Route, to: Route) {
 export function transition(from: Route, to: Route, update: () => void) {
   const root = document.documentElement
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const token = ++transitionToken
+  if (activeTransition) {
+    activeTransition.skipTransition()
+    activeTransition = undefined
+    if (root.dataset.nav !== 'theme') delete root.dataset.nav
+  }
   // Keep the previous page visible until its replacement can render, without capturing a snapshot.
   if (from.view !== to.view) { startTransition(update); return }
   const immediate = to.view === 'api-testing' || to.view === 'settings'
   if (!document.startViewTransition || reduced || immediate || document.visibilityState !== 'visible') { update(); return }
-  const token = ++transitionToken
   root.dataset.nav = navKind(from, to)
-  const vt = document.startViewTransition(() => flushSync(update))
-  // A rapid second navigation skips this transition; don't clear the attribute the newer one relies on.
-  void vt.finished.finally(() => { if (token === transitionToken) delete root.dataset.nav })
+  activeTransition = document.startViewTransition(() => {
+    if (token === transitionToken) flushSync(update)
+  })
+  // Release the snapshot state only if the same navigation is still current.
+  const release = () => {
+    if (token !== transitionToken) return
+    activeTransition = undefined
+    if (root.dataset.nav !== 'theme') delete root.dataset.nav
+  }
+  void activeTransition.finished.then(release, release)
 }
 let transitionToken = 0
+let activeTransition: ViewTransition | undefined
