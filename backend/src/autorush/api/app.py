@@ -35,6 +35,7 @@ from autorush.domain.models import (
     PlanStatus,
     ResultStatus,
     RunRecord,
+    RunSummary,
 )
 from autorush.devices.hub import DeviceAlreadyConnectedError, DeviceHub
 from autorush.devices import adb
@@ -863,6 +864,11 @@ def create_app(
     @app.get("/api/v1/runs", response_model=list[RunRecord])
     def list_runs() -> list[RunRecord]:
         return store.list_runs()
+
+    # List the run outcomes and search fields needed by the console.
+    @app.get("/api/v1/run-summaries", response_model=list[RunSummary])
+    def list_run_summaries() -> list[RunSummary]:
+        return store.list_run_summaries()
 
     # Download the persisted JSON report for a completed run.
     @app.get("/api/v1/runs/{run_id}/report")

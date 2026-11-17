@@ -1,8 +1,13 @@
 import { uiLanguage, uiText } from './i18n.ts'
 import type { DriverKind, ResultStatus, StepSpec } from './api'
 
-// Format a timestamp for the selected console language.
-export const date = (value: string) => new Date(value).toLocaleString(uiLanguage, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+const dateTime = new Intl.DateTimeFormat(uiLanguage, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+
+// Reuse the locale formatter across list rows and keep the invalid-date fallback.
+export const date = (value: string) => {
+  const timestamp = new Date(value)
+  return Number.isNaN(timestamp.getTime()) ? timestamp.toLocaleString(uiLanguage) : dateTime.format(timestamp)
+}
 
 const englishElapsed = new Intl.RelativeTimeFormat('en')
 

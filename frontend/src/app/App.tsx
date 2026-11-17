@@ -1,18 +1,12 @@
 import { uiText } from '../shared/i18n.ts'
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   Braces, CircleAlert, CircleCheck, ClipboardList, CloudOff, FileText, LayoutDashboard, Moon,
   RefreshCw, Settings2, Smartphone, Sun, Workflow, X,
 } from '../components/icons'
-import CaseEditor from '../features/cases/CaseEditor'
-import CaseDebugPanel from '../features/case-debug/CaseDebugPanel'
 import type {DebugSelection} from '../features/case-debug/client'
 import Overview from '../pages/Overview'
-import Cases from '../pages/Cases'
-import Plans from '../pages/Plans'
-import Reports from '../pages/Reports'
-import ReportPage from '../pages/ReportPage'
-import ApiWorkspace,{apiSections,type ApiNavigationGuard} from '../features/api-testing/ApiWorkspace'
+import { apiSections, type ApiNavigationGuard } from '../features/api-testing/navigation'
 import { BrandMark } from '../components/ui'
 import { scroller } from '../shared/scroll'
 import { desktop, syncDesktopTheme } from '../shared/desktop.ts'
@@ -20,15 +14,33 @@ import { shortId, statusLabel } from '../shared/format'
 import { parseRoute, routeHash, sameRoute, transition, type Route } from './router'
 import type { LiveEvent, RunProgress, View } from './types'
 import {
-  api, LOCAL_BACKEND_ADDRESS, type CaseRecord, type DriverKind, type PlanRecord, type ProviderConfig, type ProviderPreset, type RunRecord,
+  api, LOCAL_BACKEND_ADDRESS, type CaseRecord, type DriverKind, type PlanRecord, type ProviderConfig, type ProviderPreset, type RunSummary,
 } from '../shared/api'
 
-// Heavy, rarely-first pages are split out and warmed up on idle so navigation never waits on a chunk.
-const loadDevices = () => import('../features/devices/Devices')
-// Load the settings page chunk on demand or during idle warmup.
-const loadSettings = () => import('../pages/Settings')
-const Devices = lazy(loadDevices)
-const Settings = lazy(loadSettings)
+// Share sidebar imports between React.lazy and pointer or keyboard navigation intent.
+const routeLoaders = {
+  cases: () => import('../pages/Cases'),
+  plans: () => import('../pages/Plans'),
+  reports: () => import('../pages/Reports'),
+  devices: () => import('../features/devices/Devices'),
+  settings: () => import('../pages/Settings'),
+  'api-testing': () => import('../features/api-testing/ApiWorkspace'),
+}
+const Cases = lazy(routeLoaders.cases)
+const Plans = lazy(routeLoaders.plans)
+const Reports = lazy(routeLoaders.reports)
+const Devices = lazy(routeLoaders.devices)
+const Settings = lazy(routeLoaders.settings)
+const ApiWorkspace = lazy(routeLoaders['api-testing'])
+// Defer overlays and details until their controls are used.
+const ReportPage = lazy(() => import('../pages/ReportPage'))
+const CaseEditor = lazy(() => import('../features/cases/CaseEditor'))
+const CaseDebugPanel = lazy(() => import('../features/case-debug/CaseDebugPanel'))
+
+// Start loading the intended sidebar destination before click without warming every page at startup.
+function preloadView(view: View) {
+  if (view !== 'overview') void routeLoaders[view]().catch(() => { /* Let navigation surface a load failure. */ })
+}
 
 type NavItem = { key: View; label: string; icon: typeof LayoutDashboard }
 // The main group follows the testing flow (write → plan → run → review); tools sit apart from it.
@@ -58,9 +70,12 @@ const initialTheme = (): Theme => {
 // Coordinate console navigation, shared records, live run events, and the active page.
 export default function App() {
   const [debugSelection,setDebugSelection]=useState<DebugSelection|null>(null)
-  const [debugOpen,setDebugOpen]=useState(false)
+  const [debugOpen,setDebugOpen]=useState<boolean | null>(null)
   const [route, setRoute] = useState<Route>(() => parseRoute(location.hash))
   const routeRef = useRef(route)
+  const renderedRoute = useRef(route)
+  const pageContent = useRef<HTMLElement>(null)
+  const scrollTarget = useRef<Route | null>(null)
   const apiGuard=useRef<ApiNavigationGuard>(null)
   const navigationIndex=useRef<number>(typeof history.state?.autorushIndex==='number'?history.state.autorushIndex:0)
   const restoringHistory=useRef(false),bypassPopGuard=useRef(false),afterHistoryRestore=useRef<(()=>void)|null>(null)
@@ -68,24 +83,39 @@ export default function App() {
   const registerApiGuard=useCallback((guard:ApiNavigationGuard)=>{apiGuard.current=guard},[])
   const [cases, setCases] = useState<CaseRecord[]>([])
   const [plans, setPlans] = useState<PlanRecord[]>([])
-  const [runs, setRuns] = useState<RunRecord[]>([])
+  const [runs, setRuns] = useState<RunSummary[]>([])
   const [providerPresets, setProviderPresets] = useState<ProviderPreset[]>([])
   const [providerConfigs, setProviderConfigs] = useState<ProviderConfig[]>([])
   const [connected, setConnected] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [loaded, setLoaded] = useState(false)
   const [newCasePlatform,setNewCasePlatform]=useState<DriverKind>('web')
-  const activeCases=cases.filter(item=>!item.archived_at)
+  const activeCases=useMemo(() => cases.filter(item=>!item.archived_at),[cases])
   const [events, setEvents] = useState<LiveEvent[]>([])
   const [progress, setProgress] = useState<RunProgress | null>(null)
   const [theme, setTheme] = useState<Theme>(initialTheme)
   const [notice, setNotice] = useState<{ text: string; error: boolean; leaving?: boolean } | null>(null)
+
+  useEffect(() => {
+    if (!connected || routeRef.current.view !== 'overview' || typeof requestIdleCallback !== 'function') return
+    // Warm the two editor destinations after the overview is usable and the renderer is idle.
+    const idle = requestIdleCallback(() => {
+      if (routeRef.current.view !== 'overview') return
+      preloadView('cases')
+      preloadView('api-testing')
+    })
+    return () => cancelIdleCallback(idle)
+  }, [connected])
   // Replace the current toast with a new success or error message.
   const notify = (text: string, error = false) => setNotice({ text, error })
   // Plays the exit animation first; the toast unmounts on its `animationend`.
   const dismissNotice = useCallback(() => setNotice(current => current && (window.matchMedia('(prefers-reduced-motion: reduce)').matches ? null : { ...current, leaving: true })), [])
   // Keep the 30 newest events at the top of the activity feed.
   const pushEvent = (event: LiveEvent) => setEvents(current => [event, ...current].slice(0, 30))
+  // Keep the panel mounted after first use so closing it preserves active debug tracking.
+  const openDebug = (selection: DebugSelection | null) => {
+    setDebugSelection(selection)
+    setDebugOpen(true)
+  }
 
   // Check for unsaved requests before updating history and animating the route.
   const go = useCallback((next: Route, options: { replace?: boolean;bypassApiGuard?:boolean } = {}) => {
@@ -95,11 +125,29 @@ export default function App() {
     if(!options.replace)navigationIndex.current+=1
     history[options.replace ? 'replaceState' : 'pushState']({autorushIndex:navigationIndex.current}, '', routeHash(next))
     routeRef.current = next
-    transition(from, next, () => {
-      setRoute(next)
-      if (from.view !== next.view || next.view === 'reports') scroller()?.scrollTo({ top: 0 })
-    })
+    scrollTarget.current = from.view !== next.view || next.view === 'reports' ? next : null
+    transition(from, next, () => setRoute(next))
   }, [])
+  useLayoutEffect(() => {
+    // Reset the new page after it commits. The report list restores its own saved offset.
+    if (scrollTarget.current !== route) return
+    scrollTarget.current = null
+    if (route.view !== 'reports' || route.id) scroller()?.scrollTo({ top: 0 })
+  }, [route])
+  useLayoutEffect(() => {
+    const previous = renderedRoute.current
+    renderedRoute.current = route
+    const switchedPage = previous.view !== route.view
+    const switchedSection = previous.id !== route.id && (route.view === 'api-testing' || route.view === 'settings')
+    if ((!switchedPage && !switchedSection) || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    // Animate the committed content so loading and rendering can finish before the entrance starts.
+    const target = switchedPage ? pageContent.current : pageContent.current?.querySelector('[data-route-section]:not([hidden])')
+    const entrance = target?.animate?.([
+      { opacity: 0.72, translate: '0 4px' },
+      { opacity: 1, translate: 'none' },
+    ], { id: 'page-entrance', duration: 160, easing: 'cubic-bezier(.2, .7, .2, 1)' })
+    return () => entrance?.cancel()
+  }, [route])
   useEffect(() => {
     if (!location.hash) history.replaceState({autorushIndex:navigationIndex.current}, '', routeHash(routeRef.current))
     else if(typeof history.state?.autorushIndex!=='number')history.replaceState({autorushIndex:navigationIndex.current},'',location.href)
@@ -116,17 +164,11 @@ export default function App() {
       }
       bypassPopGuard.current=false;navigationIndex.current=targetIndex
       routeRef.current = next
+      scrollTarget.current = null
       transition(from, next, () => setRoute(next))
     }
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
-  }, [])
-  useEffect(() => {
-    // Fetch the lazy page chunks while the browser is idle.
-    const warm = () => { void loadDevices(); void loadSettings() }
-    const idle = typeof requestIdleCallback === 'function'
-    const id = idle ? requestIdleCallback(warm, { timeout: 3000 }) : window.setTimeout(warm, 1500)
-    return () => { if (idle) cancelIdleCallback(id); else window.clearTimeout(id) }
   }, [])
 
   useEffect(() => {
@@ -148,12 +190,12 @@ export default function App() {
     try {
       await api.health()
       const [nextCases, nextPlans, nextRuns, nextPresets, nextProviderConfigs] = await Promise.all([
-        api.cases(true), api.plans(), api.runs(), api.providerPresets(), api.providerConfigs(),
+        api.cases(true), api.plans(), api.runSummaries(), api.providerPresets(), api.providerConfigs(),
       ])
       setCases(nextCases); setPlans(nextPlans); setRuns(nextRuns)
       setProviderPresets(nextPresets); setProviderConfigs(nextProviderConfigs); setConnected(true)
     } catch (error) { setConnected(false); notify(error instanceof Error ? error.message : uiText("加载失败"), true) }
-    finally { setLoading(false); setLoaded(true) }
+    finally { setLoading(false) }
   }, [])
   useEffect(() => { void refresh() }, [refresh])
   useEffect(() => {
@@ -199,10 +241,10 @@ export default function App() {
     try { await fn(); notify(success); await refresh(); return true }
     catch (error) { notify(error instanceof Error ? error.message : uiText("操作失败"), true); return false }
   }
-  const counts: Partial<Record<View, number>> = {
+  const counts: Partial<Record<View, number>> = useMemo(() => ({
     cases: activeCases.filter(item => item.status === 'draft').length,
     plans: plans.filter(item => item.status === 'draft').length,
-  }
+  }), [activeCases, plans])
   const view = route.view
   const page = navItems.find(item => item.key === view)?.label
   const editingCase = view === 'cases' && route.edit ? cases.find(item => item.id === route.id) : undefined
@@ -236,10 +278,10 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  const caseEditor = (creatingCase || editingCase) && <CaseEditor
+  const caseEditor = (creatingCase || editingCase) && <Suspense fallback={<div className="page-loading" aria-busy="true" />}><CaseEditor
     key={editingCase ? `${editingCase.id}-${editingCase.version}` : `new-${newCasePlatform}`}
     initial={editingCase} initialPlatform={newCasePlatform} providers={providerConfigs}
-    onDebug={(read,sessionId)=>{setDebugSelection({read,sessionId,source:editingCase,saved:false});setDebugOpen(true)}}
+    onDebug={(read,sessionId)=>openDebug({read,sessionId,source:editingCase,saved:false})}
     onCancel={() => go({ view: 'cases', id: editingCase?.id }, { replace: true })}
     onSave={async payload => {
       let saved: CaseRecord | undefined
@@ -248,7 +290,7 @@ export default function App() {
         else saved = await api.createCase(payload)
       }, editingCase ? uiText("用例已保存为草稿") : uiText("用例草稿已创建"))
       if (ok) go({ view: 'cases', id: saved?.id }, { replace: true })
-    }} />
+    }} /></Suspense>
 
   return <div className="app-shell">
     <aside className="sidebar">
@@ -257,6 +299,7 @@ export default function App() {
         <span className="nav-group-label" aria-hidden="true">{group.label}</span>
         {group.items.map(item => <a key={item.key} href={routeHash({ view: item.key })} aria-label={item.label} aria-current={view === item.key ? 'page' : undefined}
           className={view === item.key ? 'nav-item active' : 'nav-item'} title={item.label}
+          onPointerEnter={() => preloadView(item.key)} onFocus={() => preloadView(item.key)}
           onClick={event => { if (event.metaKey || event.ctrlKey || event.shiftKey || event.button) return; event.preventDefault(); navigate(item.key) }}>
           {view === item.key && <span className="nav-indicator" aria-hidden="true" />}
           <item.icon size={17} />
@@ -291,13 +334,13 @@ export default function App() {
         </div>
       </header>
       <div className="main-scroll" id="main-scroll">
-      <main key={view} className={view === 'cases' ? 'main-content fill' : view === 'api-testing' ? 'main-content api-main-content' : 'main-content'}>
+      <main ref={pageContent} className={view === 'cases' ? 'main-content fill' : view === 'api-testing' ? 'main-content api-main-content' : 'main-content'}>
         <Suspense fallback={<div className="page-loading" aria-busy="true" />}>
           {view === 'overview' && <Overview cases={activeCases} plans={plans} runs={runs} events={events} onNavigate={navigate} onNewCase={() => { setNewCasePlatform('web'); go({ view: 'cases', id: 'new' }) }} onOpenRun={id => go({ view: 'reports', id })} />}
           {view === 'cases' && <Cases cases={cases} selectedId={creatingCase ? null : route.id ?? null} editor={caseEditor || null}
             onImported={refresh}
-            onDebug={item=>{setDebugSelection({/* Supply the saved case as the debug input. */ read:()=>item,source:item,saved:true,sessionId:crypto.randomUUID()});setDebugOpen(true)}}
-            onDebugHistory={()=>{setDebugSelection(null);setDebugOpen(true)}}
+            onDebug={item=>openDebug({/* Supply the saved case as the debug input. */ read:()=>item,source:item,saved:true,sessionId:crypto.randomUUID()})}
+            onDebugHistory={()=>openDebug(null)}
             onSelect={id => go({ view: 'cases', id: id ?? undefined }, { replace: true })}
             onCreate={platform => { setNewCasePlatform(platform); go({ view: 'cases', id: 'new' }, { replace: true }) }}
             onEdit={item => go({ view: 'cases', id: item.id, edit: true }, { replace: true })}
@@ -316,7 +359,7 @@ export default function App() {
             onReady={async id => { await action(async()=>{await authorizeLocal();return api.readyPlan(id)}, uiText("计划已就绪")) }}
             onRun={async id => { await action(async()=>{await authorizeLocal();return api.runPlan(id)}, uiText("运行完成，报告已保存")) }} />}
           {view === 'reports' && (route.id
-            ? <ReportPage key={route.id} id={route.id} runs={runs} plans={plans} cases={cases} loaded={loaded}
+            ? <ReportPage key={route.id} id={route.id} runs={runs} plans={plans} cases={cases}
                 onBack={() => go({ view: 'reports' })}
                 onOpen={id => go({ view: 'reports', id }, { replace: true })}
                 onDownload={async (id, format) => { try { await api.downloadReport(id, format) } catch (error) { notify(error instanceof Error ? error.message : uiText("下载失败"), true) } }} />
@@ -328,7 +371,9 @@ export default function App() {
       </main>
       </div>
     </div>
-    <CaseDebugPanel open={debugOpen} selection={debugSelection} plans={plans} onClose={()=>setDebugOpen(false)}/>
+    {debugOpen !== null && <Suspense fallback={null}>
+      <CaseDebugPanel open={debugOpen} selection={debugSelection} plans={plans} onClose={()=>setDebugOpen(false)}/>
+    </Suspense>}
     {notice && <div role="status" className={`toast${notice.error ? ' error' : ''}${notice.leaving ? ' leaving' : ''}`}
       onAnimationEnd={event => { if (event.animationName === 'toast-out') setNotice(null) }}>
       {notice.error ? <CircleAlert size={17} /> : <CircleCheck size={17} />}

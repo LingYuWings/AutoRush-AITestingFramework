@@ -1,0 +1,143 @@
+/* Style form selects and floating menus with the console's control tokens. */
+:where(select:not([multiple], [size]:not([size="1"]))) {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  block-size: 34px;
+  padding-inline: 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13.5px;
+  text-overflow: ellipsis;
+  transition: border-color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease);
+
+  &:hover:not(:disabled, :focus) { border-color: var(--ink-4); }
+  &:focus { border-color: var(--accent); box-shadow: var(--focus); outline: 0; }
+  &:disabled { background: var(--surface-sunken); color: var(--ink-3); cursor: default; }
+  &:user-invalid { border-color: color-mix(in srgb, var(--fail) 70%, var(--line-strong)); }
+  &:user-invalid:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var(--fail) 18%, transparent); }
+}
+
+:root { --dropdown-padding: 4px; }
+
+.api-request-menu {
+  max-block-size: min(24rem, 65dvh);
+  padding: var(--dropdown-padding);
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-overlay);
+}
+
+/* Keep the closed action menu painted long enough to fade out. */
+@media (prefers-reduced-motion: no-preference) {
+  @supports selector(::details-content) and (transition-behavior: allow-discrete) {
+    .api-request-actions::details-content {
+      opacity: 0;
+      transition: opacity var(--dur-1) var(--ease), content-visibility var(--dur-1) allow-discrete;
+    }
+
+    .api-request-actions[open]::details-content { opacity: 1; }
+
+    .api-request-actions > .api-request-menu {
+      scale: .985;
+      transform-origin: top right;
+      transition: scale var(--dur-1) var(--ease);
+    }
+
+    .api-request-actions[open] > .api-request-menu { scale: 1; }
+    .api-request-actions:not([open]) > .api-request-menu { pointer-events: none; }
+  }
+}
+
+/* Use Chromium's native top layer for the picker. Older engines keep their system popup. */
+@supports (appearance: base-select) and selector(::picker(select)) {
+  :where(select:not([multiple], [size]:not([size="1"]))) {
+    appearance: base-select;
+    align-items: center;
+    gap: 8px;
+
+    &::picker-icon {
+      content: '';
+      flex: none;
+      inline-size: 7px;
+      block-size: 7px;
+      margin-inline-start: auto;
+      margin-inline-end: 2px;
+      border-inline-end: 1.5px solid currentColor;
+      border-block-end: 1.5px solid currentColor;
+      color: var(--ink-3);
+      transform: translateY(-2px) rotate(45deg);
+    }
+
+    &:open { border-color: var(--accent); }
+    &:open::picker-icon { color: var(--accent); transform: translateY(2px) rotate(225deg); }
+
+    &::picker(select) {
+      appearance: base-select;
+      box-sizing: border-box;
+      min-inline-size: anchor-size(width);
+      max-inline-size: min(34rem, calc(100vw - 16px));
+      max-block-size: min(20rem, 60dvh);
+      margin-block: 4px;
+      padding: var(--dropdown-padding);
+      overflow: auto;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-lg);
+      background: var(--surface);
+      color: var(--ink);
+      box-shadow: var(--shadow-overlay);
+      font: 400 13px/1.45 var(--font-sans);
+    }
+
+    & option {
+      min-block-size: 30px;
+      padding: 5px 8px;
+      gap: 12px;
+      border-radius: var(--radius);
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+
+    & option:checked { background: var(--accent-soft); color: var(--accent); }
+    & option:disabled { color: var(--ink-3); }
+    & option:not(:disabled):is(:hover, :focus-visible) {
+      background: var(--hover);
+      outline: 1px solid var(--line-strong);
+      outline-offset: -1px;
+    }
+    & option::checkmark { order: 1; margin-inline-start: auto; color: var(--accent); }
+    & optgroup::before { padding: 5px 8px 3px; color: var(--ink-3); font-size: 12px; font-weight: 600; }
+  }
+
+  /* Preserve the native popup's top layer during the exit transition. */
+  @media (prefers-reduced-motion: no-preference) {
+    :where(select:not([multiple], [size]:not([size="1"]))) {
+      &::picker-icon { transition: transform var(--dur-1) var(--ease), color var(--dur-1) var(--ease); }
+
+      &::picker(select) {
+        opacity: 0;
+        scale: .985;
+        pointer-events: none;
+        transition: opacity var(--dur-1) var(--ease), scale var(--dur-1) var(--ease),
+          display var(--dur-1) allow-discrete, overlay var(--dur-1) allow-discrete;
+      }
+
+      &:open::picker(select) { opacity: 1; scale: 1; pointer-events: auto; }
+    }
+
+    @starting-style {
+      :where(select:not([multiple], [size]:not([size="1"]))):open::picker(select) {
+        opacity: 0;
+        scale: .985;
+      }
+    }
+  }
+}
+
+@media (forced-colors: active) {
+  :where(select):focus-visible { outline: 2px solid Highlight; outline-offset: 2px; }
+}

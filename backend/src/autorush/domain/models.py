@@ -166,21 +166,30 @@ class StepResult(BaseModel):
     evidence: dict[str, Any] = Field(default_factory=dict)
 
 
-# Groups step outcomes for one case within a run.
-class CaseResult(BaseModel):
+# Describes a case outcome in a report list without step evidence.
+class RunCaseSummary(BaseModel):
     case_id: UUID
     title: str = ""
     status: ResultStatus
+
+
+# Groups step outcomes for one case within a run.
+class CaseResult(RunCaseSummary):
     steps: list[StepResult]
 
 
-# Stores aggregate status, case results and report export references.
-class RunRecord(BaseModel):
+# Shares status and search metadata between report lists and full reports.
+class RunSummary(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     plan_id: UUID
     status: ResultStatus
     termination_reason: str | None = None
-    cases: list[CaseResult]
+    cases: list[RunCaseSummary]
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+# Stores full case results and report export references for one run.
+class RunRecord(RunSummary):
+    cases: list[CaseResult]
     report_path: str | None = None
     report_paths: dict[str, str] = Field(default_factory=dict)

@@ -1,7 +1,7 @@
 import { uiText } from '../shared/i18n.ts'
-import { useEffect,useRef,useState } from 'react'
+import { useEffect,useMemo,useRef,useState } from 'react'
 import { FileText, Globe, Monitor, Pencil, Play, Plus, RefreshCw, RotateCcw, Search, Server, ShieldCheck, Smartphone, Workflow, X } from '../components/icons'
-import { api, type AgentExecution,type ProviderConfig,type CaseRecord, type DesktopTarget, type PlanPayload, type PlanRecord, type RunRecord } from '../shared/api'
+import { api, type AgentExecution,type ProviderConfig,type CaseRecord, type DesktopTarget, type PlanPayload, type PlanRecord, type RunSummary } from '../shared/api'
 import AgentProgress from '../features/runs/AgentProgress'
 import PlanDetails from '../features/plans/PlanDetails'
 import PlanEditorDialog from '../features/plans/PlanEditorDialog'
@@ -15,13 +15,19 @@ import { driversOf, relative, shortId } from '../shared/format'
 export default function Plans({ plans, cases, runs, section, onNavigate, onSave, onReady, onRun }: {
   plans: PlanRecord[]
   cases: CaseRecord[]
-  runs: RunRecord[]
+  runs: RunSummary[]
   section?: string
   onNavigate: (section?: 'executions') => void
   onSave: (plan: PlanRecord | null, payload: PlanPayload) => Promise<PlanRecord>
   onReady: (id: string) => Promise<void>
   onRun: (id: string) => Promise<void>
 }) {
+  // Index the latest report for each plan in the server's newest-first order.
+  const latestRuns = useMemo(() => {
+    const result = new Map<string, RunSummary>()
+    for (const run of runs) if (!result.has(run.plan_id)) result.set(run.plan_id, run)
+    return result
+  }, [runs])
   const [editing, setEditing] = useState(false)
   const [editingPlan, setEditingPlan] = useState<PlanRecord | null>(null)
   const [detailId, setDetailId] = useState<string | null>(null)
@@ -316,8 +322,7 @@ export default function Plans({ plans, cases, runs, section, onNavigate, onSave,
     </PlanEditorDialog>
 
     <div className="card-list">{plans.length ? paged.items.map(plan => {
-      const planRuns = runs.filter(run => run.plan_id === plan.id)
-      const lastRun = planRuns[0]
+      const lastRun = latestRuns.get(plan.id)
       const planCases = plan.case_ids.map(id => casesById.get(id)).filter((item): item is CaseRecord => Boolean(item))
       const expanded = detailId === plan.id
       return <section className="surface plan-card" key={plan.id}>

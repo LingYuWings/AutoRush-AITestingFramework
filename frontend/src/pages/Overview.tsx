@@ -1,6 +1,7 @@
 import { uiLanguage, uiText } from '../shared/i18n.ts'
 import { ArrowRight, FileText, Play, Plus } from '../components/icons'
-import type { CaseRecord, PlanRecord, RunRecord } from '../shared/api'
+import { useMemo } from 'react'
+import type { CaseRecord, PlanRecord, RunSummary } from '../shared/api'
 import type { LiveEvent, View } from '../app/types'
 import { EmptyState, PageHeader, ResultBar, StatusBadge } from '../components/ui'
 import { countStatuses, relative, shortId } from '../shared/format'
@@ -9,7 +10,7 @@ import { countStatuses, relative, shortId } from '../shared/format'
 export default function Overview({ cases, plans, runs, events, onNavigate, onNewCase, onOpenRun }: {
   cases: CaseRecord[]
   plans: PlanRecord[]
-  runs: RunRecord[]
+  runs: RunSummary[]
   events: LiveEvent[]
   onNavigate: (view: View) => void
   onNewCase: () => void
@@ -17,11 +18,13 @@ export default function Overview({ cases, plans, runs, events, onNavigate, onNew
 }) {
   const approved = cases.filter(item => item.status === 'approved').length
   const ready = plans.filter(item => item.status === 'ready').length
-  const passedRuns = runs.filter(item => item.status === 'passed').length
-  const passRate = runs.length ? Math.round(passedRuns / runs.length * 100) : null
-  const allCaseResults = runs.flatMap(run => run.cases)
-  const caseCounts = countStatuses(allCaseResults)
-  const recent = runs.slice(0, 6)
+  // Recalculate report metrics only when the history changes, not on live progress events.
+  const { passRate, allCaseResults, caseCounts, recent } = useMemo(() => {
+    const caseResults = runs.flatMap(run => run.cases)
+    const passedRuns = runs.filter(run => run.status === 'passed').length
+    return { passRate: runs.length ? Math.round(passedRuns / runs.length * 100) : null,
+      allCaseResults: caseResults, caseCounts: countStatuses(caseResults), recent: runs.slice(0, 6) }
+  }, [runs])
 
   const metrics = [
     { label: uiText("用例"), value: cases.length, sub: uiText("{0} 条已批准", approved) },

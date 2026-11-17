@@ -82,6 +82,7 @@ export default function Settings({ presets, configs, onCreate, onPreflight, sect
       {sections.map(([key, title]) => <a key={key} href={`#/settings/${key}`} aria-current={active === key ? 'page' : undefined}
         onClick={event => { event.preventDefault(); onSection(key) }}>{uiText(title)}</a>)}
     </nav>
+    <div data-route-section>
     {active === 'general' && <><section className="surface settings-preferences">
       <div className="surface-header"><div>
         <h3>{uiText('界面偏好')}</h3>
@@ -127,5 +128,6 @@ export default function Settings({ presets, configs, onCreate, onPreflight, sect
       <button type="button" className="primary-button" disabled={busy} onClick={() => void save()}>{uiText('保存启动设置')}</button>
     </div>}
     {active === 'models' && <ProviderSettings presets={presets} configs={configs} onCreate={onCreate} onPreflight={onPreflight} />}
+    </div>
   </>
 }

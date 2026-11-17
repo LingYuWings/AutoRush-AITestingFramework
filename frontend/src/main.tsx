@@ -5,6 +5,7 @@ import { uiLanguage } from './shared/i18n.ts'
 import './shared/desktop.ts'
 import './style.css'
 import './pages.css'
+import './dropdown.css'
 
 document.documentElement.lang = uiLanguage
 

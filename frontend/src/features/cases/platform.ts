@@ -12,5 +12,5 @@ export function platformOf(item:Pick<CaseRecord,'platform'|'steps'|'postconditio
 export function filterCases(cases:CaseRecord[],filter:{platform:CasePlatform|'all';status:string;query:string;archived:boolean}):CaseRecord[] {
   const query=filter.query.trim().toLocaleLowerCase()
   return cases.filter(c=>Boolean(c.archived_at)===filter.archived&&(filter.platform==='all'||platformOf(c)===filter.platform)
-    &&(filter.status==='all'||c.status===filter.status)&&[c.title,c.description,c.id].join(' ').toLocaleLowerCase().includes(query))
+    &&(filter.status==='all'||c.status===filter.status)&&(!query||[c.title,c.description,c.id].join(' ').toLocaleLowerCase().includes(query)))
 }

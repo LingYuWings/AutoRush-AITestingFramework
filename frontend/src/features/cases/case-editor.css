@@ -20,8 +20,7 @@
 .ai-compile-bar strong { font-size: 13.5px; font-weight: 500; }
 .ai-compile-bar small { color: var(--ink-3); font-size: 12.5px; line-height: 1.5; }
 .ai-compile-bar label { display: grid; gap: 4px; color: var(--ink-2); font-size: 12.5px; }
-.ai-compile-bar select { height: 32px; min-width: 0; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface); font-size: 13px; outline: none; }
-.ai-compile-bar select:focus { border-color: var(--accent); box-shadow: var(--focus); }
+.ai-compile-bar select { block-size: 32px; padding-inline: 8px; font-size: 13px; }
 
 .compile-warnings { display: flex; gap: 8px; margin: 10px 0; padding: 10px 12px; border-radius: var(--radius); background: var(--warn-soft); color: var(--warn); font-size: 13px; }
 .compile-warnings svg { flex-shrink: 0; margin-top: 2px; }
