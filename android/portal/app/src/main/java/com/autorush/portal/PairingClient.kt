@@ -7,12 +7,19 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import org.json.JSONTokener
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 // The phone identity and Android details submitted with the pairing code.
 class PairingDevice(val id: String, val manufacturer: String, val model: String, val sdkInt: Int)
 
 // The verified server settings and device token returned by a successful claim.
-class ClaimedPairing(val serverUrl: String, val deviceToken: String, val allowedPackages: List<String>, val tlsSha256: String? = null) {
+class ClaimedPairing(
+    val serverUrl: String,
+    val deviceToken: String,
+    val allowedPackages: List<String>,
+    val tlsSha256: String? = null,
+    val tlsKeySha256: String? = null,
+) {
     // Keep the device token out of diagnostic text.
     override fun toString() = "Claimed AutoRush pairing"
 }
@@ -34,7 +41,8 @@ class PairingClient {
             .header("Accept", "application/json").header("Cache-Control", "no-store")
             .post(json.toString().toRequestBody("application/json; charset=utf-8".toMediaType())).build()
         try {
-            activeClient = PinnedTls.configure(client.newBuilder(), pairing.tlsSha256).build()
+            val verifiedKey = AtomicReference<String>()
+            activeClient = PinnedTls.configure(client.newBuilder(), pairing.tlsSha256, verifiedKey = verifiedKey::set).build()
             activeClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
                     throw IllegalStateException("二维码已失效、已使用或服务器拒绝配对，请重新生成后扫描")
@@ -54,7 +62,10 @@ class PairingClient {
                 require(packages.toSet() == pairing.allowedPackages.toSet())
                 val token = result.get("device_token") as? String ?: throw IllegalArgumentException()
                 require(token.length in 32..512 && !token.any { it.isWhitespace() || it.isISOControl() })
-                return ClaimedPairing(pairing.serverUrl, token, packages, pairing.tlsSha256)
+                val lanKey = if (LanPairing.from(pairing.serverUrl, pairing.tlsSha256) != null) {
+                    verifiedKey.get()
+                } else null
+                return ClaimedPairing(pairing.serverUrl, token, packages, pairing.tlsSha256, lanKey)
             }
         } catch (_: Exception) {
             throw IllegalStateException("配对未完成。请检查服务器连接，或重新生成二维码后扫描")

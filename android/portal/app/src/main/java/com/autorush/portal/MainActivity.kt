@@ -1,10 +1,12 @@
-@file:Suppress("DEPRECATION") // ZXing's native Activity bridge preserves the existing activity stack.
+@file:Suppress("DEPRECATION") // ZXing returns through Activity's legacy result callback.
 
 package com.autorush.portal
 
 import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
@@ -13,196 +15,240 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.text.InputType
 import android.view.Gravity
+import android.view.View
 import android.widget.Button
-import android.widget.CheckBox
-import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import com.google.zxing.integration.android.IntentIntegrator
 import java.text.DateFormat
 import java.util.Date
 import java.util.concurrent.Executors
 
-// Show the phone's pairing, access settings, and connection status.
+/** Shows the connection and local test permissions on the Portal home screen. */
 class MainActivity : Activity() {
     private val handler = Handler(Looper.getMainLooper())
-    private lateinit var status: TextView
-    private lateinit var observation: TextView
-    private lateinit var packages: EditText
-    private lateinit var server: EditText
-    private lateinit var token: EditText
-    private lateinit var screenshot: CheckBox
-    private lateinit var scanButton: Button
     private val pairingClient = PairingClient()
     private val pairingExecutor = Executors.newSingleThreadExecutor()
     private val pairingAttempt = PairingAttempt()
+    private lateinit var ui: PortalViews
+    private lateinit var status: TextView
+    private lateinit var connectionDetail: TextView
+    private lateinit var primary: Button
+    private lateinit var scanAgain: Button
+    private lateinit var manualPair: Button
+    private lateinit var accessibilityStatus: TextView
+    private lateinit var accessibilityAction: Button
+    private lateinit var scopeDetail: TextView
+    private lateinit var screenshotDetail: TextView
+    private lateinit var stopPreview: Button
+    private lateinit var autoReconnect: Switch
+    private lateinit var reconnectDetail: TextView
+    private var hasPairing = false
     private val refresh = object : Runnable {
-        // Refresh status once per second while the activity is visible.
+        // Refresh visible settings as Android services report state.
         override fun run() {
-            updateStatus()
-            handler.postDelayed(this, 1000)
+            updateHome()
+            handler.postDelayed(this, 750)
         }
     }
 
-    // Build the pairing and permission controls from the phone's saved settings.
+    // Assemble the connection, permissions, and secondary settings cards.
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val background = Color.rgb(246, 249, 252)
-        val ink = Color.rgb(22, 39, 57)
-        val muted = Color.rgb(98, 116, 132)
-        val mint = Color.rgb(17, 181, 139)
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(24), dp(30), dp(24), dp(24))
-            setBackgroundColor(background)
+        ui = PortalViews(this)
+        hasPairing = PortalConfig.hasToken(this)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.statusBarColor = Color.TRANSPARENT
+        window.navigationBarColor = Color.TRANSPARENT
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = true
+            isAppearanceLightNavigationBars = true
         }
-        root.addView(TextView(this).apply {
-            text = "AUTORUSH  /  PORTAL"
-            textSize = 12f
-            setTextColor(mint)
-            letterSpacing = 0.18f
-        })
-        root.addView(TextView(this).apply {
-            text = "Android 测试助手"
-            textSize = 28f
-            setTextColor(ink)
-            setPadding(0, dp(12), 0, dp(4))
-        })
-        root.addView(TextView(this).apply {
-            text = "仅连接您信任的测试服务器。连接后，服务器可读取允许应用的界面并执行测试操作；截图需另行勾选。"
-            textSize = 14f
-            setTextColor(muted)
-            setPadding(0, 0, 0, dp(24))
-        })
-        status = card(ink, 16f)
-        root.addView(status, LinearLayout.LayoutParams(-1, -2))
-        scanButton = button("扫描二维码快速配对", mint) { scanPairing() }
-        root.addView(scanButton)
-        root.addView(sectionLabel("手工配对"))
-        root.addView(CheckBox(this).apply {
-            text = "允许操作任意应用（Portal 自身除外）"
-            isChecked = PortalConfig.anyPackageAllowed(this@MainActivity)
-            setTextColor(ink)
-            setOnCheckedChangeListener { _, allowed -> PortalConfig.setAnyPackageAllowed(this@MainActivity, allowed) }
-        })
-        root.addView(TextView(this).apply {
-            text = "默认关闭。开启后，已配对服务器可测试其他应用；关闭后立即恢复下方允许列表。截图仍需单独允许。"
-            textSize = 12f
-            setTextColor(muted)
-        })
-        root.addView(sectionLabel("允许操作的测试应用包名（逗号分隔）"))
-        packages = EditText(this).apply {
-            minLines = 2
-            hint = "com.example.testapp"
-            textSize = 14f
-            setPadding(dp(12), dp(12), dp(12), dp(12))
-            setBackgroundColor(Color.WHITE)
-            setText(PortalConfig.allowedPackages(this@MainActivity).joinToString(","))
+        val root = ui.column().apply { setPadding(ui.dp(20), ui.dp(22), ui.dp(20), ui.dp(24)) }
+        root.addView(ui.label("AutoRush Portal", 25f, bold = true))
+        root.addView(connectionCard(), ui.spaced(top = 18))
+        root.addView(ui.heading("测试权限"), ui.spaced(top = 26, bottom = 10))
+        root.addView(permissionsCard())
+        root.addView(ui.heading("连接设置"), ui.spaced(top = 26, bottom = 10))
+        root.addView(settingsCard())
+        val frame = FrameLayout(this)
+        val width = if (resources.configuration.screenWidthDp >= 600) ui.dp(600) else -1
+        frame.addView(root, FrameLayout.LayoutParams(width, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL))
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            setBackgroundColor(ui.background)
+            addView(frame)
         }
-        root.addView(packages, LinearLayout.LayoutParams(-1, -2))
-        root.addView(button("保存应用允许列表", mint) { savePackages() })
-        root.addView(sectionLabel("服务器 WebSocket 地址"))
-        server = EditText(this).apply {
-            setSingleLine(true)
-            hint = "wss://qa.example.com/api/v1/devices/ws"
-            textSize = 14f
-            setPadding(dp(12), dp(12), dp(12), dp(12))
-            setBackgroundColor(Color.WHITE)
-            setText(PortalConfig.serverUrl(this@MainActivity))
+        ViewCompat.setOnApplyWindowInsetsListener(scroll) { view, insets ->
+            val safe = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            view.setPadding(safe.left, safe.top, safe.right, safe.bottom)
+            insets
         }
-        root.addView(server, LinearLayout.LayoutParams(-1, -2))
-        root.addView(sectionLabel("设备令牌（保存在 Android Keystore 加密存储中）"))
-        token = EditText(this).apply {
-            setSingleLine(true)
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
-            hint = if (PortalConfig.hasToken(this@MainActivity)) "已保存；重新配对时输入新令牌" else "粘贴服务器生成的设备令牌"
-            textSize = 14f
-            setPadding(dp(12), dp(12), dp(12), dp(12))
-            setBackgroundColor(Color.WHITE)
+        setContentView(scroll)
+        ViewCompat.requestApplyInsets(scroll)
+        updateHome()
+    }
+
+    // Put the current connection and its primary action first.
+    private fun connectionCard() = ui.card(dark = true).apply {
+        addView(ui.label("测试服务器", 13f, ui.heroMuted))
+        status = ui.label("", 28f, ui.white, bold = true).apply {
+            accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
         }
-        root.addView(token, LinearLayout.LayoutParams(-1, -2))
-        screenshot = CheckBox(this).apply {
-            text = "允许测试服务器截取当前测试应用画面"
-            isChecked = PortalConfig.screenshotAllowed(this@MainActivity)
-            setTextColor(ink)
-            setOnCheckedChangeListener { _, allowed -> PortalConfig.setScreenshotAllowed(this@MainActivity, allowed) }
+        addView(status, ui.spaced(top = 8))
+        connectionDetail = ui.label("", 14f, ui.heroMuted)
+        addView(connectionDetail, ui.spaced(top = 7))
+        primary = ui.action("", primary = true, action = ::runPrimaryAction)
+        addView(primary, ui.spaced(top = 18))
+    }
+
+    // Keep accessibility, app scope, and screenshot permission together.
+    private fun permissionsCard() = ui.card().apply {
+        val accessibility = ui.column()
+        accessibility.addView(ui.label("无障碍服务", 16f, bold = true))
+        accessibilityStatus = ui.label("", 13f, ui.muted)
+        accessibility.addView(accessibilityStatus, ui.spaced(top = 4))
+        accessibilityAction = ui.action("去开启") { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+        addView(ui.row(accessibility, accessibilityAction))
+        addView(ui.divider(), ui.spaced(top = 12, bottom = 12))
+
+        val scope = ui.column()
+        scope.addView(ui.label("可测试的应用", 16f, bold = true))
+        scopeDetail = ui.label("", 13f, ui.muted)
+        scope.addView(scopeDetail, ui.spaced(top = 4))
+        addView(ui.row(scope, ui.action("管理", action = ::editScope)))
+        addView(ui.divider(), ui.spaced(top = 12, bottom = 10))
+
+        addView(ui.toggle("允许测试应用截图", PortalConfig.screenshotAllowed(this@MainActivity)) { allowed ->
+            PortalConfig.setScreenshotAllowed(this@MainActivity, allowed)
+            updateHome()
+        })
+        screenshotDetail = ui.label("", 13f, ui.muted)
+        addView(screenshotDetail)
+        stopPreview = ui.action("停止远程预览") {
+            ScreenStreamer.stopByUser()
+            updateHome()
         }
-        root.addView(screenshot)
-        root.addView(button("保存配对并连接", mint) { connect() })
-        root.addView(button("断开连接", ink) { disconnect() })
-        root.addView(TextView(this).apply {
-            text = "流畅投屏由管理台通过已配对 ADB 连接，无需系统录屏授权；远程截图需开启截图许可。ADB 整屏投屏请在管理台停止或拔出 USB。"
-            textSize = 12f
-            setTextColor(muted)
-            setPadding(0, dp(10), 0, 0)
+        addView(stopPreview, ui.spaced(top = 10))
+    }
+
+    // Keep infrequent pairing and diagnostic actions below everyday controls.
+    private fun settingsCard() = ui.card().apply {
+        autoReconnect = ui.toggle("局域网自动回连", PortalConfig.lanReconnectEnabled(this@MainActivity), ::changeReconnect)
+        reconnectDetail = ui.label("", 13f, ui.muted)
+        addView(autoReconnect)
+        addView(reconnectDetail)
+        addView(ui.divider(), ui.spaced(top = 13, bottom = 10))
+        scanAgain = ui.action("扫码配对新后端", action = ::scanPairing)
+        addView(scanAgain, ui.spaced(bottom = 8))
+        manualPair = ui.action("手工配对", action = ::editManualPairing)
+        addView(manualPair)
+        addView(ui.action("设备详情", action = ::showDeviceDetails), ui.spaced(top = 8))
+    }
+
+    // Derive the interface from the current connection and local permissions.
+    private fun updateHome() {
+        val phase = PortalState.connectionPhase
+        val claiming = pairingAttempt.active
+        val savedUrl = PortalConfig.serverUrl(this)
+        val lanPaired = hasPairing && LanPairing.from(savedUrl, PortalConfig.tlsPin(this)) != null
+        val appCount = PortalConfig.allowedPackages(this).size
+        status.updateText(when {
+            claiming -> "正在配对"
+            !hasPairing -> "尚未配对"
+            else -> phase.label
         })
-        root.addView(button("停止远程截图预览", ink) { ScreenStreamer.stopByUser() })
-        root.addView(button("打开无障碍设置", ink) {
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        status.setTextColor(if (!claiming && phase == ConnectionPhase.ONLINE) ui.heroAccent else ui.white)
+        connectionDetail.updateText(when {
+            claiming -> "正在向测试服务器领取设备凭据"
+            !hasPairing -> "在 AutoRush 管理台打开「Android 设备」，生成配对二维码。"
+            phase == ConnectionPhase.REJECTED -> "请重新扫码配对，或在手工配对中更新设备令牌。"
+            phase == ConnectionPhase.INVALID -> "检查已保存的配对和可测试应用范围。"
+            else -> savedUrl
         })
-        root.addView(sectionLabel("最近一次观察"))
-        observation = card(muted, 13f)
-        root.addView(observation, LinearLayout.LayoutParams(-1, -2))
-        root.addView(TextView(this).apply {
-            text = "设备 ID：${PortalConfig.deviceId(this@MainActivity)}\n仅可操作允许列表中的应用。可通过“断开连接”、通知栏断开按钮或系统无障碍设置立即停止。开发环境可通过 adb reverse 使用 ws://127.0.0.1；其他地址必须使用 wss://。"
-            textSize = 12f
-            setTextColor(muted)
-            setPadding(0, dp(25), 0, 0)
+        primary.updateText(when {
+            claiming -> "取消配对"
+            phase.active -> if (phase == ConnectionPhase.ONLINE) "断开连接" else "停止连接"
+            !hasPairing || phase == ConnectionPhase.REJECTED -> "扫描二维码"
+            else -> "连接已配对的后端"
         })
-        setContentView(ScrollView(this).apply { addView(root) })
-        updateStatus()
-        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+        scanAgain.visibility = if (hasPairing && phase != ConnectionPhase.REJECTED) View.VISIBLE else View.GONE
+        scanAgain.isEnabled = !claiming
+        manualPair.isEnabled = !claiming
+        val access = PortalState.accessibilityConnected
+        accessibilityStatus.updateText(if (access) "已启用" else "开启后才能执行界面测试")
+        accessibilityStatus.setTextColor(if (access) ui.success else ui.muted)
+        accessibilityAction.updateText(if (access) "设置" else "去开启")
+        scopeDetail.updateText(when {
+            PortalConfig.anyPackageAllowed(this) -> "任意应用（Portal 自身除外）"
+            appCount == 0 -> "尚未添加应用"
+            else -> "允许列表 · $appCount 个应用"
+        })
+        val previewActive = ScreenStreamer.hasActiveStream()
+        val screenStatus = if (PortalState.projectionAuthorized) " · 系统录屏已授权" else ""
+        screenshotDetail.updateText(if (previewActive) PortalState.screenStatus + screenStatus else "用于远程预览和运行截图")
+        stopPreview.visibility = if (previewActive) View.VISIBLE else View.GONE
+        autoReconnect.isEnabled = !claiming
+        reconnectDetail.updateText(when {
+            !lanPaired -> "使用同 Wi-Fi 二维码配对后生效。"
+            !PortalConfig.lanReconnectEnabled(this) -> "已关闭。可以随时手动连接。"
+            PortalConfig.lanReconnectPaused(this) -> "已暂停。手动连接后恢复。"
+            else -> "打开 Portal 或连接中断时，查找同一局域网内已配对的后端。"
+        })
+    }
+
+    // Keep live-region announcements and text selection stable when the value is unchanged.
+    private fun TextView.updateText(value: String) {
+        if (text.toString() != value) text = value
+    }
+
+    // Run the action matching the visible connection state.
+    private fun runPrimaryAction() {
+        val phase = PortalState.connectionPhase
+        when {
+            pairingAttempt.active -> {
+                pairingAttempt.cancel()
+                pairingClient.cancel()
+                updateHome()
+            }
+            phase.active -> {
+                PortalConfig.setLanReconnectPaused(this, true)
+                startService(connectionIntent(PortalConnectionService.ACTION_STOP))
+            }
+            !hasPairing || phase == ConnectionPhase.REJECTED -> scanPairing()
+            else -> startConnection()
         }
     }
 
-    // Create a status card with the shared background and padding.
-    private fun card(color: Int, size: Float) = TextView(this).apply {
-        textSize = size
-        setTextColor(color)
-        setPadding(dp(17), dp(18), dp(17), dp(18))
-        setBackgroundColor(Color.WHITE)
-    }
-
-    // Create a heading for a group of settings.
-    private fun sectionLabel(label: String) = TextView(this).apply {
-        text = label
-        textSize = 13f
-        setTextColor(Color.rgb(50, 72, 91))
-        setPadding(0, dp(23), 0, dp(8))
-    }
-
-    // Style a full-width action button and attach its click handler.
-    private fun button(label: String, color: Int, action: () -> Unit) = Button(this).apply {
-        text = label
-        isAllCaps = false
-        setTextColor(Color.WHITE)
-        setBackgroundColor(color)
-        gravity = Gravity.CENTER
-        setOnClickListener { action() }
-        layoutParams = LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(10) }
-    }
-
-    // Save the edited allowlist unless a pairing claim is in progress.
-    private fun savePackages(): Boolean {
-        if (pairingAttempt.active) {
-            Toast.makeText(this, "正在配对，可通过断开连接取消", Toast.LENGTH_SHORT).show()
-            return false
+    // Update discovery for the running service or start it from the visible home.
+    private fun changeReconnect(enabled: Boolean) {
+        PortalConfig.setLanReconnectEnabled(this, enabled)
+        if (PortalState.connectionPhase.active) {
+            startService(connectionIntent(PortalConnectionService.ACTION_RECONNECT_SETTINGS))
+        } else if (enabled) {
+            maybeStartDiscovery()
         }
-        return try {
-            packages.setText(PortalConfig.saveAllowedPackages(this, packages.text.toString()))
-            Toast.makeText(this, "允许列表已保存", Toast.LENGTH_SHORT).show()
-            true
-        } catch (error: IllegalArgumentException) {
-            Toast.makeText(this, error.message, Toast.LENGTH_LONG).show()
-            false
-        }
+        updateHome()
     }
 
-    // Open the scanner in QR-only mode when no claim is in progress.
+    // Auto-start only if the currently saved LAN pairing is eligible.
+    private fun maybeStartDiscovery() {
+        if (PortalState.connectionPhase.active || pairingAttempt.active || !hasPairing ||
+            !PortalConfig.lanReconnectEnabled(this) || PortalConfig.lanReconnectPaused(this) ||
+            LanPairing.from(PortalConfig.serverUrl(this), PortalConfig.tlsPin(this)) == null) return
+        startConnection(automatic = true)
+    }
+
+    // Launch the QR-only pairing scanner.
     private fun scanPairing() {
         if (pairingAttempt.active) return
         IntentIntegrator(this)
@@ -214,126 +260,202 @@ class MainActivity : Activity() {
             .initiateScan()
     }
 
-    // Pass a completed QR scan to the pairing confirmation dialog.
+    // Pass a completed scan to pairing confirmation.
     @Suppress("OVERRIDE_DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        val scan = IntentIntegrator.parseActivityResult(requestCode, resultCode, data) ?: return
-        val contents = scan.contents ?: return
+        val contents = IntentIntegrator.parseActivityResult(requestCode, resultCode, data)?.contents ?: return
         confirmPairing(contents)
     }
 
-    // Validate the QR and show the server and app scope before the user confirms.
+    // Show the server and app scope before claiming the scanned code.
     private fun confirmPairing(contents: String) {
         if (pairingAttempt.active) return
-        val pairing = try { PairingQr.parse(contents) } catch (error: IllegalArgumentException) {
-            Toast.makeText(this, error.message, Toast.LENGTH_LONG).show()
+        val pairing = try {
+            PairingQr.parse(contents)
+        } catch (error: IllegalArgumentException) {
+            showMessage(error.message ?: "二维码无效")
             return
         }
-        AlertDialog.Builder(this)
-            .setTitle("确认配对")
-            .setMessage("服务器：\n${pairing.serverUrl}\n\n允许列表：\n${pairing.allowedPackages.joinToString("\n")}${if (pairing.tlsSha256 != null) "\n\n本地服务器证书 SHA-256：\n${pairing.tlsSha256}" else ""}\n\n${if (PortalConfig.anyPackageAllowed(this)) "本机已开启任意应用权限。" else "服务器只能操作允许列表应用。"}截图沿用您在本机的选择。")
+        val scope = if (PortalConfig.anyPackageAllowed(this)) "当前允许测试任意应用（Portal 自身除外）"
+            else pairing.allowedPackages.joinToString("\n")
+        AlertDialog.Builder(this).setTitle("确认配对")
+            .setMessage(buildString {
+                append("测试服务器\n${pairing.serverUrl}\n\n可测试的应用\n$scope")
+                pairing.tlsSha256?.let { append("\n\n服务器证书 SHA-256\n$it") }
+            })
             .setNegativeButton("取消", null)
             .setPositiveButton("确认并连接") { _, _ -> claimPairing(pairing) }
-            .show()
+            .showPortalDialog()
     }
 
-    // Claim the code off the UI thread, then save and connect if the attempt is still current.
+    // Claim the code off the UI thread and store credentials for the current attempt.
     private fun claimPairing(pairing: PairingQr) {
         val attempt = pairingAttempt.begin() ?: return
-        setPairingBusy(true)
+        updateHome()
         val context = applicationContext
         val device = PairingDevice(PortalConfig.deviceId(context), Build.MANUFACTURER, Build.MODEL, Build.VERSION.SDK_INT)
-        val allowScreenshot = screenshot.isChecked
         pairingExecutor.execute {
-            val result = runCatching {
-                pairingClient.claim(pairing, device)
-            }
+            val result = runCatching { pairingClient.claim(pairing, device) }
             handler.post {
-                if (isDestroyed || isFinishing) return@post
-                if (!pairingAttempt.complete(attempt)) return@post
-                setPairingBusy(false)
+                if (isDestroyed || isFinishing || !pairingAttempt.complete(attempt)) return@post
                 result.fold(onSuccess = { claimed ->
                     try {
-                        PortalConfig.savePairing(context, claimed.serverUrl, claimed.deviceToken, claimed.allowedPackages, claimed.tlsSha256)
-                        PortalConfig.setScreenshotAllowed(context, allowScreenshot)
-                        server.setText(PortalConfig.serverUrl(this))
-                        packages.setText(PortalConfig.allowedPackages(this).joinToString(","))
-                        token.setText("")
-                        token.hint = "已保存；重新配对时输入新令牌"
-                        startForegroundService(Intent(this, PortalConnectionService::class.java)
-                            .setAction(PortalConnectionService.ACTION_CONNECT))
-                        Toast.makeText(this, "配对已保存，正在连接", Toast.LENGTH_SHORT).show()
+                        PortalConfig.savePairing(context, claimed.serverUrl, claimed.deviceToken, claimed.allowedPackages,
+                            claimed.tlsSha256, claimed.tlsKeySha256)
+                        hasPairing = true
+                        startConnection()
                     } catch (_: Exception) {
-                        Toast.makeText(this, "无法保存或连接配对，请重新扫描", Toast.LENGTH_LONG).show()
+                        showMessage("无法保存配对，请重新扫描")
                     }
-                }, onFailure = {
-                    Toast.makeText(this, "配对未完成，请检查服务器连接或重新生成二维码", Toast.LENGTH_LONG).show()
-                })
+                }, onFailure = { showMessage("配对未完成，请检查连接或重新生成二维码") })
+                updateHome()
             }
         }
     }
 
-    // Disable the scanner and editable settings while a claim is in progress.
-    private fun setPairingBusy(busy: Boolean) {
-        scanButton.isEnabled = !busy
-        scanButton.text = if (busy) "正在配对…" else "扫描二维码快速配对"
-        listOf(server, packages, token, screenshot).forEach { it.isEnabled = !busy }
+    // Edit the allowlist and apply the wildcard permission independently.
+    private fun editScope() {
+        if (pairingAttempt.active) {
+            showMessage("请等待当前配对完成")
+            return
+        }
+        val form = ui.dialogForm()
+        form.addView(ui.toggle("允许测试任意应用", PortalConfig.anyPackageAllowed(this)) { allowed ->
+            PortalConfig.setAnyPackageAllowed(this, allowed)
+            updateHome()
+        })
+        form.addView(ui.label("开启后，服务器可操作其他应用（Portal 自身除外）。关闭后立即恢复允许列表。", 13f, ui.muted))
+        val packages = ui.input("每行一个包名，也可用逗号分隔", PortalConfig.allowedPackages(this).joinToString("\n"),
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE)
+        packages.id = View.generateViewId()
+        form.addView(ui.label("应用允许列表", 15f, bold = true).apply { labelFor = packages.id }, ui.spaced(top = 16, bottom = 4))
+        form.addView(packages)
+        val dialog = formDialog("可测试的应用", form, "保存列表")
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            try {
+                PortalConfig.saveAllowedPackages(this, packages.text.toString())
+                dialog.dismiss()
+                updateHome()
+            } catch (error: IllegalArgumentException) {
+                packages.error = error.message
+            }
+        }
     }
 
-    // Save manual pairing or reuse credentials for the saved server, then start the connection.
-    private fun connect() {
-        if (!savePackages()) return
-        try {
-            val newToken = token.text.toString().trim()
-            if (newToken.isNotEmpty()) {
-                PortalConfig.savePairing(this, server.text.toString(), newToken)
-                token.setText("")
-                token.hint = "已保存；重新配对时输入新令牌"
-            } else {
-                require(PortalConfig.hasToken(this) && server.text.toString().trim() == PortalConfig.serverUrl(this)) {
-                    "请输入设备令牌后保存配对"
+    // Collect settings for the existing manual pairing path.
+    private fun editManualPairing() {
+        val form = ui.dialogForm()
+        val url = ui.input("wss://qa.example.com/api/v1/devices/ws", PortalConfig.serverUrl(this),
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
+        val token = ui.input(if (hasPairing) "原地址可沿用已保存令牌" else "粘贴设备令牌", "",
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD).apply {
+            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO
+        }
+        val packages = ui.input("com.example.testapp", PortalConfig.allowedPackages(this).joinToString("\n"),
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE)
+        listOf("服务器地址" to url, "设备令牌" to token, "应用允许列表" to packages).forEach { (label, field) ->
+            field.id = View.generateViewId()
+            form.addView(ui.label(label, 14f, bold = true).apply { labelFor = field.id }, ui.spaced(top = 10, bottom = 4))
+            form.addView(field)
+        }
+        form.addView(ui.label("每行一个包名，也可用逗号分隔。USB 调试可用 adb reverse 的本机地址。", 13f, ui.muted),
+            ui.spaced(top = 8))
+        val dialog = formDialog("手工配对", form, "保存并连接")
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            try {
+                val server = PortalConfig.validateServerUrl(url.text.toString())
+                val newToken = token.text.toString().trim()
+                val allowed = packages.text.toString()
+                if (newToken.isNotEmpty()) {
+                    PortalConfig.savePairing(this, server, newToken, PortalConfig.parseAllowedPackages(this, allowed))
+                } else {
+                    require(hasPairing && server == PortalConfig.serverUrl(this)) { "请输入此服务器的设备令牌" }
+                    PortalConfig.saveAllowedPackages(this, allowed)
                 }
+                hasPairing = true
+                token.text.clear()
+                dialog.dismiss()
+                startConnection()
+            } catch (error: IllegalArgumentException) {
+                showMessage(error.message ?: "检查服务器地址、令牌和应用范围")
+            } catch (_: Exception) {
+                showMessage("无法保存配对配置")
             }
-            PortalConfig.setScreenshotAllowed(this, screenshot.isChecked)
-            val intent = Intent(this, PortalConnectionService::class.java).setAction(PortalConnectionService.ACTION_CONNECT)
-            startForegroundService(intent)
-        } catch (error: Exception) {
-            Toast.makeText(this, error.message ?: "连接失败", Toast.LENGTH_LONG).show()
         }
     }
 
-    // Cancel any pending claim and tell the connection service to stop.
-    private fun disconnect() {
-        pairingAttempt.cancel()
-        pairingClient.cancel()
-        setPairingBusy(false)
-        startService(Intent(this, PortalConnectionService::class.java).setAction(PortalConnectionService.ACTION_STOP))
+    // Keep settings forms usable on small screens and with the keyboard visible.
+    private fun formDialog(title: String, form: LinearLayout, submit: String): AlertDialog =
+        AlertDialog.Builder(this).setTitle(title)
+            .setView(ScrollView(this).apply { addView(form) })
+            .setNegativeButton("取消", null).setPositiveButton(submit, null).showPortalDialog()
+
+    // Keep dialog actions legible when the device theme uses a pale accent color.
+    private fun AlertDialog.Builder.showPortalDialog(): AlertDialog = show().apply {
+        getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(ui.success)
+        getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(ui.success)
     }
 
-    // Show service, screen-sharing, and recent accessibility observation status.
-    private fun updateStatus() {
-        status.text = "无障碍：${if (PortalState.accessibilityConnected) "已启用" else "未启用"}\n服务器：${PortalState.serverStatus}\n画面：${PortalState.screenStatus}${if (PortalState.projectionAuthorized) "（系统录屏已授权）" else ""}"
-        observation.text = if (PortalState.lastObservedAt == 0L) "尚无允许应用的界面事件"
-        else "应用：${PortalState.lastPackage}\n节点数：${PortalState.visibleNodeCount}\n时间：${DateFormat.getDateTimeInstance().format(Date(PortalState.lastObservedAt))}"
+    // Show the device ID, last observation, and ADB sharing help on demand.
+    private fun showDeviceDetails() {
+        val id = PortalConfig.deviceId(this)
+        val observed = if (PortalState.lastObservedAt == 0L) "尚无测试应用的界面事件"
+            else "${PortalState.lastPackage} · ${PortalState.visibleNodeCount} 个节点\n" +
+                DateFormat.getDateTimeInstance().format(Date(PortalState.lastObservedAt))
+        AlertDialog.Builder(this).setTitle("设备详情")
+            .setMessage("设备 ID\n$id\n\n最近一次观察\n$observed\n\nADB 整屏投屏可在管理台停止，也可拔出 USB。")
+            .setNegativeButton("关闭", null)
+            .setPositiveButton("复制设备 ID") { _, _ ->
+                getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("AutoRush device ID", id))
+                if (Build.VERSION.SDK_INT < 33) showMessage("已复制设备 ID")
+            }.showPortalDialog()
     }
 
-    // Convert density-independent layout sizes to pixels.
-    private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
+    // Construct an intent targeting the app-private connection service.
+    private fun connectionIntent(action: String) = Intent(this, PortalConnectionService::class.java).setAction(action)
 
-    // Resume periodic status updates when the activity becomes visible.
+    // Start a visible connection session from the activity.
+    private fun startConnection(automatic: Boolean = false) {
+        val action = if (automatic) PortalConnectionService.ACTION_AUTO_CONNECT else PortalConnectionService.ACTION_CONNECT
+        try {
+            startForegroundService(connectionIntent(action))
+        } catch (_: IllegalStateException) {
+            if (!automatic) showMessage("请在 Portal 前台重试连接")
+            return
+        }
+        PortalState.connectionPhase = if (automatic) ConnectionPhase.SEARCHING else ConnectionPhase.CONNECTING
+        updateHome()
+        if (!automatic) requestConnectionNotifications()
+    }
+
+    // Ask once for notification access after an explicit connection.
+    private fun requestConnectionNotifications() {
+        val settings = getPreferences(MODE_PRIVATE)
+        if (Build.VERSION.SDK_INT >= 33 && !settings.getBoolean("asked_notifications", false) &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            settings.edit().putBoolean("asked_notifications", true).apply()
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+        }
+    }
+
+    // Surface a validation or connection message.
+    private fun showMessage(message: String) = Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+
+    // Resume rendering and discover an eligible saved LAN server.
     override fun onResume() {
         super.onResume()
         handler.post(refresh)
+        maybeStartDiscovery()
     }
 
-    // Pause periodic status updates while the activity is in the background.
+    // Pause UI refreshes while the foreground service manages the connection.
     override fun onPause() {
         handler.removeCallbacks(refresh)
         super.onPause()
     }
 
-    // Cancel pairing work and clear pending callbacks as the activity closes.
+    // Cancel the screen's pending pairing work and release its client.
     override fun onDestroy() {
         pairingAttempt.cancel()
         pairingClient.close()

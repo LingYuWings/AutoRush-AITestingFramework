@@ -22,6 +22,9 @@ object PortalConfig {
     private const val KEY_SCREENSHOT = "allow_screenshot"
     private const val KEY_ANY_APP = "allow_any_package"
     private const val KEY_TLS_PIN = "tls_sha256"
+    private const val KEY_TLS_KEY_PIN = "tls_key_sha256"
+    private const val KEY_LAN_RECONNECT = "lan_reconnect"
+    private const val KEY_LAN_PAUSED = "lan_reconnect_paused"
     private const val KEY_ALIAS = "autorush.portal.token"
     private val packagePattern = Regex("(?:[A-Za-z_][A-Za-z0-9_]*\\.)+[A-Za-z_][A-Za-z0-9_]*")
 
@@ -32,14 +35,19 @@ object PortalConfig {
 
     // Normalize and save package names, then recheck active screen sharing.
     fun saveAllowedPackages(context: Context, raw: String): String {
+        val value = parseAllowedPackages(context, raw).joinToString(",")
+        prefs(context).edit().putString(KEY_ALLOWED_PACKAGES, value).apply()
+        ScreenStreamer.policyChanged()
+        return value
+    }
+
+    // Validate a manual app allowlist before writing settings or a pairing.
+    fun parseAllowedPackages(context: Context, raw: String): List<String> {
         val names = raw.split(',', '\n').map { it.trim() }.filter { it.isNotEmpty() }.distinct()
         require(names.isNotEmpty() || anyPackageAllowed(context)) { "请至少填写一个测试应用包名" }
         require(names.all { packagePattern.matches(it) }) { "包名格式不正确" }
         require(context.packageName !in names) { "不能把 Portal 自身加入允许列表" }
-        val value = names.joinToString(",")
-        prefs(context).edit().putString(KEY_ALLOWED_PACKAGES, value).apply()
-        ScreenStreamer.policyChanged()
-        return value
+        return names
     }
 
     // Read the saved WebSocket URL, using an empty string before pairing.
@@ -55,6 +63,26 @@ object PortalConfig {
     fun isPackageAllowed(context: Context, pkg: String): Boolean = PackagePolicy.allows(pkg, context.packageName, anyPackageAllowed(context), allowedPackages(context))
     // Read the saved certificate pin, if the pairing supplied one.
     fun tlsPin(context: Context): String? = prefs(context).getString(KEY_TLS_PIN, null)
+    // Read the public key pin learned using the QR-authenticated connection.
+    fun tlsKeyPin(context: Context): String? = prefs(context).getString(KEY_TLS_KEY_PIN, null)
+
+    // Read the user's preference for LAN discovery and automatic reconnect.
+    fun lanReconnectEnabled(context: Context): Boolean = prefs(context).getBoolean(KEY_LAN_RECONNECT, true)
+
+    // Save the preference and resume discovery if the user enables it again.
+    fun setLanReconnectEnabled(context: Context, enabled: Boolean) {
+        val edit = prefs(context).edit().putBoolean(KEY_LAN_RECONNECT, enabled)
+        if (enabled) edit.remove(KEY_LAN_PAUSED)
+        edit.apply()
+    }
+
+    // Read whether an explicit disconnect or a server rejection paused discovery.
+    fun lanReconnectPaused(context: Context): Boolean = prefs(context).getBoolean(KEY_LAN_PAUSED, false)
+
+    // Persist the pause so reopening Portal does not undo a disconnect.
+    fun setLanReconnectPaused(context: Context, paused: Boolean) {
+        prefs(context).edit().putBoolean(KEY_LAN_PAUSED, paused).apply()
+    }
 
     // Require the device WebSocket endpoint and restrict plaintext connections to loopback.
     fun validateServerUrl(raw: String): String {
@@ -69,19 +97,32 @@ object PortalConfig {
     }
 
     // Validate the pairing, encrypt its token, and save the credentials in one preferences commit.
-    fun savePairing(context: Context, server: String, token: String, allowedPackages: List<String>? = null, tlsPin: String? = null) {
+    fun savePairing(
+        context: Context, server: String, token: String, allowedPackages: List<String>? = null,
+        tlsPin: String? = null, tlsKeyPin: String? = null,
+    ) {
         val validUrl = validateServerUrl(server)
         require(token.length in 32..512 && !token.any { it.isWhitespace() }) { "设备令牌长度需为 32–512 位，且不能含空白" }
-        allowedPackages?.let(PairingQr::validatePackages)
-        require(tlsPin == null || (validUrl.startsWith("wss://") && Regex("[a-f0-9]{64}").matches(tlsPin)))
+        val normalizedPackages = allowedPackages?.let { parseAllowedPackages(context, it.joinToString(",")) }
+        require(tlsPin == null || (validUrl.startsWith("wss://") && PinnedTls.isFingerprint(tlsPin)))
+        require(tlsKeyPin == null || (LanPairing.from(validUrl, tlsPin) != null && PinnedTls.isFingerprint(tlsKeyPin)))
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, secretKey())
         val encrypted = cipher.doFinal(token.toByteArray(Charsets.UTF_8))
         val value = Base64.encodeToString(cipher.iv + encrypted, Base64.NO_WRAP)
-        val edit = prefs(context).edit().putString(KEY_SERVER, validUrl).putString(KEY_TOKEN, value)
+        val edit = prefs(context).edit().putString(KEY_SERVER, validUrl).putString(KEY_TOKEN, value).remove(KEY_LAN_PAUSED)
         if (tlsPin == null) edit.remove(KEY_TLS_PIN) else edit.putString(KEY_TLS_PIN, tlsPin)
-        allowedPackages?.let { edit.putString(KEY_ALLOWED_PACKAGES, it.joinToString(",")) }
+        if (tlsKeyPin == null) edit.remove(KEY_TLS_KEY_PIN) else edit.putString(KEY_TLS_KEY_PIN, tlsKeyPin)
+        normalizedPackages?.let { edit.putString(KEY_ALLOWED_PACKAGES, it.joinToString(",")) }
         check(edit.commit()) { "无法保存配对配置，请重试" }
+        if (allowedPackages != null) ScreenStreamer.policyChanged()
+    }
+
+    // Remember the endpoint and key after TLS verification and the device handshake succeed.
+    fun rememberLanEndpoint(context: Context, oldUrl: String, expectedToken: String, newUrl: String, key: String) {
+        if (serverUrl(context) != oldUrl || token(context) != expectedToken) return
+        if (oldUrl == newUrl && tlsKeyPin(context) == key) return
+        prefs(context).edit().putString(KEY_SERVER, newUrl).putString(KEY_TLS_KEY_PIN, key).apply()
     }
 
     // Decrypt the saved device token and return null if it cannot be read.
@@ -101,7 +142,8 @@ object PortalConfig {
 
     // Remove the paired server address, device token, and certificate pin.
     fun clearPairing(context: Context) {
-        prefs(context).edit().remove(KEY_SERVER).remove(KEY_TOKEN).remove(KEY_TLS_PIN).apply()
+        prefs(context).edit().remove(KEY_SERVER).remove(KEY_TOKEN).remove(KEY_TLS_PIN)
+            .remove(KEY_TLS_KEY_PIN).remove(KEY_LAN_PAUSED).apply()
     }
 
     // Read the separate screenshot permission, which defaults to off.

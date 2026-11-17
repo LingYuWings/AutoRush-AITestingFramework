@@ -100,6 +100,9 @@ internal object ScreenStreamer {
         ScreenCaptureService.instance?.stopSharing("手机已停止共享")
     }
 
+    // Report whether a remote viewing session can still be stopped from the phone.
+    fun hasActiveStream() = session.active != null
+
     // Check whether the connected session and local screenshot setting allow a consent prompt.
     fun canAuthorize() = socket != null && context?.let(PortalConfig::screenshotAllowed) == true
     val authorizationEpoch get() = session.authorizationEpoch

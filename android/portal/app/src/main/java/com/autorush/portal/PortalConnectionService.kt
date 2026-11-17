@@ -17,8 +17,9 @@ import okhttp3.WebSocketListener
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
-/** A visible, user-started reverse WebSocket. Never auto-starts after reboot. */
+/** Keeps the device connection and LAN discovery visible through a foreground notification. */
 class PortalConnectionService : Service() {
     private val main = Handler(Looper.getMainLooper())
     private val client = OkHttpClient.Builder()
@@ -27,8 +28,18 @@ class PortalConnectionService : Service() {
     private var stopped = true
     private var attempt = 0
     private var accepted = false
+    private var manualAttempt = false
+    private val discovery by lazy { LanServiceDiscovery(this) }
+    private var target: ConnectionTarget? = null
+    private var discoveredUrl: String? = null
+    private var attemptedUrl: String? = null
     private val busy = AtomicBoolean(false)
     private val reconnect = Runnable { connect() }
+
+    // Keep each socket tied to the pairing that supplied its credentials.
+    private class ConnectionTarget(var url: String, val token: String, val cert: String?, var key: String?) {
+        val lan get() = LanPairing.from(url, cert, key)
+    }
 
     // Expose no binder because callers control the service through start intents.
     override fun onBind(intent: Intent?): IBinder? = null
@@ -40,36 +51,106 @@ class PortalConnectionService : Service() {
         manager.createNotificationChannel(NotificationChannel(CHANNEL_ID, "AutoRush 设备连接", NotificationManager.IMPORTANCE_LOW))
     }
 
-    // Handle explicit connect and stop intents without requesting an automatic service restart.
+    // Handle connection, discovery preference, and disconnect intents.
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) {
-            shutdown()
-            return START_NOT_STICKY
+        when (intent?.action) {
+            ACTION_CONNECT -> startConnection(automatic = false)
+            ACTION_AUTO_CONNECT -> if (stopped) startConnection(automatic = true)
+            ACTION_STOP -> {
+                PortalConfig.setLanReconnectPaused(this, true)
+                shutdown()
+            }
+            ACTION_RECONNECT_SETTINGS -> {
+                val current = target?.takeIf { it.lan != null } ?: return START_NOT_STICKY
+                if (canDiscover(current)) {
+                    startDiscovery(current)
+                } else {
+                    stopDiscovery()
+                    if (!accepted && !manualAttempt) shutdown()
+                }
+            }
         }
-        if (intent?.action != ACTION_CONNECT) return START_NOT_STICKY
-        startForeground(NOTIFICATION_ID, notification("正在连接测试服务器"))
-        stopped = false
-        attempt = 0
-        accepted = false
-        main.removeCallbacks(reconnect)
-        socket?.let(ScreenStreamer::detach)
-        socket?.close(1000, "reconfigure")
-        connect()
         return START_NOT_STICKY
     }
 
-    // Open an authenticated WebSocket after checking the saved pairing and app scope.
-    private fun connect() {
-        if (stopped) return
-        val url = try { PortalConfig.validateServerUrl(PortalConfig.serverUrl(this)) } catch (_: Exception) { "" }
+    // Load a saved pairing and give automatic starts a short chance to discover its current address.
+    private fun startConnection(automatic: Boolean) {
+        startForeground(NOTIFICATION_ID, notification(ConnectionPhase.CONNECTING.label))
+        val url = runCatching { PortalConfig.validateServerUrl(PortalConfig.serverUrl(this)) }.getOrNull()
         val token = PortalConfig.token(this)
-        if (url.isEmpty() || token == null || (PortalConfig.allowedPackages(this).isEmpty() && !PortalConfig.anyPackageAllowed(this))) {
-            shutdown("连接配置不完整")
+        if (url == null || token == null || !hasAppScope()) {
+            shutdown(ConnectionPhase.INVALID)
             return
         }
-        PortalState.serverStatus = "连接中"
-        updateNotification("连接中")
-        val request = Request.Builder().url(url).header("Authorization", "Bearer $token").build()
+        val current = ConnectionTarget(url, token, PortalConfig.tlsPin(this), PortalConfig.tlsKeyPin(this))
+        if (!automatic) PortalConfig.setLanReconnectPaused(this, false)
+        if (automatic && !canDiscover(current)) {
+            shutdown()
+            return
+        }
+        target = current
+        stopped = false
+        attempt = 0
+        accepted = false
+        manualAttempt = !automatic
+        attemptedUrl = null
+        main.removeCallbacks(reconnect)
+        stopDiscovery()
+        socket?.let(ScreenStreamer::detach)
+        socket?.cancel()
+        socket = null
+        if (automatic) {
+            setPhase(ConnectionPhase.SEARCHING)
+            startDiscovery(current)
+            main.postDelayed(reconnect, 1800)
+        } else {
+            connect()
+        }
+    }
+
+    // Check the current Android app scope before opening the device socket.
+    private fun hasAppScope() = PortalConfig.allowedPackages(this).isNotEmpty() || PortalConfig.anyPackageAllowed(this)
+
+    // Read whether this pairing is eligible for LAN discovery and reconnect.
+    private fun canDiscover(current: ConnectionTarget) = current.lan != null &&
+        PortalConfig.lanReconnectEnabled(this) && !PortalConfig.lanReconnectPaused(this)
+
+    // Listen for a matching service while the WebSocket is offline.
+    private fun startDiscovery(current: ConnectionTarget) {
+        if (accepted || !canDiscover(current)) return
+        val lan = current.lan ?: return
+        discovery.start(lan, found = { url ->
+            val changed = discoveredUrl != url
+            discoveredUrl = url
+            if (changed && socket == null && !stopped) {
+                main.removeCallbacks(reconnect)
+                connect()
+            }
+        }, lost = { url ->
+            if (discoveredUrl == url) discoveredUrl = null
+        })
+    }
+
+    // Detach discovery callbacks and clear candidates from the previous scan.
+    private fun stopDiscovery() {
+        discovery.stop()
+        discoveredUrl = null
+    }
+
+    // Open a pinned WebSocket, alternating between the discovered and last verified addresses on failure.
+    private fun connect() {
+        val current = target ?: return
+        if (stopped || socket != null) return
+        if (!hasAppScope()) {
+            shutdown(ConnectionPhase.INVALID)
+            return
+        }
+        startDiscovery(current)
+        val url = discoveredUrl?.takeIf { it != attemptedUrl } ?: current.url
+        attemptedUrl = url
+        setPhase(ConnectionPhase.CONNECTING)
+        val request = Request.Builder().url(url).header("Authorization", "Bearer ${current.token}").build()
+        val verifiedKey = AtomicReference<String>()
         val listener = object : WebSocketListener() {
             // Send the device identity and protocol version when the current socket opens.
             override fun onOpen(webSocket: WebSocket, response: Response) {
@@ -94,10 +175,18 @@ class PortalConnectionService : Service() {
                     val message = try { JSONObject(text) } catch (_: Exception) { return@post }
                     if (message.optString("type") == "hello.ack" && message.optInt("protocol") == 1) {
                         accepted = true
+                        manualAttempt = false
                         ScreenStreamer.bind(this@PortalConnectionService, webSocket)
                         attempt = 0
-                        PortalState.serverStatus = "已连接"
-                        updateNotification("已连接测试服务器")
+                        if (current.lan != null) {
+                            verifiedKey.get()?.let { key ->
+                                PortalConfig.rememberLanEndpoint(this@PortalConnectionService, current.url, current.token, url, key)
+                                current.url = url
+                                current.key = key
+                            }
+                        }
+                        stopDiscovery()
+                        setPhase(ConnectionPhase.ONLINE)
                     } else if (accepted && message.optString("type") == "command") {
                         dispatch(webSocket, message)
                     }
@@ -115,14 +204,15 @@ class PortalConnectionService : Service() {
             }
 
             // Handle transport failures and treat HTTP authorization failures as terminal.
-            override fun onFailure(webSocket: WebSocket, error: Throwable, response: Response?) {
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 main.post {
                     if (socket === webSocket) disconnected(response?.code in listOf(401, 403))
                 }
             }
         }
-        val configured = PinnedTls.configure(client.newBuilder().followRedirects(false).followSslRedirects(false), PortalConfig.tlsPin(this)).build()
-        socket = configured.newWebSocket(request, listener)
+        val builder = client.newBuilder().followRedirects(false).followSslRedirects(false)
+        if (current.lan != null) builder.proxy(java.net.Proxy.NO_PROXY)
+        socket = PinnedTls.configure(builder, current.cert, current.key, verifiedKey::set).build().newWebSocket(request, listener)
     }
 
     // Route viewing controls separately and serialize accessibility commands with a timeout.
@@ -178,21 +268,32 @@ class PortalConnectionService : Service() {
         socket?.let(ScreenStreamer::detach)
         socket = null
         accepted = false
+        manualAttempt = false
         if (stopped) return
+        val current = target ?: return
         if (terminal) {
-            PortalState.serverStatus = "令牌被拒绝；请检查配对配置"
-            updateNotification("连接被拒绝")
-            stopped = true
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            if (PortalConfig.token(this) == current.token) PortalConfig.setLanReconnectPaused(this, true)
+            shutdown(ConnectionPhase.REJECTED)
+            return
+        }
+        val discover = canDiscover(current)
+        if (current.lan != null && !discover) {
+            shutdown()
             return
         }
         attempt = (attempt + 1).coerceAtMost(6)
         val delay = (1_000L shl attempt).coerceAtMost(30_000L)
-        PortalState.serverStatus = "已断开，${delay / 1000} 秒后重连"
-        updateNotification(PortalState.serverStatus)
+        if (discover) startDiscovery(current)
+        setPhase(if (discover) ConnectionPhase.SEARCHING else ConnectionPhase.RETRYING)
         main.removeCallbacks(reconnect)
-        main.postDelayed(reconnect, delay)
+        val freshCandidate = discoveredUrl?.let { it != attemptedUrl } == true
+        main.postDelayed(reconnect, if (freshCandidate) 0 else delay)
+    }
+
+    // Publish the same connection phase to the Portal home and notification.
+    private fun setPhase(phase: ConnectionPhase) {
+        PortalState.connectionPhase = phase
+        updateNotification(phase.label)
     }
 
     // Build the ongoing connection notification with a disconnect action.
@@ -218,21 +319,25 @@ class PortalConnectionService : Service() {
     }
 
     // Stop reconnecting, close the socket, and remove the foreground service.
-    private fun shutdown(finalStatus: String = "未连接") {
+    private fun shutdown(phase: ConnectionPhase = ConnectionPhase.IDLE) {
         stopped = true
         accepted = false
+        target = null
         main.removeCallbacks(reconnect)
+        stopDiscovery()
         socket?.let(ScreenStreamer::detach)
         socket?.close(1000, "user disconnect")
         socket = null
-        PortalState.serverStatus = finalStatus
+        PortalState.connectionPhase = phase
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
     // Cancel pending callbacks and release the WebSocket client's resources.
     override fun onDestroy() {
+        if (!stopped) PortalState.connectionPhase = ConnectionPhase.IDLE
         stopped = true
+        stopDiscovery()
         main.removeCallbacksAndMessages(null)
         socket?.let(ScreenStreamer::detach)
         socket?.cancel()
@@ -242,12 +347,14 @@ class PortalConnectionService : Service() {
 
     // Close the connection when Android's foreground service time limit is reached.
     override fun onTimeout(startId: Int, fgsType: Int) {
-        shutdown("已达到系统后台运行时限")
+        shutdown(ConnectionPhase.TIMED_OUT)
     }
 
     companion object {
         const val ACTION_CONNECT = "com.autorush.portal.CONNECT"
+        const val ACTION_AUTO_CONNECT = "com.autorush.portal.AUTO_CONNECT"
         const val ACTION_STOP = "com.autorush.portal.STOP"
+        const val ACTION_RECONNECT_SETTINGS = "com.autorush.portal.RECONNECT_SETTINGS"
         private const val CHANNEL_ID = "portal_connection"
         private const val NOTIFICATION_ID = 1001
     }
