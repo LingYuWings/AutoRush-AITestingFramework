@@ -1,0 +1,133 @@
+/* Give the ordered workflow and setup reference room to be read side by side. */
+.tutorial-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+}
+
+.tutorial-panel h2 {
+  margin: 0 0 16px;
+  font-size: 16px;
+}
+
+.tutorial-panel h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.tutorial-panel p {
+  margin: 4px 0 0;
+  color: var(--ink-3);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.tutorial-steps {
+  margin: 0;
+  padding-inline-start: 22px;
+}
+
+.tutorial-steps > li {
+  padding-inline-start: 4px;
+}
+
+.tutorial-steps > li::marker {
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.tutorial-steps > li + li,
+.tutorial-preparation > div + div {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.tutorial-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  font-size: 13px;
+}
+
+.tutorial-link:hover {
+  text-decoration: underline;
+}
+
+.tutorial-directory {
+  width: min(680px, calc(100% - 32px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-overlay);
+}
+
+.tutorial-directory::backdrop { background: var(--backdrop); }
+
+.tutorial-directory-header {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.tutorial-directory-header h2 { margin: 0; font-size: 17px; }
+
+.tutorial-directory-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 20px 16px;
+  padding: 18px;
+}
+
+.tutorial-directory-groups h3 { margin: 0 0 8px; color: var(--ink-3); font-size: 13px; }
+
+.tutorial-directory-groups ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+}
+
+.tutorial-directory-groups li + li { border-top: 1px solid var(--line); }
+
+.tutorial-directory-groups button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: var(--ink);
+  text-align: start;
+  cursor: pointer;
+}
+
+.tutorial-directory-groups button:hover { background: var(--accent-soft); }
+.tutorial-directory-groups button svg { flex: none; color: var(--ink-3); }
+
+@media (max-width: 960px) {
+  .tutorial-layout { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 560px) {
+  .tutorial-directory-groups { grid-template-columns: 1fr; }
+}

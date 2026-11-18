@@ -131,9 +131,9 @@ export default function Cases({ cases, selectedId, editor, onSelect, onApprove, 
 
   return <div className="cases-page">
     <PageHeader title={uiText("用例管理")} description={uiText("按执行端管理用例；跨端场景在测试计划中组合。批准后的修改另存为新草稿版本。")} actions={<>
-      <button className="secondary-button" onClick={()=>setImportOpen(true)}><FileText size={14} />{uiText(" 导入用例")}</button>
+      <button className="secondary-button" data-tutorial-target="case-import" onClick={()=>setImportOpen(true)}><FileText size={14} />{uiText(" 导入用例")}</button>
       <button className="secondary-button" onClick={onDebugHistory}><History size={14} />{uiText(" 调试记录")}</button>
-      <button className="primary-button" onClick={() => onCreate(platform === 'all' || platform === 'mixed' ? 'web' : platform)}><Plus size={15} />{uiText(" 新建用例")}</button>
+      <button className="primary-button" data-tutorial-target="new-case" onClick={() => onCreate(platform === 'all' || platform === 'mixed' ? 'web' : platform)}><Plus size={15} />{uiText(" 新建用例")}</button>
     </>} />
     {importOpen&&<CaseImportDialog onClose={()=>setImportOpen(false)} onCreated={onImported} onOpenCase={id=>{
       if(editor&&!window.confirm(uiText("当前用例编辑尚未保存，跳转会丢弃这些修改。确认查看导入用例？")))return
@@ -153,7 +153,7 @@ export default function Cases({ cases, selectedId, editor, onSelect, onApprove, 
             </select>
             <button className={archived ? 'icon-button toggled' : 'icon-button'} aria-pressed={archived} onClick={() => setArchived(!archived)} title={archived ? uiText("返回用例列表") : uiText("查看已删除（可恢复）")} aria-label={uiText("显示已删除用例")}><Archive size={16} /></button>
           </div>
-          <div className="segmented segmented-fill" role="tablist" aria-label={uiText("按状态筛选")}>
+          <div className="segmented segmented-fill" data-tutorial-target="case-filters" role="tablist" aria-label={uiText("按状态筛选")}>
             {filters.map(item => <button key={item.key} role="tab" aria-selected={filter === item.key} className={filter === item.key ? 'active' : ''} onClick={() => setFilter(item.key)}>
               {item.label}<span>{item.count}</span>
             </button>)}

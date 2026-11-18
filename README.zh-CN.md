@@ -135,7 +135,7 @@ Android Portal 及演示应用位于 [`android/portal/`](android/portal/)。构�
 
 APK 及对应的 SHA-256 校验文件输出到本地 `release/` 目录：`autorush-portal-debug.apk`（Portal）与 `autorush-fixture-debug.apk`（演示应用）。该目录不纳入 Git；这些安装包是调试构建，并非生产发布版本。
 
-然后在控制台进入 **Android 设备**，生成配对二维码，用 Portal 应用扫码连接。
+然后在控制台进入 **Android 设备**，生成配对二维码，用 Portal 应用扫码连接。选择同 Wi-Fi WSS 配对后，Portal 会在打开应用或连接中断时自动查找已配对的后端。在 Portal 或通知栏手动断开会暂停回连，手动连接后恢复。已有开发环境可运行 `.venv-dev\Scripts\python.exe -m pip install -e .\backend` 安装局域网发现依赖。
 
 ## 目录结构
 

@@ -221,8 +221,8 @@ export default function Plans({ plans, cases, runs, section, onNavigate, onSave,
       description={showingExecutions ? uiText("查看自然语言计划的执行进度、停止运行或定位已生成的报告。")
         : uiText("组合已批准用例，选择目标环境和自然语言执行模型，预检查通过后运行。")}
       actions={showingExecutions ?
-        <button className="secondary-button" disabled={connectingAgent} onClick={()=>void connectAgent()} title={uiText("连接本机执行器并恢复模型执行状态")}><RotateCcw size={14} className={connectingAgent?'spinning':''} />{connectingAgent?uiText("正在恢复…"):uiText("恢复执行状态")}</button>
-        : <button className="primary-button" onClick={() => openEditor(null)}><Plus size={15} />{uiText(" 新建计划")}</button>}
+        <button className="secondary-button" data-tutorial-target="plan-executions" disabled={connectingAgent} onClick={()=>void connectAgent()} title={uiText("连接本机执行器并恢复模型执行状态")}><RotateCcw size={14} className={connectingAgent?'spinning':''} />{connectingAgent?uiText("正在恢复…"):uiText("恢复执行状态")}</button>
+        : <button className="primary-button" data-tutorial-target="new-plan" onClick={() => openEditor(null)}><Plus size={15} />{uiText(" 新建计划")}</button>}
     />
     <nav className="section-nav" aria-label={uiText("测试计划模块导航")}>
       <a href="#/plans" aria-current={!showingExecutions ? 'page' : undefined} onClick={event => { event.preventDefault(); onNavigate() }}>{uiText("计划列表")}</a>

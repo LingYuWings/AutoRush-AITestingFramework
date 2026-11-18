@@ -97,14 +97,14 @@ export default function ApiWorkspace({section,onNavigate,onCaseCreated,onGuardCh
     <div className="api-section api-workbench-section" data-route-section hidden={page!=='workbench'}>
       <header className="api-workspace-tabbar">
       <h1>{uiText('API 测试')}</h1>
-      <div ref={tabStrip} className="api-request-tabs" role="tablist" aria-label={uiText("请求标签")}>{tabs.map(tab=><div key={tab.key} className={tab.key===activeKey?'active':''}>
+      <div ref={tabStrip} className="api-request-tabs" data-tutorial-target="api-request-tabs" role="tablist" aria-label={uiText("请求标签")}>{tabs.map(tab=><div key={tab.key} className={tab.key===activeKey?'active':''}>
       <button type="button" role="tab" aria-selected={tab.key===activeKey} onClick={()=>setActive(tab.key)}>
         <span className="api-method" data-method={tab.meta.method}>{tab.meta.method}</span><span className="api-tab-name">{tab.meta.name}</span>
         {tab.meta.dirty&&<span className="api-tab-dirty" aria-label={uiText("未保存")} title={uiText("未保存")}/>}{tab.meta.busy&&<span className="api-tab-busy">{uiText(" · 处理中")}</span>}
       </button><button type="button" className="api-tab-close" aria-label={uiText("关闭请求 {0}", tab.meta.name)} title={uiText("关闭标签")} onClick={()=>close(tab)}><X size={13}/></button></div>)}
       <button type="button" className="api-tab-add" title={uiText('新建请求')} aria-label={uiText('新建请求')} onClick={()=>open(null)}><Plus size={16}/></button>
       </div>
-      <label className="api-active-environment"><Server size={15}/><select aria-label={uiText('执行环境')} value={environmentIds[activeKey]??''} onChange={event=>setEnvironmentIds(current=>({...current,[activeKey]:event.target.value}))}>
+      <label className="api-active-environment" data-tutorial-target="api-active-environment"><Server size={15}/><select aria-label={uiText('执行环境')} value={environmentIds[activeKey]??''} onChange={event=>setEnvironmentIds(current=>({...current,[activeKey]:event.target.value}))}>
         <option value="">{uiText('无环境')}</option>{environments.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}
       </select></label>
       </header>

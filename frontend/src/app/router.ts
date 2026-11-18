@@ -5,7 +5,7 @@ import type { View } from './types'
 /** `#/reports/<id>`, `#/cases/<id>/edit`, `#/cases/new` … */
 export type Route = { view: View; id?: string; edit?: boolean }
 
-const views: View[] = ['overview', 'cases', 'plans', 'reports', 'devices', 'settings', 'api-testing']
+const views: View[] = ['overview', 'cases', 'plans', 'reports', 'devices', 'settings', 'api-testing', 'tutorial']
 // Rank list, detail, and edit routes for directional transitions.
 const depth = (route: Route) => (route.id ? 1 : 0) + (route.edit ? 1 : 0)
 
@@ -57,6 +57,8 @@ export function transition(from: Route, to: Route, update: () => void) {
   activeTransition = document.startViewTransition(() => {
     if (token === transitionToken) flushSync(update)
   })
+  // A rapid navigation can cancel the animation before it becomes ready.
+  void activeTransition.ready.catch(() => {})
   // Release the snapshot state only if the same navigation is still current.
   const release = () => {
     if (token !== transitionToken) return

@@ -2,13 +2,18 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import ipaddress
+import os
 import socket
+import tempfile
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import uvicorn
+
+from .lan_discovery import try_advertise_device_server
 
 
 # List the host's private IPv4 addresses for LAN pairing.
@@ -21,34 +26,63 @@ def local_addresses() -> list[str]:
     return sorted(value for value in addresses if any(ipaddress.ip_address(value) in subnet for subnet in ranges))
 
 
-# Load or generate a certificate for the host and return its fingerprint.
-def certificate(directory: Path, host: str) -> tuple[Path, Path, str]:
+# Atomically save TLS material; a concurrent first start can reuse the winning key.
+def _save_tls_file(path: Path, contents: bytes, *, keep_existing: bool = False) -> None:
+    descriptor, name = tempfile.mkstemp(dir=path.parent)
+    temporary = Path(name)
+    try:
+        with os.fdopen(descriptor, 'wb') as output:
+            output.write(contents)
+        if keep_existing:
+            try:
+                os.link(temporary, path)
+            except FileExistsError:
+                pass
+        else:
+            temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+# Reuse the installation key across addresses while keeping an IP-specific TLS certificate.
+def certificate(directory: Path, host: str) -> tuple[Path, Path, str, str]:
     from cryptography import x509
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import rsa
     from cryptography.x509.oid import NameOID
 
     directory.mkdir(parents=True, exist_ok=True)
-    cert_path, key_path = directory / f'{host}.pem', directory / f'{host}.key'
+    cert_path, key_path = directory / f'{host}.pem', directory / 'server.key'
+    if not key_path.exists():
+        try:
+            initial_key = serialization.load_pem_private_key((directory / f'{host}.key').read_bytes(), password=None)
+            if not isinstance(initial_key, rsa.RSAPrivateKey):
+                raise ValueError('Unsupported legacy key')
+        except (OSError, ValueError, TypeError):
+            initial_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        _save_tls_file(key_path, initial_key.private_bytes(serialization.Encoding.PEM,
+                       serialization.PrivateFormat.PKCS8, serialization.NoEncryption()), keep_existing=True)
+    key = serialization.load_pem_private_key(key_path.read_bytes(), password=None)
+    public_key = key.public_key()
+    address = ipaddress.ip_address(host)
     now = datetime.now(timezone.utc)
     try:
         cert = x509.load_pem_x509_certificate(cert_path.read_bytes())
-        key = serialization.load_pem_private_key(key_path.read_bytes(), password=None)
-        assert cert.not_valid_after_utc > now + timedelta(days=1)
-        assert cert.public_key().public_numbers() == key.public_key().public_numbers()
-        assert ipaddress.ip_address(host) in cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value.get_values_for_type(x509.IPAddress)
-    except (OSError, ValueError, TypeError, AssertionError, x509.ExtensionNotFound):
-        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        names = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+        if (not cert.not_valid_before_utc <= now < cert.not_valid_after_utc - timedelta(days=1)
+                or cert.public_key() != public_key or address not in names.get_values_for_type(x509.IPAddress)):
+            raise ValueError('Certificate needs replacement')
+    except (OSError, ValueError, x509.ExtensionNotFound):
         name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, 'AutoRush local device server')])
-        cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(key.public_key())
+        cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(public_key)
                 .serial_number(x509.random_serial_number()).not_valid_before(now - timedelta(minutes=5))
                 .not_valid_after(now + timedelta(days=365))
-                .add_extension(x509.SubjectAlternativeName([x509.IPAddress(ipaddress.ip_address(host))]), critical=False)
+                .add_extension(x509.SubjectAlternativeName([x509.IPAddress(address)]), critical=False)
                 .sign(key, hashes.SHA256()))
-        key_path.write_bytes(key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
-        key_path.chmod(0o600)
-        cert_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
-    return cert_path, key_path, cert.fingerprint(hashes.SHA256()).hex()
+        _save_tls_file(cert_path, cert.public_bytes(serialization.Encoding.PEM))
+    identity = hashlib.sha256(public_key.public_bytes(serialization.Encoding.DER,
+                              serialization.PublicFormat.SubjectPublicKeyInfo)).hexdigest()
+    return cert_path, key_path, cert.fingerprint(hashes.SHA256()).hex(), identity
 
 
 # Restrict the LAN listener to pairing, health, and device socket endpoints.
@@ -87,12 +121,13 @@ class LocalDeviceServer:
         self.app, self.directory, self.port = app, directory, port
         self.server = None
         self.task = None
+        self.advertisement = None
         self.info = {}
         self.lock = asyncio.Lock()
 
     # Report available addresses and the running listener's connection details.
     def status(self) -> dict:
-        running = self.task is not None and not self.task.done() and self.server.started
+        running = bool(self.info) and self.task is not None and not self.task.done() and self.server.started
         return {'running': bool(running), 'addresses': local_addresses(), 'port': self.port,
                 **(self.info if running else {})}
 
@@ -107,7 +142,11 @@ class LocalDeviceServer:
                 if self.info['host'] != host:
                     raise ValueError('Stop the running local server before selecting another address')
                 return self.status()
-            cert, key, fingerprint = await asyncio.to_thread(certificate, self.directory, host)
+            if self.advertisement is not None:
+                await self.advertisement.async_close()
+                self.advertisement = None
+            self.info = {}
+            cert, key, fingerprint, identity = await asyncio.to_thread(certificate, self.directory, host)
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             try:
                 sock.bind((host, self.port))
@@ -123,25 +162,34 @@ class LocalDeviceServer:
                         await self.task
                         raise ValueError('Local TLS listener failed to start')
                     if self.server.started:
+                        if not ipaddress.ip_address(host).is_loopback:
+                            self.advertisement = await try_advertise_device_server(host, self.port, identity, fingerprint)
                         self.info = {'host': host, 'server_url': f'wss://{host}:{self.port}/api/v1/devices/ws',
                                      'tls_sha256': fingerprint, 'certificate_path': str(cert)}
                         return self.status()
                     await asyncio.sleep(.02)
                 raise ValueError('Local TLS listener startup timed out')
-            except (OSError, ValueError) as exc:
+            except (OSError, ValueError, asyncio.CancelledError) as exc:
                 if self.task and not self.task.done():
                     self.server.should_exit = True
                     await self.task
                 sock.close()
+                if isinstance(exc, asyncio.CancelledError):
+                    raise
                 raise ValueError('Local WSS server could not start; check the selected address and port') from exc
 
     # Shut down the listener and clear its connection details.
     async def stop(self) -> dict:
         async with self.lock:
-            if self.task is not None and not self.task.done():
-                self.server.should_exit = True
-                await self.task
-            self.task = None
-            self.server = None
-            self.info = {}
+            try:
+                if self.advertisement is not None:
+                    await self.advertisement.async_close()
+            finally:
+                self.advertisement = None
+                if self.task is not None and not self.task.done():
+                    self.server.should_exit = True
+                    await self.task
+                self.task = None
+                self.server = None
+                self.info = {}
             return self.status()

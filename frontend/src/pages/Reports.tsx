@@ -29,9 +29,9 @@ export default function Reports({runs,plans,onOpen,onDownload}:{runs:RunSummary[
   return <>
     <PageHeader title={uiText("运行报告")} description={uiText("每个批次都有独立的报告页，包含用例结果、逐步证据与模型决策轨迹。")}/>
     <section className="surface table-surface report-list">
-      <div className="toolbar">
+      <div className="toolbar" data-tutorial-target="report-filters">
         <div className="segmented" role="tablist" aria-label={uiText("按结果筛选")}>{filters.map(item=><button key={item.key} role="tab" aria-selected={status===item.key} className={status===item.key?'active':''} onClick={()=>setStatus(item.key)}>{item.label}<span>{item.count}</span></button>)}</div>
-        <label className="search-field"><Search size={15}/><input aria-label={uiText("搜索运行报告")} placeholder={uiText("搜索批次、计划、用例、结果…")} value={query} onChange={e=>setQuery(e.target.value)}/></label>
+        <label className="search-field" data-tutorial-target="report-search"><Search size={15}/><input aria-label={uiText("搜索运行报告")} placeholder={uiText("搜索批次、计划、用例、结果…")} value={query} onChange={e=>setQuery(e.target.value)}/></label>
       </div>
       {paged.items.map(run=>{
         const counts=countStatuses(run.cases)

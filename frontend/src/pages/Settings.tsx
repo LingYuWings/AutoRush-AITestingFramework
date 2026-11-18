@@ -79,7 +79,7 @@ export default function Settings({ presets, configs, onCreate, onPreflight, sect
   return <>
     <PageHeader title={uiText("系统设置")} />
     <nav className="section-nav" aria-label={uiText('系统设置分类')}>
-      {sections.map(([key, title]) => <a key={key} href={`#/settings/${key}`} aria-current={active === key ? 'page' : undefined}
+      {sections.map(([key, title]) => <a key={key} data-tutorial-target={`settings-${key}`} href={`#/settings/${key}`} aria-current={active === key ? 'page' : undefined}
         onClick={event => { event.preventDefault(); onSection(key) }}>{uiText(title)}</a>)}
     </nav>
     <div data-route-section>
