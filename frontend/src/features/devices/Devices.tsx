@@ -247,7 +247,7 @@ export default function Devices() {
         <section className="surface auth-card">
           <div className="surface-header"><div><h3>{uiText("本地配对服务")}</h3><p>{uiText("操作授权只保留在当前浏览器会话的内存中")}</p></div>{authorized && <ShieldCheck size={18} className="pairing-connected" aria-label={uiText("已授权")} />}</div>
           <div className="auth-actions">
-            <button className="primary-button" disabled={Boolean(busy)} onClick={() => void connect()}><Usb size={14} />{busy === 'connect' ? uiText("连接中…") : authorized ? uiText("重新连接本地服务") : uiText("连接本地配对服务")}</button>
+            <button className="primary-button" data-tutorial-target="device-connect" disabled={Boolean(busy)} onClick={() => void connect()}><Usb size={14} />{busy === 'connect' ? uiText("连接中…") : authorized ? uiText("重新连接本地服务") : uiText("连接本地配对服务")}</button>
             {authorized && <button className="secondary-button" disabled={Boolean(busy)} onClick={() => void clearAuthorization()}>{uiText("清除授权")}</button>}
           </div>
           <p className="quiet-note">{uiText("通过 USB 连接手机并在手机上允许 USB 调试；本地服务会自动建立连接通道。")}</p>
@@ -261,7 +261,7 @@ export default function Devices() {
 
         <section className="surface pairing-form">
           <div className="surface-header"><div><h3>{uiText("创建扫码配对")}</h3><p>{uiText("一次性二维码，有效期 3 分钟")}</p></div></div>
-          <div className="segmented" role="group" aria-label={uiText("连接方式")}>
+          <div className="segmented" data-tutorial-target="device-pairing-mode" role="group" aria-label={uiText("连接方式")}>
             <button className={connection === 'usb' ? 'active' : ''} disabled={Boolean(busy)} onClick={() => setConnection('usb')}><Usb size={14} />{uiText("USB 本地")}</button>
             <button className={connection === 'wss' ? 'active' : ''} disabled={Boolean(busy)} onClick={selectRemote}>{uiText("WSS 远程")}</button>
           </div>
@@ -310,7 +310,7 @@ export default function Devices() {
         </section>
 
         <section className="surface">
-          <div className="surface-header"><div><h3>{uiText("已配对设备")}</h3><p>{pairedDevices.filter(device => !device.revoked).length}{uiText(" 台已授权 · ")}{devices.length}{uiText(" 台在线")}</p></div></div>
+          <div className="surface-header" data-tutorial-target="device-paired"><div><h3>{uiText("已配对设备")}</h3><p>{pairedDevices.filter(device => !device.revoked).length}{uiText(" 台已授权 · ")}{devices.length}{uiText(" 台在线")}</p></div></div>
           {pairedDevices.length ? <div className="device-list">{pairedDevices.map(device => <div className={`paired-device-row ${inspected === device.device_id ? 'active' : ''}`} key={device.device_id}>
             <div className="paired-device-heading"><span className="device-icon"><Smartphone size={16} /></span><strong>{[device.manufacturer, device.model].filter(Boolean).join(' ') || uiText("Android 目标设备")}</strong><span className={`pairing-state ${device.revoked ? 'pairing-state-cancelled' : device.online ? 'pairing-state-claimed' : 'pairing-state-expired'}`}>{device.revoked ? uiText("已撤销") : device.online ? uiText("在线") : uiText("离线")}</span></div>
             <div className="paired-device-id"><code>{device.device_id}</code><button className="icon-button" onClick={() => copy(device.device_id)} aria-label={uiText("复制设备 ID")} title={uiText("复制设备 ID")}><Copy size={14} /></button></div>

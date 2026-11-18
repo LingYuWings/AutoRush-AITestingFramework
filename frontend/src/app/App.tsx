@@ -1,11 +1,12 @@
 import { uiText } from '../shared/i18n.ts'
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
-  Braces, CircleAlert, CircleCheck, ClipboardList, CloudOff, FileText, LayoutDashboard, Moon,
+  BookOpen, Braces, CircleAlert, CircleCheck, ClipboardList, CloudOff, FileText, LayoutDashboard, Moon,
   RefreshCw, Settings2, Smartphone, Sun, Workflow, X,
 } from '../components/icons'
 import type {DebugSelection} from '../features/case-debug/client'
 import Overview from '../pages/Overview'
+import type { TutorialTour } from '../pages/tutorialGuides'
 import { apiSections, type ApiNavigationGuard } from '../features/api-testing/navigation'
 import { BrandMark } from '../components/ui'
 import { scroller } from '../shared/scroll'
@@ -25,6 +26,7 @@ const routeLoaders = {
   devices: () => import('../features/devices/Devices'),
   settings: () => import('../pages/Settings'),
   'api-testing': () => import('../features/api-testing/ApiWorkspace'),
+  tutorial: () => import('../pages/Tutorial'),
 }
 const Cases = lazy(routeLoaders.cases)
 const Plans = lazy(routeLoaders.plans)
@@ -32,6 +34,8 @@ const Reports = lazy(routeLoaders.reports)
 const Devices = lazy(routeLoaders.devices)
 const Settings = lazy(routeLoaders.settings)
 const ApiWorkspace = lazy(routeLoaders['api-testing'])
+const Tutorial = lazy(routeLoaders.tutorial)
+const TutorialGuide = lazy(() => import('../pages/TutorialGuide'))
 // Defer overlays and details until their controls are used.
 const ReportPage = lazy(() => import('../pages/ReportPage'))
 const CaseEditor = lazy(() => import('../features/cases/CaseEditor'))
@@ -54,6 +58,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
   { label: uiText("工具"), items: [
     { key: 'api-testing', label: uiText("API 测试"), icon: Braces },
     { key: 'devices', label: uiText("Android 设备"), icon: Smartphone },
+    { key: 'tutorial', label: uiText("教程"), icon: BookOpen },
     { key: 'settings', label: uiText("系统设置"), icon: Settings2 },
   ] },
 ]
@@ -72,6 +77,7 @@ export default function App() {
   const [debugSelection,setDebugSelection]=useState<DebugSelection|null>(null)
   const [debugOpen,setDebugOpen]=useState<boolean | null>(null)
   const [route, setRoute] = useState<Route>(() => parseRoute(location.hash))
+  const [guideSession, setGuideSession] = useState<{ tour: TutorialTour; index: number } | 'returning' | null>(null)
   const routeRef = useRef(route)
   const renderedRoute = useRef(route)
   const pageContent = useRef<HTMLElement>(null)
@@ -128,6 +134,18 @@ export default function App() {
     scrollTarget.current = from.view !== next.view || next.view === 'reports' ? next : null
     transition(from, next, () => setRoute(next))
   }, [])
+
+  // Visit a guide destination without adding intermediate tour stops to browser history.
+  const showGuideStep = (tour: TutorialTour, index: number) => {
+    setGuideSession({ tour, index })
+    go(tour.steps[index].route, { replace: true })
+  }
+
+  // Return to the tutorial and restore focus to the guide entry button.
+  const closeGuide = () => {
+    setGuideSession('returning')
+    go({ view: 'tutorial' }, { replace: true })
+  }
   useLayoutEffect(() => {
     // Reset the new page after it commits. The report list restores its own saved offset.
     if (scrollTarget.current !== route) return
@@ -163,6 +181,7 @@ export default function App() {
         return
       }
       bypassPopGuard.current=false;navigationIndex.current=targetIndex
+      setGuideSession(null)
       routeRef.current = next
       scrollTarget.current = null
       transition(from, next, () => setRoute(next))
@@ -365,12 +384,16 @@ export default function App() {
                 onDownload={async (id, format) => { try { await api.downloadReport(id, format) } catch (error) { notify(error instanceof Error ? error.message : uiText("下载失败"), true) } }} />
             : <Reports runs={runs} plans={plans} onOpen={id => go({ view: 'reports', id })} onDownload={async (id, format) => { try { await api.downloadReport(id, format) } catch (error) { notify(error instanceof Error ? error.message : uiText("下载失败"), true) } }} />)}
           {view === 'devices' && <Devices />}
+          {view === 'tutorial' && <Tutorial onNavigate={go} onStartGuide={tour => showGuideStep(tour, 0)} focusGuideEntry={guideSession === 'returning'} />}
           {view === 'api-testing' && <ApiWorkspace section={route.id} onNavigate={id=>go({view:'api-testing',id})} onGuardChange={registerApiGuard} onCaseCreated={async id=>{await refresh();go({view:'cases',id},{bypassApiGuard:true})}}/>}
           {view === 'settings' && <Settings section={route.id} onSection={id => go({ view: 'settings', id })} theme={theme} onTheme={changeTheme} presets={providerPresets} configs={providerConfigs} onCreate={payload => action(() => api.createProviderConfig(payload), uiText("模型配置已保存"))} onPreflight={async id => { try { const result = await api.preflightProvider(id); notify(result.secret_available ? uiText("本地预检查通过，尚未联网") : result.messages.join(' '), !result.secret_available); return result } catch (error) { notify(error instanceof Error ? error.message : uiText("预检查失败"), true); return null } }} />}
         </Suspense>
       </main>
       </div>
     </div>
+    {guideSession && guideSession !== 'returning' && <Suspense fallback={null}>
+      <TutorialGuide tour={guideSession.tour} index={guideSession.index} onStep={index => showGuideStep(guideSession.tour, index)} onClose={closeGuide} />
+    </Suspense>}
     {debugOpen !== null && <Suspense fallback={null}>
       <CaseDebugPanel open={debugOpen} selection={debugSelection} plans={plans} onClose={()=>setDebugOpen(false)}/>
     </Suspense>}

@@ -1,0 +1,117 @@
+/* Dim the console outside the current control and keep the guide in the modal layer. */
+.tutorial-guide {
+  --guide-motion: 360ms cubic-bezier(.18, .78, .24, 1);
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+}
+
+.tutorial-guide::backdrop { background: transparent; }
+
+.tutorial-guide-shade {
+  position: absolute;
+  inset: 0;
+  background: var(--backdrop);
+}
+
+.tutorial-guide-spotlight {
+  position: absolute;
+  border: 2px solid var(--accent);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 0 0 100vmax var(--backdrop);
+  transition: left var(--guide-motion), top var(--guide-motion), width var(--guide-motion), height var(--guide-motion);
+}
+
+.tutorial-guide-connector {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.tutorial-guide-connector path {
+  fill: none;
+  stroke: color-mix(in srgb, var(--accent), white 35%);
+  stroke-width: 2;
+  stroke-dasharray: 5 5;
+  stroke-linecap: round;
+  transition: d var(--guide-motion);
+}
+
+.tutorial-guide-card {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(360px, calc(100% - 32px));
+  max-height: calc(100% - 32px);
+  overflow: auto;
+  padding: 16px;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-overlay);
+}
+
+.tutorial-guide-card[data-anchored] {
+  transform: none;
+  transition: left var(--guide-motion), top var(--guide-motion), transform var(--guide-motion);
+}
+
+.tutorial-guide-copy { animation: tutorial-guide-copy-in 180ms ease-out both; }
+
+@keyframes tutorial-guide-copy-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tutorial-guide-spotlight,
+  .tutorial-guide-connector path,
+  .tutorial-guide-card[data-anchored] { transition: none; }
+  .tutorial-guide-copy { animation: none; }
+}
+
+.tutorial-guide-header, .tutorial-guide-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.tutorial-guide-header {
+  color: var(--ink-3);
+  font-size: 13px;
+}
+
+.tutorial-guide-header strong { display: block; margin-bottom: 2px; color: var(--ink); }
+
+.tutorial-guide-card progress {
+  display: block;
+  width: 100%;
+  height: 6px;
+  margin: 8px 0 14px;
+  border: 0;
+  border-radius: 3px;
+  overflow: hidden;
+  appearance: none;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.tutorial-guide-card progress::-webkit-progress-bar { background: var(--accent-soft); }
+.tutorial-guide-card progress::-webkit-progress-value { background: var(--accent); }
+.tutorial-guide-card progress::-moz-progress-bar { background: var(--accent); }
+
+.tutorial-guide-card h2 { margin: 0; font-size: 17px; }
+.tutorial-guide-card p { margin: 6px 0 16px; color: var(--ink-3); font-size: 13.5px; line-height: 1.65; }

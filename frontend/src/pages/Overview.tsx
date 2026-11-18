@@ -48,7 +48,7 @@ export default function Overview({ cases, plans, runs, events, onNavigate, onNew
       </>}
     />
 
-    <section className="metric-strip">
+    <section className="metric-strip" data-tutorial-target="overview-metrics">
       {metrics.map(item => <div key={item.label} className="metric">
         <span className="metric-label">{item.label}</span>
         <strong>{item.value}</strong>
@@ -65,7 +65,7 @@ export default function Overview({ cases, plans, runs, events, onNavigate, onNew
 
     <div className="overview-grid">
       <section className="surface">
-        <div className="surface-header">
+        <div className="surface-header" data-tutorial-target="overview-recent">
           <div><h3>{uiText("最近执行")}</h3></div>
           <button className="text-button" onClick={() => onNavigate('reports')}>{uiText("全部报告 ")}<ArrowRight size={14} /></button>
         </div>
@@ -82,7 +82,8 @@ export default function Overview({ cases, plans, runs, events, onNavigate, onNew
               <StatusBadge status={run.status} />
             </button>
           })}
-        </div> : <EmptyState icon={FileText} title={uiText("暂无执行记录")} description={uiText("创建并运行测试计划后，结果会出现在这里。")} />}
+        </div> : <EmptyState icon={FileText} title={uiText("暂无执行记录")} description={uiText("创建并运行测试计划后，结果会出现在这里。")}
+          action={<button type="button" className="text-button" onClick={() => onNavigate('tutorial')}>{uiText("查看教程")}<ArrowRight size={14} /></button>} />}
       </section>
 
       <div className="overview-side">

@@ -56,6 +56,8 @@ export const ChevronUp =glyph('ChevronUp', null, <path d="M5 15l7-7 7 7" />)
 export const ChevronDown = glyph('ChevronDown', null, <path d="M5 9l7 7 7-7" />)
 
 // ── Sections ───────────────────────────────────────────────────────────
+// Identify the in-app tutorial in console navigation.
+export const BookOpen = glyph('BookOpen', null, <><path d="M12 6.5C9.4 4.7 6.5 4.5 3.5 5.5v13c3-1 5.9-.8 8.5 1 2.6-1.8 5.5-2 8.5-1v-13c-3-1-5.9-.8-8.5 1Z" /><path d="M12 6.5v13" /></>)
 export const LayoutDashboard = glyph('LayoutDashboard',
   <><rect x="4" y="4" width="7" height="9" rx="1.8" /><rect x="13" y="11" width="7" height="9" rx="1.8" /></>,
   <><rect x="4" y="4" width="7" height="9" rx="1.8" /><rect x="13" y="4" width="7" height="5" rx="1.8" /><rect x="13" y="11" width="7" height="9" rx="1.8" /><rect x="4" y="15" width="7" height="5" rx="1.8" /></>)
