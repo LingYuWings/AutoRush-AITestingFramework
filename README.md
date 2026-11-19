@@ -24,14 +24,14 @@ Describe what to do and what you expect in plain language, or write precise stru
 - **Write tests the way you think.** A natural-language step such as *"Log in as the demo user and check that the order list is visible"* is carried out by a model that observes the page, picks one action at a time and verifies the expected result.
 - **One plan, many platforms.** A single plan can mix Web, Android, desktop and API cases and run them in sequence against the targets you configure.
 - **Evidence you can review.** Every step keeps screenshots, HTTP receipts or the model's decision trace. Reports export to JSON, HTML and JUnit XML.
-- **Local and in your control.** Runs on `127.0.0.1` with SQLite storage. Target hosts are allow-listed, and model endpoints can be local (llama.cpp, Ollama, LM Studio…) or any compatible remote service.
+- **Local and in your control.** The console and its API use loopback by default, with SQLite storage on your computer. Android Wi-Fi pairing uses a separate, on-demand WSS listener. Target access is configurable, and model endpoints can be local (llama.cpp, Ollama, LM Studio…) or any compatible remote service.
 
 ## Supported platforms
 
 | Platform | Driver | Highlights |
 | --- | --- | --- |
 | **Web** | Playwright · Chromium | Headed or headless, locating, clicking, typing, selecting, waiting, screenshots |
-| **Android** | AutoRush Portal app | QR-code pairing, accessibility-tree actions over WSS, live screen via ADB H.264 |
+| **Android** | AutoRush Portal app | QR-code pairing over USB or Wi-Fi, LAN auto-reconnect, accessibility actions, live screen via ADB H.264 |
 | **Windows desktop** | PyAutoGUI | Targets a chosen window, checks focus, clicks, keys, scrolls, pixel assertions |
 | **HTTP API** | Built-in client | Collections, environments, auth, assertions, variable extraction, Postman / cURL import |
 
@@ -118,6 +118,12 @@ API testing allows any HTTP(S) host by default for the local operator. To restri
 
 System Settings groups network access, local storage and logs, execution, models, and integrations. Saved startup settings apply the next time the project launcher or bundled Electron backend starts. Explicit launcher arguments and environment variables take precedence. Source launchers store overrides in the ignored `autorush.settings.json` at the workspace root, and bundled Electron uses its user-data directory. `AUTORUSH_CONFIG_PATH` can select a different file. Secrets remain in the launch environment.
 
+### Start with the in-app tutorial
+
+Open **Tools → Tutorial** in the console sidebar for the test workflow and the prerequisites for each execution platform. Select **Guided tours** to choose from 12 tours covering the eight main pages, grouped under **Getting started**, **Test Workflow**, **API Testing**, and **Devices and configuration**. Use **End-to-end test workflow** to go from writing a case to reviewing a report.
+
+Each step highlights a real control. The guide card and curved pointer move with the highlight as you use **Previous**, **Next**, or the left and right arrow keys. Press **Esc** to return to the tutorial. The tours respect your system's reduced-motion preference.
+
 ### Try it with the demo API
 
 A small in-memory demo service is included for experimenting with the API workbench and API test plans:
@@ -139,7 +145,20 @@ The Android Portal app and a demo app live in [`android/portal/`](android/portal
 
 Built APKs and their SHA-256 checksums are saved in the local `release/` directory: `autorush-portal-debug.apk` (Portal) and `autorush-fixture-debug.apk` (demo app). This directory is ignored by Git; these are debug builds, not production releases.
 
-Then open **Android Devices** in the console, generate a pairing QR code and scan it with the Portal app.
+To pair over Wi-Fi, connect the computer and phone to the same local network.
+
+1. In the console, open **Android Devices → Connect to local pairing service**.
+2. Select **Remote WSS → Same Wi-Fi · Run WSS on this computer**. If the listener is stopped, select **Start local WSS service**.
+3. Enter the package names allowed for testing and select **Generate pairing QR code**. Scan the code in Portal, confirm the pairing, and enable its accessibility service before running UI tests.
+4. Once the device appears online in the console, copy its device ID into an Android test plan.
+
+After Wi-Fi QR pairing, Portal uses mDNS to find the paired backend when the app opens or the connection drops. It verifies the server's TLS identity and reuses the saved device credential. Discovery requires the local network to allow multicast DNS between the phone and computer.
+
+After a PC backend restart, start the local WSS service again so it can advertise. The same pairing can reconnect after a port change as long as the backend keeps its pairing database and TLS identity. Disconnecting from Portal or its notification pauses automatic reconnect. To resume it, manually connect to the paired backend with LAN auto-reconnect enabled.
+
+PC-side validation with a virtual Portal covered real mDNS discovery and WSS connections after a network drop, listener restart, and port change. The server rejected revoked credentials.
+
+For an existing source checkout, reinstall the backend package in your project virtual environment to pick up the LAN discovery dependency. On Windows, run `.\.venv-dev\Scripts\python.exe -m pip install -e .\backend`.
 
 ## Project layout
 
