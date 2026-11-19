@@ -7,6 +7,8 @@ import json
 import re
 import secrets
 import sqlite3
+from collections.abc import Iterator
+from contextlib import closing, contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal
@@ -102,11 +104,12 @@ class PairingStore:
                 );
             """)
 
-    # Open a SQLite connection that returns named columns.
-    def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.path, timeout=10)
-        connection.row_factory = sqlite3.Row
-        return connection
+    # Keep the transaction behavior and close the database handle on exit.
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        with closing(sqlite3.connect(self.path, timeout=10)) as connection, connection:
+            connection.row_factory = sqlite3.Row
+            yield connection
 
     # Build the pairing status and mark expired pending requests.
     @staticmethod
