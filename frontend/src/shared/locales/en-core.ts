@@ -225,6 +225,7 @@ export default {
   "服务器证书指纹": "Server certificate fingerprint",
   "手机与电脑需连接同一 Wi-Fi。二维码会绑定本机服务器证书。若无法连接，请检查 Wi-Fi 客户端隔离和系统防火墙的入站提示。": "Connect the phone and computer to the same Wi-Fi network. The QR code pins this computer's server certificate. If the phone cannot connect, check Wi-Fi client isolation and inbound firewall prompts.",
   "停止本地 WSS 服务": "Stop local WSS service",
+  "等待网络恢复…": "Waiting for the network…",
   "启动本地 WSS 服务": "Start local WSS service",
   "WSS 服务器地址": "WSS server URL",
   "允许测试的 App 包名": "App package names allowed for testing",

@@ -7,13 +7,14 @@ from threading import Lock
 from fastapi import APIRouter, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from autorush.config.runtime import config_path, normalize, read_overrides, write_overrides
+from autorush.config.runtime import FIELDS, config_path, normalize, read_overrides, write_overrides
+from autorush.devices.adb import adb_in
 
 
 class RuntimeUpdate(BaseModel):
     """Carry only changed keys; a null value removes the saved override."""
 
-    overrides: dict[str, str | None] = Field(max_length=16)
+    overrides: dict[str, str | None] = Field(max_length=len(FIELDS))
 
 
 def create_runtime_settings_router(settings, require_operator, trusted_local_request):
@@ -34,6 +35,7 @@ def create_runtime_settings_router(settings, require_operator, trusted_local_req
         'AUTORUSH_DESKTOP_ENABLED': '1' if settings.desktop_enabled else '0',
         'AUTORUSH_LOCAL_VISION_LAUNCHER': str(settings.local_vision_launcher or ''),
         'PLAYWRIGHT_BROWSERS_PATH': os.getenv('PLAYWRIGHT_BROWSERS_PATH', ''),
+        'AUTORUSH_ADB_PATH': os.getenv('AUTORUSH_ADB_PATH', ''),
         'AUTORUSH_VITE_CACHE_DIR': os.getenv('AUTORUSH_VITE_CACHE_DIR', ''),
         'AUTORUSH_MCP_API_URL': os.getenv('AUTORUSH_MCP_API_URL', 'http://127.0.0.1:8000'),
         'AUTORUSH_MCP_CONSOLE_ORIGIN': os.getenv('AUTORUSH_MCP_CONSOLE_ORIGIN', 'http://127.0.0.1:5173'),
@@ -78,7 +80,10 @@ def create_runtime_settings_router(settings, require_operator, trusted_local_req
                     if value is None:
                         values.pop(key, None)
                     else:
-                        values[key] = normalize(key, value)
+                        normalized = normalize(key, value)
+                        if key == 'AUTORUSH_ADB_PATH' and normalized and not adb_in(Path(normalized)):
+                            raise ValueError('Select an adb executable, platform-tools directory, or Android SDK directory')
+                        values[key] = normalized
                 ports = [effective[key] if key in locked else values.get(key, effective[key]) for key in
                          ('AUTORUSH_BACKEND_PORT', 'AUTORUSH_FRONTEND_PORT', 'AUTORUSH_LOCAL_DEVICE_PORT')
                          if mode != 'packaged' or key != 'AUTORUSH_FRONTEND_PORT']

@@ -40,6 +40,7 @@ from autorush.domain.models import (
 from autorush.devices.hub import DeviceAlreadyConnectedError, DeviceHub
 from autorush.devices import adb
 from autorush.devices.local_server import LocalDeviceServer
+from autorush.devices.reconnect import restore_usb, retry_connections
 from autorush.devices.screen import ScreenHub, serve_viewer
 from autorush.devices.adb_screen import AdbScreenHub, serve_adb_viewer
 from contextlib import asynccontextmanager, closing
@@ -116,22 +117,35 @@ def create_app(
     local_vision = None
     local_server = LocalDeviceServer(app, settings.database_path.parent / 'device-tls', settings.local_device_port)
     app.state.local_device_server = local_server
+
+    # Recreate authorized USB tunnels in a worker without blocking the API.
+    async def restore_usb_tunnels():
+        await asyncio.to_thread(restore_usb, pairing_store, device_hub.list_devices(), settings.backend_port)
+
     # Recover persisted work at startup and close owned services on shutdown.
     @asynccontextmanager
     async def lifespan(_):
+        connection_tasks = []
         try:
             await agent_manager.recover_interrupted()
             await debug_manager.recover_interrupted()
             await app.state.api_runner.recover_interrupted()
+            connection_tasks = [
+                asyncio.create_task(retry_connections(local_server.restore, 'LAN listener')),
+                asyncio.create_task(retry_connections(restore_usb_tunnels, 'USB tunnel', initial_delay=5)),
+            ]
             yield
         finally:
+            for task in connection_tasks:
+                task.cancel()
+            await asyncio.gather(*connection_tasks, return_exceptions=True)
             await agent_manager.close()
             await debug_manager.close()
             if local_vision is not None:
                 await local_vision.close()
             await app.state.api_runner.close()
             await adb_screen_hub.close()
-            await local_server.stop()
+            await local_server.stop(forget=False)
     app.router.lifespan_context = lifespan
     app.state.device_hub = device_hub
     screen_hub = ScreenHub()
@@ -291,7 +305,8 @@ def create_app(
                 server_url = f"ws://127.0.0.1:{settings.backend_port}/api/v1/devices/ws"
             else:
                 server_url = validate_wss_url(payload.server_url)
-            return pairing_store.create(server_url, payload.allowed_packages, payload.expires_in)
+            return pairing_store.create(server_url, payload.allowed_packages, payload.expires_in,
+                                        adb_serial=payload.adb_serial if payload.connection == 'usb' else None)
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
 

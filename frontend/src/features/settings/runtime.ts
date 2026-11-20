@@ -7,7 +7,7 @@ export const sections = [
 ] as const
 export type Section = typeof sections[number][0]
 type PathKind = 'directory' | 'file' | 'database'
-type Field = readonly [key: string, label: string, kind?: PathKind | 'port' | 'switch', hint?: string]
+type Field = readonly [key: string, label: string, kind?: PathKind | 'adb' | 'port' | 'switch', hint?: string]
 export const fields: Partial<Record<Section, readonly Field[]>> = {
   network: [
     ['AUTORUSH_ALLOWED_API_HOSTS', 'API 主机名单', undefined, '用逗号分隔主机名或 IP。留空允许所有 HTTP(S) 主机。'],
@@ -22,6 +22,7 @@ export const fields: Partial<Record<Section, readonly Field[]>> = {
   ],
   execution: [
     ['AUTORUSH_DESKTOP_ENABLED', 'Windows 桌面自动化', 'switch'],
+    ['AUTORUSH_ADB_PATH', 'ADB 路径', 'adb', '可填写 ADB 可执行文件、platform-tools 或 Android SDK 的绝对路径。留空自动查找。'],
     ['PLAYWRIGHT_BROWSERS_PATH', 'Playwright 浏览器目录', 'directory'],
     ['AUTORUSH_VITE_CACHE_DIR', 'Vite 缓存目录', 'directory'],
   ],

@@ -15,7 +15,7 @@ FIELDS = {
     'AUTORUSH_ALLOWED_API_HOSTS': 'hosts', 'AUTORUSH_ALLOWED_WEB_HOSTS': 'hosts', 'AUTORUSH_ALLOWED_LLM_HOSTS': 'hosts',
     'AUTORUSH_BACKEND_PORT': 'port', 'AUTORUSH_FRONTEND_PORT': 'port', 'AUTORUSH_LOCAL_DEVICE_PORT': 'port',
     'AUTORUSH_DESKTOP_ENABLED': 'switch', 'AUTORUSH_LOCAL_VISION_LAUNCHER': 'path',
-    'PLAYWRIGHT_BROWSERS_PATH': 'path', 'AUTORUSH_VITE_CACHE_DIR': 'path',
+    'PLAYWRIGHT_BROWSERS_PATH': 'path', 'AUTORUSH_VITE_CACHE_DIR': 'path', 'AUTORUSH_ADB_PATH': 'path',
     'AUTORUSH_MCP_API_URL': 'loopback', 'AUTORUSH_MCP_CONSOLE_ORIGIN': 'loopback', 'AUTORUSH_MCP_ALLOWED_PACKAGES': 'packages',
 }
 
@@ -37,7 +37,7 @@ def normalize(key: str, value: str) -> str:
         return str(int(value))
     if kind == 'switch' and value not in {'0', '1'}:
         raise ValueError('Expected 0 or 1')
-    if kind == 'path' and not Path(value).is_absolute() and (value or key not in {'AUTORUSH_LOCAL_VISION_LAUNCHER', 'AUTORUSH_VITE_CACHE_DIR'}):
+    if kind == 'path' and not Path(value).is_absolute() and (value or key not in {'AUTORUSH_LOCAL_VISION_LAUNCHER', 'AUTORUSH_VITE_CACHE_DIR', 'AUTORUSH_ADB_PATH'}):
         raise ValueError('Use an absolute path on the backend machine')
     if kind == 'loopback':
         url = urlsplit(value)

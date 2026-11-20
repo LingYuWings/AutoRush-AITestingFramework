@@ -221,6 +221,7 @@ export default function App() {
     let disposed = false
     let reconnect: number | undefined
     let closeSocket: (() => void) | undefined
+    let failures = 0
     // Update the console from live run events and reconnect when the stream closes.
     const connect = () => {
       closeSocket = api.watchEvents(event => {
@@ -243,7 +244,21 @@ export default function App() {
           void refresh()
         }
       }, () => {
-        if (!disposed) reconnect = window.setTimeout(connect, 2000)
+        if (disposed) return
+        setConnected(false)
+        setProgress(null)
+        reconnect = window.setTimeout(connect, Math.min(15_000, 1_000 * 2 ** Math.min(failures++, 4)))
+      }, () => {
+        if (disposed) return
+        if (failures) {
+          void refresh()
+          if (api.getOperatorToken()) {
+            void api.operatorSession().then(session => {
+              if (!disposed) api.setOperatorToken(session.operator_token)
+            }).catch(() => { /* Privileged actions can retry local authorization. */ })
+          }
+        }
+        failures = 0
       })
     }
     connect()

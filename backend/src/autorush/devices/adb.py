@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from uuid import UUID
 
@@ -14,15 +16,43 @@ class AdbError(ValueError):
     pass
 
 
-# Find the bundled ADB executable or the one on the system path.
+# Resolve an ADB executable, platform-tools folder, or Android SDK folder.
+def adb_in(folder: Path) -> str | None:
+    name = "adb.exe" if os.name == "nt" else "adb"
+    candidates = (folder,) if folder.is_file() and folder.name.lower() == name else (
+        folder / name, folder / "platform-tools" / name,
+    )
+    for candidate in candidates:
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate.resolve())
+    return None
+
+
+# Prefer an explicit path, then known local installations and finally PATH.
 def adb_executable() -> str:
+    configured = os.getenv("AUTORUSH_ADB_PATH", "").strip()
+    if configured:
+        path = Path(configured).expanduser()
+        if path.is_absolute() and (found := adb_in(path)):
+            return found
+        raise AdbError("AUTORUSH_ADB_PATH must point to adb, platform-tools, or a valid Android SDK directory")
+
     root = Path(__file__).resolve().parents[4]
-    bundled = root / "artifacts" / "tools" / "android-sdk" / "platform-tools" / "adb.exe"
-    if bundled.is_file():
-        return str(bundled)
+    install = Path(sys.executable).parent if getattr(sys, "frozen", False) else root
+    locations = [root / "artifacts/tools/android-sdk", root / "artifacts/tools", install / "platform-tools", install / "adb", install]
+    if getattr(sys, "frozen", False):
+        locations.extend((install.parent / "platform-tools", install.parent.parent / "platform-tools",
+                          install.parent.parent / "adb"))
+    locations.extend(Path(value) for name in ("ANDROID_HOME", "ANDROID_SDK_ROOT") if (value := os.getenv(name)))
+    if local_app_data := os.getenv("LOCALAPPDATA"):
+        locations.append(Path(local_app_data) / "Android/Sdk")
+    locations.extend((Path.home() / "Library/Android/sdk", Path.home() / "Android/Sdk"))
+    for location in locations:
+        if found := adb_in(location):
+            return found
     executable = shutil.which("adb")
     if executable is None:
-        raise AdbError("adb is unavailable; install Android platform tools")
+        raise AdbError("adb is unavailable; set the ADB path in System Settings or install Android platform tools")
     return executable
 
 
@@ -61,6 +91,15 @@ def reverse(serial: str | None, port: int) -> None:
     if serial is None or not any(device["serial"] == serial and device["state"] == "device" for device in list_devices()):
         raise AdbError("select an authorized USB device")
     _run(["-s", serial, "reverse", f"tcp:{port}", f"tcp:{port}"])
+
+
+# Restore the paired phone's tunnel if it is missing or still targets a previous backend port.
+def restore_reverse(serial: str, remote_port: int, backend_port: int) -> None:
+    remote, local = f"tcp:{remote_port}", f"tcp:{backend_port}"
+    mappings = _run(["-s", serial, "reverse", "--list"]).splitlines()
+    if any(line.split()[-2:] == [remote, local] for line in mappings):
+        return
+    _run(["-s", serial, "reverse", remote, local])
 
 
 # Read Portal's device UUID through its shell-only identity provider.

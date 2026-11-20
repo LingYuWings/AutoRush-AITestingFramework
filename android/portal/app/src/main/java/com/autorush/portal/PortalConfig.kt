@@ -79,6 +79,9 @@ object PortalConfig {
     // Read whether an explicit disconnect or a server rejection paused discovery.
     fun lanReconnectPaused(context: Context): Boolean = prefs(context).getBoolean(KEY_LAN_PAUSED, false)
 
+    // Apply the saved reconnect preference and pause to every supported transport.
+    fun mayReconnect(context: Context): Boolean = lanReconnectEnabled(context) && !lanReconnectPaused(context)
+
     // Persist the pause so reopening Portal does not undo a disconnect.
     fun setLanReconnectPaused(context: Context, paused: Boolean) {
         prefs(context).edit().putBoolean(KEY_LAN_PAUSED, paused).apply()

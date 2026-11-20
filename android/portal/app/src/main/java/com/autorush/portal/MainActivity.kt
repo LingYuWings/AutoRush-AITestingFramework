@@ -143,7 +143,7 @@ class MainActivity : Activity() {
 
     // Keep infrequent pairing and diagnostic actions below everyday controls.
     private fun settingsCard() = ui.card().apply {
-        autoReconnect = ui.toggle("局域网自动回连", PortalConfig.lanReconnectEnabled(this@MainActivity), ::changeReconnect)
+        autoReconnect = ui.toggle("自动回连", PortalConfig.lanReconnectEnabled(this@MainActivity), ::changeReconnect)
         reconnectDetail = ui.label("", 13f, ui.muted)
         addView(autoReconnect)
         addView(reconnectDetail)
@@ -160,7 +160,6 @@ class MainActivity : Activity() {
         val phase = PortalState.connectionPhase
         val claiming = pairingAttempt.active
         val savedUrl = PortalConfig.serverUrl(this)
-        val lanPaired = hasPairing && LanPairing.from(savedUrl, PortalConfig.tlsPin(this)) != null
         val appCount = PortalConfig.allowedPackages(this).size
         status.updateText(when {
             claiming -> "正在配对"
@@ -199,10 +198,10 @@ class MainActivity : Activity() {
         stopPreview.visibility = if (previewActive) View.VISIBLE else View.GONE
         autoReconnect.isEnabled = !claiming
         reconnectDetail.updateText(when {
-            !lanPaired -> "使用同 Wi-Fi 二维码配对后生效。"
+            !hasPairing -> "完成配对后生效，支持 USB、局域网和远程 WSS。"
             !PortalConfig.lanReconnectEnabled(this) -> "已关闭。可以随时手动连接。"
             PortalConfig.lanReconnectPaused(this) -> "已暂停。手动连接后恢复。"
-            else -> "打开 Portal 或连接中断时，查找同一局域网内已配对的后端。"
+            else -> "打开 Portal 或连接中断后，会自动重连已配对的后端。"
         })
     }
 
@@ -235,16 +234,15 @@ class MainActivity : Activity() {
         if (PortalState.connectionPhase.active) {
             startService(connectionIntent(PortalConnectionService.ACTION_RECONNECT_SETTINGS))
         } else if (enabled) {
-            maybeStartDiscovery()
+            maybeReconnect()
         }
         updateHome()
     }
 
-    // Auto-start only if the currently saved LAN pairing is eligible.
-    private fun maybeStartDiscovery() {
+    // Resume an eligible saved pairing when the activity becomes visible.
+    private fun maybeReconnect() {
         if (PortalState.connectionPhase.active || pairingAttempt.active || !hasPairing ||
-            !PortalConfig.lanReconnectEnabled(this) || PortalConfig.lanReconnectPaused(this) ||
-            LanPairing.from(PortalConfig.serverUrl(this), PortalConfig.tlsPin(this)) == null) return
+            !PortalConfig.mayReconnect(this)) return
         startConnection(automatic = true)
     }
 
@@ -424,7 +422,8 @@ class MainActivity : Activity() {
             if (!automatic) showMessage("请在 Portal 前台重试连接")
             return
         }
-        PortalState.connectionPhase = if (automatic) ConnectionPhase.SEARCHING else ConnectionPhase.CONNECTING
+        val discovering = automatic && LanPairing.from(PortalConfig.serverUrl(this), PortalConfig.tlsPin(this)) != null
+        PortalState.connectionPhase = if (discovering) ConnectionPhase.SEARCHING else ConnectionPhase.CONNECTING
         updateHome()
         if (!automatic) requestConnectionNotifications()
     }
@@ -446,7 +445,7 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         handler.post(refresh)
-        maybeStartDiscovery()
+        maybeReconnect()
     }
 
     // Pause UI refreshes while the foreground service manages the connection.
