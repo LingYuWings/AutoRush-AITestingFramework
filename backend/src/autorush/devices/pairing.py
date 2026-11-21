@@ -103,6 +103,14 @@ class PairingStore:
                     revoked INTEGER NOT NULL DEFAULT 0
                 );
             """)
+            # Older databases have no USB binding metadata.
+            connection.execute("BEGIN IMMEDIATE")
+            for table in ("device_pairings", "paired_devices"):
+                columns = {row["name"] for row in connection.execute(f"PRAGMA table_info({table})")}
+                if "adb_serial" not in columns:
+                    connection.execute(f"ALTER TABLE {table} ADD COLUMN adb_serial TEXT")
+            if "usb_port" not in {row["name"] for row in connection.execute("PRAGMA table_info(paired_devices)")}:
+                connection.execute("ALTER TABLE paired_devices ADD COLUMN usb_port INTEGER")
 
     # Keep the transaction behavior and close the database handle on exit.
     @contextmanager
@@ -121,7 +129,8 @@ class PairingStore:
                 "allowed_packages": json.loads(row["allowed_packages"]), "status": status, "device_id": row["device_id"]}
 
     # Create a time-limited code and the corresponding QR payload.
-    def create(self, server_url: str, packages: list[str], lifetime: int, tls_sha256: str | None = None) -> dict:
+    def create(self, server_url: str, packages: list[str], lifetime: int, tls_sha256: str | None = None,
+               *, adb_serial: str | None = None) -> dict:
         pairing_id, code = str(uuid4()), secrets.token_urlsafe(32)
         expires_at = (utc_now() + timedelta(seconds=lifetime)).isoformat()
         qr = {"type": "autorush.pairing", "version": 2 if tls_sha256 else 1, "server_url": server_url,
@@ -132,8 +141,10 @@ class PairingStore:
         if len(payload.encode("utf-8")) > 1800:
             raise ValueError("pairing payload exceeds QR capacity")
         with self._connect() as connection:
-            connection.execute("INSERT INTO device_pairings VALUES (?, ?, ?, ?, ?, 'pending', NULL)",
-                               (pairing_id, secret_hash(code), expires_at, server_url, json.dumps(packages)))
+            connection.execute("""INSERT INTO device_pairings
+                (id, code_hash, expires_at, server_url, allowed_packages, status, adb_serial)
+                VALUES (?, ?, ?, ?, ?, 'pending', ?)""",
+                (pairing_id, secret_hash(code), expires_at, server_url, json.dumps(packages), adb_serial))
         return {"id": pairing_id, "expires_at": expires_at, "server_url": server_url, "allowed_packages": packages,
                 "status": "pending", "device_id": None, "qr_payload": payload}
 
@@ -163,10 +174,15 @@ class PairingStore:
             if row is None or row["status"] != "pending" or row["expires_at"] <= now:
                 return None
             connection.execute("UPDATE device_pairings SET status = 'claimed', device_id = ? WHERE id = ?", (device_id, row["id"]))
-            connection.execute("""INSERT INTO paired_devices VALUES (?, ?, ?, ?, ?, ?, 0)
+            serial = row["adb_serial"]
+            port = urlsplit(row["server_url"]).port if serial else None
+            connection.execute("""INSERT INTO paired_devices
+                (device_id, token_hash, manufacturer, model, sdk_int, paired_at, revoked, adb_serial, usb_port)
+                VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
                 ON CONFLICT(device_id) DO UPDATE SET token_hash=excluded.token_hash, manufacturer=excluded.manufacturer,
-                model=excluded.model, sdk_int=excluded.sdk_int, paired_at=excluded.paired_at, revoked=0""",
-                (device_id, secret_hash(token), payload.manufacturer, payload.model, payload.sdk_int, now))
+                model=excluded.model, sdk_int=excluded.sdk_int, paired_at=excluded.paired_at, revoked=0,
+                adb_serial=excluded.adb_serial, usb_port=excluded.usb_port""",
+                (device_id, secret_hash(token), payload.manufacturer, payload.model, payload.sdk_int, now, serial, port))
         return {"device_id": device_id, "server_url": row["server_url"], "device_token": token,
                 "allowed_packages": json.loads(row["allowed_packages"])}
 
@@ -192,6 +208,23 @@ class PairingStore:
         with self._connect() as connection:
             rows = connection.execute("SELECT device_id, manufacturer, model, sdk_int, paired_at, revoked FROM paired_devices ORDER BY paired_at DESC").fetchall()
         return [{**dict(row), "revoked": bool(row["revoked"])} for row in rows]
+
+    # Return only explicitly claimed and still authorized USB mappings.
+    def usb_bindings(self) -> list[tuple[UUID, str | None, int]]:
+        with self._connect() as connection:
+            rows = connection.execute("""SELECT device_id, adb_serial, usb_port FROM paired_devices
+                WHERE revoked = 0 AND adb_serial IS NOT NULL AND usb_port IS NOT NULL""").fetchall()
+            # Older USB grants only stored the endpoint. Use them when the history is unambiguous.
+            legacy = connection.execute("""SELECT device.device_id, MIN(pairing.server_url)
+                FROM paired_devices AS device JOIN device_pairings AS pairing ON pairing.device_id = device.device_id
+                WHERE device.revoked = 0 AND device.adb_serial IS NULL AND pairing.status = 'claimed'
+                GROUP BY device.device_id HAVING COUNT(DISTINCT pairing.server_url) = 1""").fetchall()
+        bindings = [(UUID(device_id), serial, port) for device_id, serial, port in rows]
+        for device_id, endpoint in legacy:
+            match = re.fullmatch(r"ws://127\.0\.0\.1:([0-9]{1,5})/api/v1/devices/ws", endpoint)
+            if match and 0 < (port := int(match[1])) <= 65535:
+                bindings.append((UUID(device_id), None, port))
+        return bindings
 
     # Revoke the stored authorization for a device.
     def revoke(self, device_id: UUID) -> bool:

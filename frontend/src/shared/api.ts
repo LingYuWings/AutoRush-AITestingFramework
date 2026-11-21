@@ -223,6 +223,7 @@ export interface CreatedPairing extends PairingRecord {
 
 export interface LocalDeviceServer {
   running: boolean
+  enabled?: boolean
   addresses: string[]
   port: number
   host?: string
@@ -474,7 +475,7 @@ export const api = {
   // Verify connectivity with a saved provider endpoint.
   testProviderConnection: (id: string) => post<ProviderConnectionTest>(`/api/v1/providers/configs/${id}/test-connection`),
   // Subscribe to backend events and return a function that closes the socket.
-  watchEvents: (onEvent: (event: PlatformEvent) => void, onClosed: () => void) => {
+  watchEvents: (onEvent: (event: PlatformEvent) => void, onClosed: () => void, onOpened?: () => void) => {
     const base = socketBase()
     const socket = new WebSocket(`${base}/api/v1/events/ws`)
     socket.onmessage = message => {
@@ -482,6 +483,7 @@ export const api = {
       catch { /* Ignore malformed local events. */ }
     }
     socket.onclose = onClosed
+    if (onOpened) socket.onopen = onOpened
     return () => socket.close()
   },
   // Download an authorized report in the requested format.

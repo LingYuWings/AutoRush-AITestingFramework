@@ -59,6 +59,18 @@ export default function Devices() {
   }, [authorized])
 
   useEffect(() => {
+    if (!authorized || connection !== 'wss') return
+    let active = true
+    // Update the displayed listener status after the backend restores its address.
+    const poll = () => void api.localDeviceServer().then(status => {
+      if (active) setLocalServer(status)
+    }).catch(() => { /* Keep the last known state during a backend reconnect. */ })
+    poll()
+    const timer = window.setInterval(poll, 5000)
+    return () => { active = false; window.clearInterval(timer) }
+  }, [authorized, connection, busy])
+
+  useEffect(() => {
     if (pairing?.status !== 'pending') return
     setNow(Date.now())
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
@@ -278,10 +290,10 @@ export default function Devices() {
               if (mode === 'lan' && authorized) void startLocal()
             }}><option value="lan">{uiText("同 Wi-Fi · 电脑启动 WSS 服务")}</option><option value="external">{uiText("已有域名与 TLS 服务")}</option></select></label>
             {remoteMode === 'lan' ? <>
-              <p role="status" className="quiet-note">{uiText("本地 WSS 服务：")}{busy === 'local-server' ? uiText("正在启动或停止…") : localServer?.running ? uiText("已启动") : uiText("未启动")}</p>
+              <p role="status" className="quiet-note">{uiText("本地 WSS 服务：")}{busy === 'local-server' ? uiText("正在启动或停止…") : localServer?.running ? uiText("已启动") : localServer?.enabled ? uiText("等待网络恢复…") : uiText("未启动")}</p>
               {localServer?.running && <><p className="quiet-note pairing-endpoint">{uiText("连接地址：")}<code>{localServer.server_url}</code></p><details><summary>{uiText("服务器证书指纹")}</summary><code>{localServer.tls_sha256}</code></details></>}
               <p className="quiet-note">{uiText("手机与电脑需连接同一 Wi-Fi。二维码会绑定本机服务器证书。若无法连接，请检查 Wi-Fi 客户端隔离和系统防火墙的入站提示。")}</p>
-              <button className="secondary-button" disabled={!authorized || Boolean(busy)} onClick={() => void (localServer?.running ? stopLocal() : startLocal())}>{localServer?.running ? uiText("停止本地 WSS 服务") : uiText("启动本地 WSS 服务")}</button>
+              <button className="secondary-button" disabled={!authorized || Boolean(busy)} onClick={() => void (localServer?.enabled || localServer?.running ? stopLocal() : startLocal())}>{localServer?.enabled || localServer?.running ? uiText("停止本地 WSS 服务") : uiText("启动本地 WSS 服务")}</button>
             </> : <label className="field"><span>{uiText("WSS 服务器地址")}</span><input className="mono-input" value={server} disabled={Boolean(busy)} onChange={event => setServer(event.target.value)} autoComplete="off" spellCheck={false} placeholder="wss://your-server/api/v1/devices/ws" /></label>}
           </>}
           <label className="field"><span>{uiText("允许测试的 App 包名")}</span><textarea className="mono-input" value={packages} disabled={Boolean(busy)} onChange={event => setPackages(event.target.value)} spellCheck={false} rows={3} placeholder="com.autorush.fixture" /></label>

@@ -24,14 +24,14 @@ Describe what to do and what you expect in plain language, or write precise stru
 - **Write tests the way you think.** A natural-language step such as *"Log in as the demo user and check that the order list is visible"* is carried out by a model that observes the page, picks one action at a time and verifies the expected result.
 - **One plan, many platforms.** A single plan can mix Web, Android, desktop and API cases and run them in sequence against the targets you configure.
 - **Evidence you can review.** Every step keeps screenshots, HTTP receipts or the model's decision trace. Reports export to JSON, HTML and JUnit XML.
-- **Local and in your control.** The console and its API use loopback by default, with SQLite storage on your computer. Android Wi-Fi pairing uses a separate, on-demand WSS listener. Target access is configurable, and model endpoints can be local (llama.cpp, Ollama, LM Studio…) or any compatible remote service.
+- **Local and in your control.** The console and its API use loopback by default, with SQLite storage on your computer. Android Wi-Fi pairing uses a separate WSS listener that you enable in the console. Target access is configurable, and model endpoints can be local (llama.cpp, Ollama, LM Studio…) or any compatible remote service.
 
 ## Supported platforms
 
 | Platform | Driver | Highlights |
 | --- | --- | --- |
 | **Web** | Playwright · Chromium | Headed or headless, locating, clicking, typing, selecting, waiting, screenshots |
-| **Android** | AutoRush Portal app | QR-code pairing over USB or Wi-Fi, LAN auto-reconnect, accessibility actions, live screen via ADB H.264 |
+| **Android** | AutoRush Portal app | QR-code pairing over USB or Wi-Fi, automatic reconnect, accessibility actions, live screen via ADB H.264 |
 | **Windows desktop** | PyAutoGUI | Targets a chosen window, checks focus, clicks, keys, scrolls, pixel assertions |
 | **HTTP API** | Built-in client | Collections, environments, auth, assertions, variable extraction, Postman / cURL import |
 
@@ -64,7 +64,7 @@ Natural-language runs are bounded by timeouts, round limits, cancellation and no
 - **Case import**: upload UTF-8 Markdown or XMind from **Case management → Import cases**, review source locations, edit candidates and create selected drafts in one batch. Download the Markdown template in the dialog or start from [`standard-cases.markdown`](examples/imports/standard-cases.markdown). Missing expectations and ambiguous source content need review; imports never approve or execute cases automatically. Failed batches roll back, and retrying a submission does not create duplicates.
 - **Single-case debugging**: run a saved case from its list row, or use the editor's **Debug current content** action without saving. Configure targets and the model in the debug panel, inspect live progress, stop the run and review step evidence. The latest 20 debug records are separate from formal plans and reports; debugging does not save or approve the case.
 - **API workbench**: a request editor with tabs, nested folders, environments and `{{variables}}`. It also has a collection runner with CSV/JSON data-driven iterations and a searchable run history. Any request or collection can be saved as an API test case.
-- **Android devices**: pair a phone by scanning a QR code, manage authorised devices and watch the screen live.
+- **Android devices**: pair a phone by scanning a QR code, reconnect after interruptions and watch the screen live. Configure a custom ADB path in System Settings.
 - **Model settings**: discover local model servers, fetch model lists and verify text and vision capabilities.
 
 ## Quick start
@@ -145,6 +145,8 @@ The Android Portal app and a demo app live in [`android/portal/`](android/portal
 
 Built APKs and their SHA-256 checksums are saved in the local `release/` directory: `autorush-portal-debug.apk` (Portal) and `autorush-fixture-debug.apk` (demo app). This directory is ignored by Git; these are debug builds, not production releases.
 
+#### Pair a phone
+
 To pair over Wi-Fi, connect the computer and phone to the same local network.
 
 1. In the console, open **Android Devices → Connect to local pairing service**.
@@ -152,11 +154,17 @@ To pair over Wi-Fi, connect the computer and phone to the same local network.
 3. Enter the package names allowed for testing and select **Generate pairing QR code**. Scan the code in Portal, confirm the pairing, and enable its accessibility service before running UI tests.
 4. Once the device appears online in the console, copy its device ID into an Android test plan.
 
-After Wi-Fi QR pairing, Portal uses mDNS to find the paired backend when the app opens or the connection drops. It verifies the server's TLS identity and reuses the saved device credential. Discovery requires the local network to allow multicast DNS between the phone and computer.
+For USB pairing, connect the phone and accept its USB debugging prompt. In **Android Devices**, connect to the local pairing service, choose **Local USB**, select the authorised device and generate the pairing QR code. To connect through an existing remote server, select **Remote WSS → Existing domain and TLS service** and enter that server's `wss://` endpoint.
 
-After a PC backend restart, start the local WSS service again so it can advertise. The same pairing can reconnect after a port change as long as the backend keeps its pairing database and TLS identity. Disconnecting from Portal or its notification pauses automatic reconnect. To resume it, manually connect to the paired backend with LAN auto-reconnect enabled.
+#### Automatic reconnect
 
-PC-side validation with a virtual Portal covered real mDNS discovery and WSS connections after a network drop, listener restart, and port change. The server rejected revoked credentials.
+- **On the phone**, Portal 0.5.2 retries saved USB, local Wi-Fi and remote WSS connections while auto-reconnect (**自动回连**) is enabled. A manual disconnect pauses retries until you connect again. After a phone reboot or force stop, open Portal to resume the saved pairing.
+- **On the PC**, the local WSS listener starts again with the backend once you enable it in **Android Devices**. If you enabled the listener before this update, start it once in the updated console to save that preference. Keep the pairing database and TLS identity files so existing phones can reconnect. If the local address changes, Portal can rediscover the listener through mDNS when the network allows multicast traffic between the phone and PC. It checks the saved server identity before reusing the device credential.
+- **Over USB**, the backend restores the tunnel when an authorised ADB device matches the saved Portal identity. If an older USB pairing fails to recover after reconnecting the cable, pair the phone again to record its ADB binding.
+
+#### Configure ADB
+
+AutoRush looks for ADB in the project or app installation and common Android SDK locations, then checks `PATH`. If ADB lives elsewhere, set **System Settings → Execution → ADB path** to the absolute path of the ADB executable, its `platform-tools` folder, or the SDK root. The Electron app can browse for a file or folder. Restart the backend through the project launcher, or restart the packaged app, to apply the setting. You can also set `AUTORUSH_ADB_PATH` in the launch environment.
 
 For an existing source checkout, reinstall the backend package in your project virtual environment to pick up the LAN discovery dependency. On Windows, run `.\.venv-dev\Scripts\python.exe -m pip install -e .\backend`.
 

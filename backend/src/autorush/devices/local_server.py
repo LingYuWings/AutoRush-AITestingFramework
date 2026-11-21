@@ -122,20 +122,32 @@ class LocalDeviceServer:
         self.server = None
         self.task = None
         self.advertisement = None
+        self.identity = None
         self.info = {}
         self.lock = asyncio.Lock()
+        self.preference_path = directory / 'listener-host'
+        try:
+            with self.preference_path.open(encoding='ascii') as source:
+                self.preferred_host = str(ipaddress.IPv4Address(source.read(32).strip()))
+        except (OSError, ValueError):
+            self.preferred_host = None
 
     # Report available addresses and the running listener's connection details.
     def status(self) -> dict:
         running = bool(self.info) and self.task is not None and not self.task.done() and self.server.started
-        return {'running': bool(running), 'addresses': local_addresses(), 'port': self.port,
+        return {'running': bool(running), 'enabled': self.preferred_host is not None,
+                'addresses': local_addresses(), 'port': self.port,
                 **(self.info if running else {})}
 
     # Start a TLS listener on a selected private address.
-    async def start(self, host: str | None = None) -> dict:
+    async def start(self, host: str | None = None, *, restoring: bool = False) -> dict:
         async with self.lock:
+            if restoring and self.preferred_host is None:
+                return self.status()
             addresses = local_addresses()
-            host = host or (addresses[0] if addresses else '')
+            preferred = self.preferred_host
+            host = host or next((value for value in (self.info.get('host'), preferred) if value in addresses),
+                                addresses[0] if addresses else '')
             if host not in addresses:
                 raise ValueError('No local private IPv4 address selected; connect this computer to Wi-Fi')
             if self.status()['running']:
@@ -164,32 +176,59 @@ class LocalDeviceServer:
                     if self.server.started:
                         if not ipaddress.ip_address(host).is_loopback:
                             self.advertisement = await try_advertise_device_server(host, self.port, identity, fingerprint)
+                        self.identity = identity
                         self.info = {'host': host, 'server_url': f'wss://{host}:{self.port}/api/v1/devices/ws',
                                      'tls_sha256': fingerprint, 'certificate_path': str(cert)}
+                        if self.preferred_host != host:
+                            _save_tls_file(self.preference_path, host.encode('ascii'))
+                            self.preferred_host = host
                         return self.status()
                     await asyncio.sleep(.02)
                 raise ValueError('Local TLS listener startup timed out')
             except (OSError, ValueError, asyncio.CancelledError) as exc:
-                if self.task and not self.task.done():
-                    self.server.should_exit = True
-                    await self.task
+                await self._stop()
                 sock.close()
                 if isinstance(exc, asyncio.CancelledError):
                     raise
                 raise ValueError('Local WSS server could not start; check the selected address and port') from exc
 
-    # Shut down the listener and clear its connection details.
-    async def stop(self) -> dict:
+    # Restore an enabled listener on the current interface, including after an address change.
+    async def restore(self) -> None:
         async with self.lock:
-            try:
-                if self.advertisement is not None:
-                    await self.advertisement.async_close()
-            finally:
-                self.advertisement = None
-                if self.task is not None and not self.task.done():
-                    self.server.should_exit = True
-                    await self.task
-                self.task = None
-                self.server = None
-                self.info = {}
+            if self.preferred_host is None:
+                return
+            status = self.status()
+            if status["running"] and status["host"] in status["addresses"]:
+                host = status["host"]
+                if self.advertisement is None and self.identity and not ipaddress.ip_address(host).is_loopback:
+                    self.advertisement = await try_advertise_device_server(host, self.port, self.identity, status["tls_sha256"])
+                return
+            if self.task is not None:
+                await self._stop()
+            if not status["addresses"]:
+                return
+        await self.start(restoring=True)
+
+    # Stop the listener and optionally persist the user's request to keep it disabled.
+    async def stop(self, *, forget: bool = True) -> dict:
+        async with self.lock:
+            if forget:
+                self.preference_path.unlink(missing_ok=True)
+                self.preferred_host = None
+            await self._stop()
             return self.status()
+
+    # Release the current listener and advertisement while holding the lifecycle lock.
+    async def _stop(self) -> None:
+        try:
+            if self.advertisement is not None:
+                await self.advertisement.async_close()
+        finally:
+            self.advertisement = None
+            self.identity = None
+            if self.task is not None and not self.task.done():
+                self.server.should_exit = True
+                await self.task
+            self.task = None
+            self.server = None
+            self.info = {}

@@ -6,6 +6,8 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -28,13 +30,37 @@ class PortalConnectionService : Service() {
     private var stopped = true
     private var attempt = 0
     private var accepted = false
-    private var manualAttempt = false
+    private var observingNetwork = false
     private val discovery by lazy { LanServiceDiscovery(this) }
     private var target: ConnectionTarget? = null
     private var discoveredUrl: String? = null
     private var attemptedUrl: String? = null
     private val busy = AtomicBoolean(false)
     private val reconnect = Runnable { connect() }
+    // Retry if the server accepts the transport but never completes the Portal handshake.
+    private val ackTimeout = Runnable {
+        if (!accepted) {
+            socket?.cancel()
+            disconnected(terminal = false)
+        }
+    }
+    private val networkObserver = object : ConnectivityManager.NetworkCallback() {
+        // Wake an offline session when Android supplies a new default network.
+        override fun onAvailable(network: Network) {
+            main.post {
+                val current = target ?: return@post
+                if (stopped || accepted || !PortalConfig.mayReconnect(this@PortalConnectionService)) return@post
+                if (canDiscover(current)) {
+                    stopDiscovery()
+                    startDiscovery(current)
+                }
+                if (socket == null) {
+                    main.removeCallbacks(reconnect)
+                    connect()
+                }
+            }
+        }
+    }
 
     // Keep each socket tied to the pairing that supplied its credentials.
     private class ConnectionTarget(var url: String, val token: String, val cert: String?, var key: String?) {
@@ -49,11 +75,17 @@ class PortalConnectionService : Service() {
         super.onCreate()
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(CHANNEL_ID, "AutoRush 设备连接", NotificationManager.IMPORTANCE_LOW))
+        observingNetwork = runCatching {
+            getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(networkObserver)
+        }.isSuccess
     }
 
     // Handle connection, discovery preference, and disconnect intents.
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
+            null -> if (stopped) {
+                if (PortalConfig.mayReconnect(this)) startConnection(automatic = true) else stopSelf()
+            }
             ACTION_CONNECT -> startConnection(automatic = false)
             ACTION_AUTO_CONNECT -> if (stopped) startConnection(automatic = true)
             ACTION_STOP -> {
@@ -61,16 +93,15 @@ class PortalConnectionService : Service() {
                 shutdown()
             }
             ACTION_RECONNECT_SETTINGS -> {
-                val current = target?.takeIf { it.lan != null } ?: return START_NOT_STICKY
-                if (canDiscover(current)) {
-                    startDiscovery(current)
+                if (PortalConfig.mayReconnect(this)) {
+                    target?.let(::startDiscovery)
                 } else {
                     stopDiscovery()
-                    if (!accepted && !manualAttempt) shutdown()
+                    if (!accepted) shutdown()
                 }
             }
         }
-        return START_NOT_STICKY
+        return if (!stopped && PortalConfig.mayReconnect(this)) START_STICKY else START_NOT_STICKY
     }
 
     // Load a saved pairing and give automatic starts a short chance to discover its current address.
@@ -84,7 +115,7 @@ class PortalConnectionService : Service() {
         }
         val current = ConnectionTarget(url, token, PortalConfig.tlsPin(this), PortalConfig.tlsKeyPin(this))
         if (!automatic) PortalConfig.setLanReconnectPaused(this, false)
-        if (automatic && !canDiscover(current)) {
+        if (automatic && !PortalConfig.mayReconnect(this)) {
             shutdown()
             return
         }
@@ -92,14 +123,14 @@ class PortalConnectionService : Service() {
         stopped = false
         attempt = 0
         accepted = false
-        manualAttempt = !automatic
         attemptedUrl = null
         main.removeCallbacks(reconnect)
+        main.removeCallbacks(ackTimeout)
         stopDiscovery()
         socket?.let(ScreenStreamer::detach)
         socket?.cancel()
         socket = null
-        if (automatic) {
+        if (automatic && canDiscover(current)) {
             setPhase(ConnectionPhase.SEARCHING)
             startDiscovery(current)
             main.postDelayed(reconnect, 1800)
@@ -113,7 +144,7 @@ class PortalConnectionService : Service() {
 
     // Read whether this pairing is eligible for LAN discovery and reconnect.
     private fun canDiscover(current: ConnectionTarget) = current.lan != null &&
-        PortalConfig.lanReconnectEnabled(this) && !PortalConfig.lanReconnectPaused(this)
+        PortalConfig.mayReconnect(this)
 
     // Listen for a matching service while the WebSocket is offline.
     private fun startDiscovery(current: ConnectionTarget) {
@@ -159,8 +190,9 @@ class PortalConnectionService : Service() {
                     accepted = false
                     val hello = JSONObject().put("type", "hello").put("protocol", 1)
                         .put("device_id", PortalConfig.deviceId(this@PortalConnectionService))
-                        .put("app_version", "0.5.1")
+                        .put("app_version", "0.5.2")
                     webSocket.send(hello.toString())
+                    main.postDelayed(ackTimeout, 8_000)
                 }
             }
 
@@ -173,9 +205,9 @@ class PortalConnectionService : Service() {
                 main.post {
                     if (stopped || socket !== webSocket) return@post
                     val message = try { JSONObject(text) } catch (_: Exception) { return@post }
-                    if (message.optString("type") == "hello.ack" && message.optInt("protocol") == 1) {
+                    if (!accepted && message.optString("type") == "hello.ack" && message.optInt("protocol") == 1) {
+                        main.removeCallbacks(ackTimeout)
                         accepted = true
-                        manualAttempt = false
                         ScreenStreamer.bind(this@PortalConnectionService, webSocket)
                         attempt = 0
                         if (current.lan != null) {
@@ -267,8 +299,8 @@ class PortalConnectionService : Service() {
     private fun disconnected(terminal: Boolean) {
         socket?.let(ScreenStreamer::detach)
         socket = null
+        main.removeCallbacks(ackTimeout)
         accepted = false
-        manualAttempt = false
         if (stopped) return
         val current = target ?: return
         if (terminal) {
@@ -277,7 +309,7 @@ class PortalConnectionService : Service() {
             return
         }
         val discover = canDiscover(current)
-        if (current.lan != null && !discover) {
+        if (!PortalConfig.mayReconnect(this)) {
             shutdown()
             return
         }
@@ -324,9 +356,10 @@ class PortalConnectionService : Service() {
         accepted = false
         target = null
         main.removeCallbacks(reconnect)
+        main.removeCallbacks(ackTimeout)
         stopDiscovery()
         socket?.let(ScreenStreamer::detach)
-        socket?.close(1000, "user disconnect")
+        socket?.cancel()
         socket = null
         PortalState.connectionPhase = phase
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -337,6 +370,7 @@ class PortalConnectionService : Service() {
     override fun onDestroy() {
         if (!stopped) PortalState.connectionPhase = ConnectionPhase.IDLE
         stopped = true
+        if (observingNetwork) getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(networkObserver)
         stopDiscovery()
         main.removeCallbacksAndMessages(null)
         socket?.let(ScreenStreamer::detach)
