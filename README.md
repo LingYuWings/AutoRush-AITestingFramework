@@ -124,7 +124,15 @@ Open **Tools → Tutorial** in the console sidebar for the test workflow and the
 
 Each step highlights a real control. The guide card and curved pointer move with the highlight as you use **Previous**, **Next**, or the left and right arrow keys. Press **Esc** to return to the tutorial. The tours respect your system's reduced-motion preference.
 
-### Try it with the demo API
+### Run the equipment request demo
+
+Start the demo target from the repository root.
+
+```bash
+python demo/serve.py
+```
+
+With AutoRush running, open a second terminal and run `python demo/run_flow.py --headed`. The walkthrough creates and approves two structured cases, runs a plan, and exports a report with screenshots and HTTP evidence. See the [demo guide](demo/README.md) for ports and report locations.
 
 A small in-memory demo service is included for experimenting with the API workbench and API test plans:
 
@@ -177,6 +185,7 @@ android/portal/   Android Portal and demo app
 script/           Windows, Linux and macOS launchers
 scripts/          Android build, APK verification and local model tools
 examples/         Sample cases and a local demo API service
+demo/             Equipment request app and an end-to-end test walkthrough
 ```
 
 Databases, reports, screenshots, logs, models and credentials are generated locally and kept out of version control.

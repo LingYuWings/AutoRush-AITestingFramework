@@ -1,0 +1,44 @@
+{
+  "title": "演示 · API 校验设备领用数量",
+  "platform": "api",
+  "execution_mode": "structured",
+  "steps": [
+    {
+      "order": 1,
+      "intent": "超额领用返回 HTTP 422 和数量上限",
+      "driver": "api",
+      "operation": "api.request",
+      "parameters": {
+        "request": {
+          "name": "拒绝超额领用",
+          "method": "POST",
+          "url": "/api/requests",
+          "body": {"mode": "json", "text": "{\"item_id\":\"hub\",\"quantity\":9}"},
+          "assertions": [
+            {"kind": "status_code", "expected": 422},
+            {"kind": "json_field_equals", "path": "$.limit", "expected": 8}
+          ]
+        }
+      }
+    },
+    {
+      "order": 2,
+      "intent": "有效领用返回 HTTP 201 和回执",
+      "driver": "api",
+      "operation": "api.request",
+      "parameters": {
+        "request": {
+          "name": "接受有效领用",
+          "method": "POST",
+          "url": "/api/requests",
+          "body": {"mode": "json", "text": "{\"item_id\":\"hub\",\"quantity\":2}"},
+          "assertions": [
+            {"kind": "status_code", "expected": 201},
+            {"kind": "json_field_equals", "path": "$.status", "expected": "approved"},
+            {"kind": "json_field_equals", "path": "$.quantity", "expected": 2}
+          ]
+        }
+      }
+    }
+  ]
+}

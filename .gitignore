@@ -75,6 +75,7 @@ Thumbs.db
 !/README.md
 !/README.zh-CN.md
 !/backend/README.md
+!/demo/README.md
 /backend/tests/
 /frontend/tests/
 /android/**/src/test/
