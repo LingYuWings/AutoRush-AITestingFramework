@@ -120,7 +120,15 @@ bash script/linux/start.sh --install  # Linux
 
 每一步会高亮真实控件。用 **上一步**、**下一步**或左右方向键切换时，说明卡和弧形指示线会随高亮框移动。按 **Esc** 返回教程。引导会遵循系统的「减少动态效果」设置。
 
-### 用演示 API 体验
+### 运行设备领用演示
+
+先在项目根目录启动设备领用台。
+
+```bash
+python demo/serve.py
+```
+
+启动 AutoRush 后，在另一个终端运行 `python demo/run_flow.py --headed`。脚本会创建并批准两条结构化用例，执行计划并导出报告，供你查看页面截图和 HTTP 证据。端口和报告位置见[演示说明](demo/README.md)。
 
 仓库附带一个基于内存的演示服务，可用来试用 API 工作台和 API 测试计划：
 
@@ -173,6 +181,7 @@ android/portal/   Android Portal 与演示应用
 script/           Windows、Linux 和 macOS 启动脚本
 scripts/          Android 构建、APK 校验与本地模型工具
 examples/         用例样例与本地演示 API 服务
+demo/             设备领用演示应用与端到端测试流程
 ```
 
 数据库、报告、截图、日志、模型与凭据均在本地生成，不纳入版本管理。

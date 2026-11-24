@@ -1,0 +1,31 @@
+{
+  "title": "演示 · 页面拒绝超额领用并接受有效申请",
+  "platform": "web",
+  "execution_mode": "structured",
+  "steps": [
+    {"order": 1, "intent": "打开设备领用台", "driver": "web", "operation": "web.open", "parameters": {"path": "/"}},
+    {"order": 2, "intent": "选择 USB-C 扩展坞", "driver": "web", "operation": "web.select", "parameters": {"target": {"label": "设备"}, "value": "hub"}},
+    {"order": 3, "intent": "输入超过单次限额的数量", "driver": "web", "operation": "web.fill", "parameters": {"target": {"label": "领用数量"}, "value": "9"}},
+    {"order": 4, "intent": "提交超额申请", "driver": "web", "operation": "web.click", "parameters": {"target": {"role": "button", "name": "提交领用"}}},
+    {"order": 5, "intent": "等待校验提示", "driver": "web", "operation": "web.wait", "parameters": {"target": {"test_id": "request-error"}, "state": "visible"}},
+    {
+      "order": 6, "intent": "确认页面提示最多可领用 8 件", "driver": "web", "operation": "web.inspect",
+      "parameters": {"target": {"test_id": "request-error"}},
+      "assertions": [{"kind": "text_contains", "expected": "最多可领用 8 件"}]
+    },
+    {"order": 7, "intent": "把领用数量改为 2", "driver": "web", "operation": "web.fill", "parameters": {"target": {"label": "领用数量"}, "value": "2"}},
+    {"order": 8, "intent": "重新提交申请", "driver": "web", "operation": "web.click", "parameters": {"target": {"role": "button", "name": "提交领用"}}},
+    {"order": 9, "intent": "等待领用回执", "driver": "web", "operation": "web.wait", "parameters": {"target": {"test_id": "request-receipt"}, "state": "visible"}},
+    {
+      "order": 10, "intent": "确认回执显示领用设备和数量", "driver": "web", "operation": "web.inspect",
+      "parameters": {"target": {"test_id": "request-receipt"}},
+      "assertions": [{"kind": "text_contains", "expected": "USB-C 扩展坞 × 2"}]
+    }
+  ],
+  "postconditions": [
+    {
+      "order": 1, "intent": "重置演示表单", "driver": "web", "operation": "web.click",
+      "parameters": {"target": {"role": "button", "name": "重置"}}, "always_run": true
+    }
+  ]
+}

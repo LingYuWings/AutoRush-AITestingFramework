@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>设备领用台</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="masthead">
+    <div class="shell brand"><span class="brand-mark" aria-hidden="true">领</span> 研发实验室</div>
+  </header>
+  <main class="shell">
+    <h1>设备领用台</h1>
+    <p class="intro">选择设备和数量，提交后可查看领用回执。</p>
+    <div class="workspace">
+      <section class="panel" aria-labelledby="request-title">
+        <h2 id="request-title">新建领用</h2>
+        <form id="request-form" novalidate>
+          <label for="item">设备</label>
+          <select id="item" required disabled><option value="">正在加载设备</option></select>
+          <label for="quantity">领用数量</label>
+          <input id="quantity" type="number" inputmode="numeric" min="1" step="1" value="1" required disabled
+            aria-describedby="limit">
+          <p id="limit" class="hint"></p>
+          <div class="actions">
+            <button id="submit" type="submit" disabled>提交领用</button>
+            <button id="reset" type="reset" disabled>重置</button>
+          </div>
+          <p id="error" data-testid="request-error" class="feedback error" role="alert" hidden></p>
+        </form>
+      </section>
+      <section class="panel results" aria-labelledby="receipt-title">
+        <h2 id="receipt-title">领用回执</h2>
+        <div class="result" role="status" aria-live="polite">
+          <p id="status" data-testid="request-status">等待提交</p>
+          <p id="receipt" data-testid="request-receipt" hidden></p>
+        </div>
+        <p class="hint">这是 AutoRush 演示环境，回执仅保留在当前页面。</p>
+      </section>
+    </div>
+  </main>
+</body>
+</html>
