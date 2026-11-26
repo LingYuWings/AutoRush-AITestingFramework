@@ -11,6 +11,7 @@ import android.net.Network
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -41,7 +42,7 @@ class PortalConnectionService : Service() {
     private val ackTimeout = Runnable {
         if (!accepted) {
             socket?.cancel()
-            disconnected(terminal = false)
+            disconnected(ConnectionFailure.HANDSHAKE_TIMEOUT)
         }
     }
     private val networkObserver = object : ConnectivityManager.NetworkCallback() {
@@ -88,6 +89,12 @@ class PortalConnectionService : Service() {
             }
             ACTION_CONNECT -> startConnection(automatic = false)
             ACTION_AUTO_CONNECT -> if (stopped) startConnection(automatic = true)
+            ACTION_RETRY_NOW -> {
+                if (!stopped && socket == null && PortalState.connection.retryAtMs != null && PortalConfig.mayReconnect(this)) {
+                    main.removeCallbacks(reconnect)
+                    connect()
+                }
+            }
             ACTION_STOP -> {
                 PortalConfig.setLanReconnectPaused(this, true)
                 shutdown()
@@ -97,7 +104,7 @@ class PortalConnectionService : Service() {
                     target?.let(::startDiscovery)
                 } else {
                     stopDiscovery()
-                    if (!accepted) shutdown()
+                    if (!accepted) shutdown(failure = PortalState.connection.failure)
                 }
             }
         }
@@ -130,6 +137,7 @@ class PortalConnectionService : Service() {
         socket?.let(ScreenStreamer::detach)
         socket?.cancel()
         socket = null
+        PortalState.connection = ConnectionStatus(ConnectionPhase.CONNECTING)
         if (automatic && canDiscover(current)) {
             setPhase(ConnectionPhase.SEARCHING)
             startDiscovery(current)
@@ -179,7 +187,7 @@ class PortalConnectionService : Service() {
         startDiscovery(current)
         val url = discoveredUrl?.takeIf { it != attemptedUrl } ?: current.url
         attemptedUrl = url
-        setPhase(ConnectionPhase.CONNECTING)
+        setPhase(ConnectionPhase.CONNECTING, PortalState.connection.failure)
         val request = Request.Builder().url(url).header("Authorization", "Bearer ${current.token}").build()
         val verifiedKey = AtomicReference<String>()
         val listener = object : WebSocketListener() {
@@ -232,13 +240,13 @@ class PortalConnectionService : Service() {
 
             // Treat policy and token-rejection close codes as terminal for the current socket.
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                main.post { if (socket === webSocket) disconnected(code in listOf(1008, 4001)) }
+                main.post { if (socket === webSocket) disconnected(ConnectionFailure.forClose(code)) }
             }
 
             // Handle transport failures and treat HTTP authorization failures as terminal.
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 main.post {
-                    if (socket === webSocket) disconnected(response?.code in listOf(401, 403))
+                    if (socket === webSocket) disconnected(ConnectionFailure.forFailure(response?.code, t))
                 }
             }
         }
@@ -296,35 +304,41 @@ class PortalConnectionService : Service() {
     }
 
     // End viewing and retry with bounded backoff unless the server rejected the pairing.
-    private fun disconnected(terminal: Boolean) {
+    private fun disconnected(failure: ConnectionFailure) {
         socket?.let(ScreenStreamer::detach)
         socket = null
         main.removeCallbacks(ackTimeout)
         accepted = false
         if (stopped) return
         val current = target ?: return
-        if (terminal) {
+        if (failure.terminal) {
             if (PortalConfig.token(this) == current.token) PortalConfig.setLanReconnectPaused(this, true)
-            shutdown(ConnectionPhase.REJECTED)
+            shutdown(ConnectionPhase.REJECTED, failure)
             return
         }
         val discover = canDiscover(current)
         if (!PortalConfig.mayReconnect(this)) {
-            shutdown()
+            shutdown(failure = failure)
             return
         }
         attempt = (attempt + 1).coerceAtMost(6)
         val delay = (1_000L shl attempt).coerceAtMost(30_000L)
         if (discover) startDiscovery(current)
-        setPhase(if (discover) ConnectionPhase.SEARCHING else ConnectionPhase.RETRYING)
-        main.removeCallbacks(reconnect)
         val freshCandidate = discoveredUrl?.let { it != attemptedUrl } == true
-        main.postDelayed(reconnect, if (freshCandidate) 0 else delay)
+        scheduleRetry(if (discover) ConnectionPhase.SEARCHING else ConnectionPhase.RETRYING,
+            if (freshCandidate) 0 else delay, failure)
+    }
+
+    // Publish the retry deadline using the same uptime clock as Handler.
+    private fun scheduleRetry(phase: ConnectionPhase, delayMs: Long, failure: ConnectionFailure) {
+        main.removeCallbacks(reconnect)
+        setPhase(phase, failure, SystemClock.uptimeMillis() + delayMs)
+        main.postDelayed(reconnect, delayMs)
     }
 
     // Publish the same connection phase to the Portal home and notification.
-    private fun setPhase(phase: ConnectionPhase) {
-        PortalState.connectionPhase = phase
+    private fun setPhase(phase: ConnectionPhase, failure: ConnectionFailure? = null, retryAtMs: Long? = null) {
+        PortalState.connection = ConnectionStatus(phase, failure, retryAtMs)
         updateNotification(phase.label)
     }
 
@@ -351,7 +365,7 @@ class PortalConnectionService : Service() {
     }
 
     // Stop reconnecting, close the socket, and remove the foreground service.
-    private fun shutdown(phase: ConnectionPhase = ConnectionPhase.IDLE) {
+    private fun shutdown(phase: ConnectionPhase = ConnectionPhase.IDLE, failure: ConnectionFailure? = null) {
         stopped = true
         accepted = false
         target = null
@@ -361,14 +375,14 @@ class PortalConnectionService : Service() {
         socket?.let(ScreenStreamer::detach)
         socket?.cancel()
         socket = null
-        PortalState.connectionPhase = phase
+        PortalState.connection = ConnectionStatus(phase, failure)
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
     // Cancel pending callbacks and release the WebSocket client's resources.
     override fun onDestroy() {
-        if (!stopped) PortalState.connectionPhase = ConnectionPhase.IDLE
+        if (!stopped) PortalState.connection = ConnectionStatus()
         stopped = true
         if (observingNetwork) getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(networkObserver)
         stopDiscovery()
@@ -387,6 +401,7 @@ class PortalConnectionService : Service() {
     companion object {
         const val ACTION_CONNECT = "com.autorush.portal.CONNECT"
         const val ACTION_AUTO_CONNECT = "com.autorush.portal.AUTO_CONNECT"
+        const val ACTION_RETRY_NOW = "com.autorush.portal.RETRY_NOW"
         const val ACTION_STOP = "com.autorush.portal.STOP"
         const val ACTION_RECONNECT_SETTINGS = "com.autorush.portal.RECONNECT_SETTINGS"
         private const val CHANNEL_ID = "portal_connection"

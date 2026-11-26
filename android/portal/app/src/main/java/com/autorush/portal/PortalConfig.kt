@@ -26,39 +26,31 @@ object PortalConfig {
     private const val KEY_LAN_RECONNECT = "lan_reconnect"
     private const val KEY_LAN_PAUSED = "lan_reconnect_paused"
     private const val KEY_ALIAS = "autorush.portal.token"
-    private val packagePattern = Regex("(?:[A-Za-z_][A-Za-z0-9_]*\\.)+[A-Za-z_][A-Za-z0-9_]*")
 
     // Read the saved package allowlist, ignoring blanks and Portal's own package.
     fun allowedPackages(context: Context): Set<String> = prefs(context)
         .getString(KEY_ALLOWED_PACKAGES, "").orEmpty().split(',')
         .filter { it.isNotBlank() && it != context.packageName }.toSet()
 
-    // Normalize and save package names, then recheck active screen sharing.
-    fun saveAllowedPackages(context: Context, raw: String): String {
-        val value = parseAllowedPackages(context, raw).joinToString(",")
-        prefs(context).edit().putString(KEY_ALLOWED_PACKAGES, value).apply()
+    // Validate and apply the two scope settings in a single preferences update.
+    fun saveAppScope(context: Context, raw: String, allowAny: Boolean): String {
+        val value = PackagePolicy.parseAllowedPackages(raw, context.packageName, allowAny).joinToString(",")
+        prefs(context).edit().putString(KEY_ALLOWED_PACKAGES, value).putBoolean(KEY_ANY_APP, allowAny).apply()
         ScreenStreamer.policyChanged()
         return value
     }
 
+    // Update the allowlist while preserving the wildcard setting during manual pairing.
+    fun saveAllowedPackages(context: Context, raw: String) = saveAppScope(context, raw, anyPackageAllowed(context))
+
     // Validate a manual app allowlist before writing settings or a pairing.
-    fun parseAllowedPackages(context: Context, raw: String): List<String> {
-        val names = raw.split(',', '\n').map { it.trim() }.filter { it.isNotEmpty() }.distinct()
-        require(names.isNotEmpty() || anyPackageAllowed(context)) { "请至少填写一个测试应用包名" }
-        require(names.all { packagePattern.matches(it) }) { "包名格式不正确" }
-        require(context.packageName !in names) { "不能把 Portal 自身加入允许列表" }
-        return names
-    }
+    fun parseAllowedPackages(context: Context, raw: String): List<String> =
+        PackagePolicy.parseAllowedPackages(raw, context.packageName, anyPackageAllowed(context))
 
     // Read the saved WebSocket URL, using an empty string before pairing.
     fun serverUrl(context: Context): String = prefs(context).getString(KEY_SERVER, "").orEmpty()
     // Read whether the user enabled testing outside the allowlist.
     fun anyPackageAllowed(context: Context): Boolean = prefs(context).getBoolean(KEY_ANY_APP, false)
-    // Save the wildcard package setting and recheck active screen sharing.
-    fun setAnyPackageAllowed(context: Context, allowed: Boolean) {
-        prefs(context).edit().putBoolean(KEY_ANY_APP, allowed).apply()
-        ScreenStreamer.policyChanged()
-    }
     // Evaluate a package against the current local policy.
     fun isPackageAllowed(context: Context, pkg: String): Boolean = PackagePolicy.allows(pkg, context.packageName, anyPackageAllowed(context), allowedPackages(context))
     // Read the saved certificate pin, if the pairing supplied one.
