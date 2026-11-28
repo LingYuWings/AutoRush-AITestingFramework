@@ -14,6 +14,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.text.InputType
 import android.view.Gravity
@@ -42,6 +43,8 @@ class MainActivity : Activity() {
     private lateinit var ui: PortalViews
     private lateinit var status: TextView
     private lateinit var connectionDetail: TextView
+    private lateinit var connectionHelp: TextView
+    private lateinit var retryNow: Button
     private lateinit var primary: Button
     private lateinit var scanAgain: Button
     private lateinit var manualPair: Button
@@ -107,8 +110,16 @@ class MainActivity : Activity() {
         addView(status, ui.spaced(top = 8))
         connectionDetail = ui.label("", 14f, ui.heroMuted)
         addView(connectionDetail, ui.spaced(top = 7))
+        connectionHelp = ui.label("", 14f, ui.white)
+        addView(connectionHelp, ui.spaced(top = 7))
         primary = ui.action("", primary = true, action = ::runPrimaryAction)
         addView(primary, ui.spaced(top = 18))
+        retryNow = ui.action("立即重试") {
+            if (PortalState.connection.secondsUntilRetry(SystemClock.uptimeMillis()) != null) {
+                startService(connectionIntent(PortalConnectionService.ACTION_RETRY_NOW))
+            }
+        }
+        addView(retryNow, ui.spaced(top = 8))
     }
 
     // Keep accessibility, app scope, and screenshot permission together.
@@ -157,7 +168,8 @@ class MainActivity : Activity() {
 
     // Derive the interface from the current connection and local permissions.
     private fun updateHome() {
-        val phase = PortalState.connectionPhase
+        val connection = PortalState.connection
+        val phase = connection.phase
         val claiming = pairingAttempt.active
         val savedUrl = PortalConfig.serverUrl(this)
         val appCount = PortalConfig.allowedPackages(this).size
@@ -170,10 +182,14 @@ class MainActivity : Activity() {
         connectionDetail.updateText(when {
             claiming -> "正在向测试服务器领取设备凭据"
             !hasPairing -> "在 AutoRush 管理台打开「Android 设备」，生成配对二维码。"
-            phase == ConnectionPhase.REJECTED -> "请重新扫码配对，或在手工配对中更新设备令牌。"
             phase == ConnectionPhase.INVALID -> "检查已保存的配对和可测试应用范围。"
             else -> savedUrl
         })
+        val seconds = connection.secondsUntilRetry(SystemClock.uptimeMillis())
+        val help = if (!claiming && hasPairing) describeConnection(connection, savedUrl, seconds) else ""
+        connectionHelp.updateText(help)
+        connectionHelp.visibility = if (help.isNotEmpty()) View.VISIBLE else View.GONE
+        retryNow.visibility = if (!claiming && hasPairing && seconds != null) View.VISIBLE else View.GONE
         primary.updateText(when {
             claiming -> "取消配对"
             phase.active -> if (phase == ConnectionPhase.ONLINE) "断开连接" else "停止连接"
@@ -205,6 +221,20 @@ class MainActivity : Activity() {
         })
     }
 
+    // Give the user an actionable hint without exposing raw network exceptions.
+    private fun describeConnection(connection: ConnectionStatus, savedUrl: String, seconds: Long?): String = buildList {
+        connection.failure?.let { failure ->
+            if (connection.phase != ConnectionPhase.REJECTED) add(failure.label)
+            add(failure.hint ?: when {
+                savedUrl.startsWith("ws://") -> "请检查 USB 数据线、手机的调试授权和 PC 后端。"
+                LanPairing.from(savedUrl, PortalConfig.tlsPin(this@MainActivity)) != null ->
+                    "请确认手机和 PC 在同一局域网，并检查 PC 的本地 WSS 服务。"
+                else -> "请检查当前网络以及远程 WSS 服务。"
+            })
+        }
+        seconds?.let { add("${it} 秒后重试") }
+    }.joinToString("\n")
+
     // Keep live-region announcements and text selection stable when the value is unchanged.
     private fun TextView.updateText(value: String) {
         if (text.toString() != value) text = value
@@ -212,7 +242,7 @@ class MainActivity : Activity() {
 
     // Run the action matching the visible connection state.
     private fun runPrimaryAction() {
-        val phase = PortalState.connectionPhase
+        val phase = PortalState.connection.phase
         when {
             pairingAttempt.active -> {
                 pairingAttempt.cancel()
@@ -231,7 +261,7 @@ class MainActivity : Activity() {
     // Update discovery for the running service or start it from the visible home.
     private fun changeReconnect(enabled: Boolean) {
         PortalConfig.setLanReconnectEnabled(this, enabled)
-        if (PortalState.connectionPhase.active) {
+        if (PortalState.connection.phase.active) {
             startService(connectionIntent(PortalConnectionService.ACTION_RECONNECT_SETTINGS))
         } else if (enabled) {
             maybeReconnect()
@@ -241,7 +271,7 @@ class MainActivity : Activity() {
 
     // Resume an eligible saved pairing when the activity becomes visible.
     private fun maybeReconnect() {
-        if (PortalState.connectionPhase.active || pairingAttempt.active || !hasPairing ||
+        if (PortalState.connection.phase.active || pairingAttempt.active || !hasPairing ||
             !PortalConfig.mayReconnect(this)) return
         startConnection(automatic = true)
     }
@@ -312,27 +342,25 @@ class MainActivity : Activity() {
         }
     }
 
-    // Edit the allowlist and apply the wildcard permission independently.
+    // Keep scope edits as a draft until both settings are validated and saved.
     private fun editScope() {
         if (pairingAttempt.active) {
             showMessage("请等待当前配对完成")
             return
         }
         val form = ui.dialogForm()
-        form.addView(ui.toggle("允许测试任意应用", PortalConfig.anyPackageAllowed(this)) { allowed ->
-            PortalConfig.setAnyPackageAllowed(this, allowed)
-            updateHome()
-        })
-        form.addView(ui.label("开启后，服务器可操作其他应用（Portal 自身除外）。关闭后立即恢复允许列表。", 13f, ui.muted))
+        var allowAny = PortalConfig.anyPackageAllowed(this)
+        form.addView(ui.toggle("允许测试任意应用", allowAny) { allowAny = it })
+        form.addView(ui.label("保存后生效。开启时，已配对的服务器可操作其他应用（Portal 自身除外）。", 13f, ui.muted))
         val packages = ui.input("每行一个包名，也可用逗号分隔", PortalConfig.allowedPackages(this).joinToString("\n"),
             InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE)
         packages.id = View.generateViewId()
         form.addView(ui.label("应用允许列表", 15f, bold = true).apply { labelFor = packages.id }, ui.spaced(top = 16, bottom = 4))
         form.addView(packages)
-        val dialog = formDialog("可测试的应用", form, "保存列表")
+        val dialog = formDialog("可测试的应用", form, "保存")
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
             try {
-                PortalConfig.saveAllowedPackages(this, packages.text.toString())
+                PortalConfig.saveAppScope(this, packages.text.toString(), allowAny)
                 dialog.dismiss()
                 updateHome()
             } catch (error: IllegalArgumentException) {
@@ -423,7 +451,7 @@ class MainActivity : Activity() {
             return
         }
         val discovering = automatic && LanPairing.from(PortalConfig.serverUrl(this), PortalConfig.tlsPin(this)) != null
-        PortalState.connectionPhase = if (discovering) ConnectionPhase.SEARCHING else ConnectionPhase.CONNECTING
+        PortalState.connection = ConnectionStatus(if (discovering) ConnectionPhase.SEARCHING else ConnectionPhase.CONNECTING)
         updateHome()
         if (!automatic) requestConnectionNotifications()
     }
